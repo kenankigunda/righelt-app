@@ -6,7 +6,7 @@ import { followGame, applyFollow } from './support/forced-follow.mjs';
 const deferred = () => {let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};};
 const flush = () => new Promise(resolve=>setImmediate(resolve));
 function fixture(options={}) {
-  let game=followGame(options),visible=true,eligible=true,scope='account',canAct=true,hasHumanAuthority=true,view={pendingCommandCount:0},sound=0,clears=0;
+  let game=followGame(options),visible=true,eligible=true,scope='account',canAct=true,hasHumanAuthority=true,view={pendingCommandCount:0},sound=0,clears=0,visualActive=false,controller;
   const requests=[],events=[],errors=[];let receipt,commandId;
   const owner={getIdentityId:()=> 'human',reconcileGame:async()=>{events.push('reconcile');},applyGameAction:async request=>{
     requests.push(request);commandId=requests.length===1?'follow-command':`follow-command-${requests.length}`;events.push('admit');
@@ -16,8 +16,8 @@ function fixture(options={}) {
   }};
   let currentOwner=owner;
   const getContext=()=>({owner:currentOwner,scope,game,view,visible,eligible,canAct,hasHumanAuthority});
-  const controller=createForcedFollow({getContext,hold:async()=>{events.push('hold');},animate:async move=>{events.push('animate');options.onAnimate?.(move);},clearVisual:()=>{clears++;},sound:()=>{sound++;events.push('sound');},onError:error=>errors.push(error),withLock:options.withLock??((_,work)=>work())});
-  return{controller,owner,getContext,requests,events,errors,game:()=>game,view:()=>view,sounds:()=>sound,clears:()=>clears,
+  controller=createForcedFollow({getContext,hold:async()=>{events.push('hold');},animate:async move=>{visualActive=true;events.push('animate');options.onAnimate?.(move);},clearVisual:()=>{visualActive=false;clears++;},sound:()=>{sound++;events.push('sound');},onChange:()=>options.onChange?.({working:controller?.snapshot().working??true,visualActive}),onError:error=>errors.push(error),withLock:options.withLock??((_,work)=>work())});
+  return{controller,owner,getContext,requests,events,errors,game:()=>game,view:()=>view,sounds:()=>sound,clears:()=>clears,visualActive:()=>visualActive,
     setView:values=>{view={...view,...values};},setGame:next=>{game=next;},ack:()=>{game=applyFollow(game,requests.at(-1).action,commandId);view={...view,pendingCommandCount:0,pendingMoves:[]};receipt.resolve();},reject:error=>{view={...view,pendingCommandCount:0,pendingMoves:[]};receipt.reject(error);},
     change:kind=>{if(kind==='owner')currentOwner={...owner};if(kind==='scope')scope='other-account';if(kind==='game')game={...game,id:'other'};if(kind==='hidden')visible=false;if(kind==='history')eligible=false;if(kind==='computer'){canAct=false;hasHumanAuthority=false;}if(kind==='authority'){hasHumanAuthority=false;canAct=false;}}};
 }
@@ -32,6 +32,16 @@ test('durably admitted follow presents the exact optimistic frame and cue before
   assert.equal(animated.length,1);assert.equal(animated[0].clientCommandId,'follow-command');assert.equal(animated[0].moveId,undefined);
   assert.deepEqual(animated[0].selectionSnapshot,before.board.state);assert.deepEqual(animated[0].snapshot,f.game().moves[0].snapshot);
   assert.deepEqual(f.requests[0].state,before.board.state);await f.controller.tick();assert.equal(f.requests.length,1);
+});
+
+test('fast acknowledgement snaps the optimistic layer before releasing its input owner',async t=>{
+  const unsafe=[];
+  const f=fixture({onChange:state=>{if(!state.working&&state.visualActive)unsafe.push(state);}});t.after(()=>f.controller.destroy());
+  const work=f.controller.tick();await flush();
+  assert.equal(f.visualActive(),true);assert.equal(f.controller.snapshot().working,true);
+  f.ack();await work;
+  assert.equal(f.controller.snapshot().working,false);assert.equal(f.visualActive(),false);assert.deepEqual(unsafe,[]);
+  assert.equal(f.clears(),1);assert.equal(f.sounds(),1);assert.equal(f.events.filter(event=>event==='animate').length,1);
 });
 
 test('restored pending journals block a refreshed controller before any second admission',async t=>{

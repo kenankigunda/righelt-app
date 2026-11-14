@@ -122,6 +122,11 @@ export function createForcedFollow({ getContext, hold = async () => {}, animate 
           const move = acknowledged.moves?.findLast(move => !move.undone && move.clientCommandId === handle.id);
           const head = acknowledged.moves?.findLast(move => !move.undone);
           if (!move?.selectionSnapshot || !move.snapshot || move.moveId !== head?.moveId || canonicalCommandJson(move.action) !== canonicalCommandJson(action)) return;
+          // The accepted authoritative Board already contains this exact
+          // follow. Remove the optimistic layer while this working owner still
+          // fences input, then release ownership in finally. A fast receipt
+          // must never leave stale moving geometry above a clickable Board.
+          clearVisual();
           token.accepted=true;
         });
       } catch (error) { if (current(token)) onError(error); }
