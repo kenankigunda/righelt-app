@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {handleLiveGameRequest} from '../src/shell-live.ts';
-import {asPreparedImportedHistory,createInitialGame,applyServerAction} from '../src/shell-live-core.ts';
+import {asPreparedImportedHistory,createInitialGame,applyRevertToMove,applyServerAction} from '../src/shell-live-core.ts';
 import {persistGameState} from '../src/shell-live-db.ts';
 import {listLegalActions} from '../../game-engine/src/index.ts';
 import {CURRENT_COMPUTER_MODEL,computerModelForCreation} from '../../shared-types/src/computer-play.ts';
@@ -112,4 +112,22 @@ test('lineage completeness distinguishes unexplained number gaps from known undo
  const accountedGap=await prepareImportedHistory(env,knownUndone,null,'known-gap-target');
  assert.deepEqual(accountedGap.moves.map(move=>move.displayMoveNumber),[1,3]);
  assert.equal(accountedGap.complete,true);
+});
+
+test('lineage completeness accepts a real Undo replacement and ignores its known undone tail',async()=>{
+ const {env}=fixture();
+ const source=createInitialGame({gameId:'lineage-undo-source',identityId:'owner',selfPlayMode:true});
+ for(let index=0;index<3;index+=1){
+  const action=listLegalActions(source.board.state).find(candidate=>candidate.from&&candidate.to);
+  assert.equal(applyServerAction(source,action).ok,true);
+ }
+ assert.deepEqual(source.moves.map(move=>move.displayMoveNumber),[1,2,3]);
+ assert.equal(applyRevertToMove(source,source.moves[1].moveId,'owner').ok,true);
+ const replacement=listLegalActions(source.board.state).find(candidate=>candidate.from&&candidate.to);
+ assert.equal(applyServerAction(source,replacement).ok,true);
+ assert.deepEqual(source.moves.map(move=>[move.displayMoveNumber,move.undone===true]),[[1,false],[2,true],[3,true],[2,false]]);
+
+ const prepared=await prepareImportedHistory(env,source,null,'lineage-undo-target');
+ assert.deepEqual(prepared.moves.map(move=>move.displayMoveNumber),[1,2]);
+ assert.equal(prepared.complete,true);
 });

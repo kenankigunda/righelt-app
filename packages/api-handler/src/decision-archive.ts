@@ -197,19 +197,21 @@ export async function prepareImportedHistory(
   }
   const cutoff = selectedMove
     ? selectedMove.displayMoveNumber - 1
-    : observed.reduce((maximum, entry) => Math.max(maximum, entry.move.displayMoveNumber), 0);
+    : moves.reduce((maximum, move) => Math.max(maximum, move.displayMoveNumber), 0);
   const observedThroughCutoff = observed.filter(entry => entry.move.displayMoveNumber <= cutoff);
-  const numberCounts = new Map<number, number>();
+  const numberStatuses = new Map<number, { active: number; unknown: boolean }>();
   for (const entry of observedThroughCutoff) {
     if (Number.isSafeInteger(entry.move.displayMoveNumber) && entry.move.displayMoveNumber > 0) {
-      numberCounts.set(entry.move.displayMoveNumber, (numberCounts.get(entry.move.displayMoveNumber) ?? 0) + 1);
+      const status = numberStatuses.get(entry.move.displayMoveNumber) ?? { active: 0, unknown: false };
+      if (entry.status === 'active') status.active += 1;
+      if (entry.status === 'unknown') status.unknown = true;
+      numberStatuses.set(entry.move.displayMoveNumber, status);
     }
   }
   const everyNumberAccountedFor = Number.isSafeInteger(cutoff) && cutoff >= 0
-    && numberCounts.size === cutoff
-    && [...numberCounts].every(([number, count]) => number >= 1 && number <= cutoff && count === 1);
-  const complete = everyNumberAccountedFor
-    && !observedThroughCutoff.some(entry => entry.status === 'unknown');
+    && numberStatuses.size === cutoff
+    && [...numberStatuses].every(([number, status]) => number >= 1 && number <= cutoff && status.active <= 1 && !status.unknown);
+  const complete = everyNumberAccountedFor;
   const prepared = { version: 1 as const, complete, moveCount: moves.length, sources, moves };
   if (encodedSyncBytes(prepared) > maximumBytes) throw new Error('branch_history_too_large');
   return prepared;
