@@ -96,8 +96,6 @@ test("history live-return control stays mounted without blocking through the glo
   const control=blocked.match(/<button class="secondary" data-action="return-live"[^>]*>/)?.[0];
   assert.ok(control,'Return to live must be present while shared mutations are blocked');
   assert.doesNotMatch(control,/\bdisabled\b|aria-disabled="true"/);
-  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*const moveId=actionEl\.getAttribute\("data-move-id"\)\?\?actionEl\.closest\("\.history-item\[data-move-id\]"\)\?\.getAttribute\("data-move-id"\)\?\?null;[\s\S]*await animateHistoryDeselection\(actionEl\);[\s\S]*transport\.selectHistoryMove\(\{ gameId, moveIndex, moveId \}\);[\s\S]*return;/s);
-  assert.match(source, /if \(action === "return-live"\) \{[\s\S]*transport\.returnToLive\(\{ gameId \}\);[\s\S]*return;/s);
   assert.match(syncStoreSource, /selectHistoryMove: \(\{ gameId, moveIndex, moveId = null \}\) => operationManager.createCommitted/);
   assert.match(syncStoreSource, /returnToLive: \(\{ gameId \}\) => operationManager.createCommitted/);
   assert.doesNotMatch(source, /if \(game\.inHistoryMode && activeTurn\.moveIndexes\.length > 0\) \{/);

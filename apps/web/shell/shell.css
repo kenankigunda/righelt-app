@@ -14,6 +14,9 @@
   --history-entry-section-gap: 0.42rem;
   --history-marker-slot-width: 0.56rem;
   --history-marker-gap: 0.24rem;
+  --history-turn-rail-margin: 3px;
+  --history-turn-rail-width: 2px;
+  --history-turn-content-padding: 10px;
   --shell-main-max-width: 1200px;
   --shell-flyout-wide-width: min(34rem, 36vw);
   --shell-flyout-content-gap: 1rem;
@@ -276,7 +279,7 @@ body {
   display: grid;
   gap: 0.5rem;
   justify-items: end;
-  align-self: center;
+  align-self: start;
   position: relative;
   z-index: 1;
 }
@@ -1127,7 +1130,7 @@ button.button-release-bounce,
   grid-column: 1;
   grid-row: 1;
   justify-self: center;
-  align-self: start;
+  align-self: center;
   width: 0.36rem;
   height: 0.36rem;
   border-right: 1.5px solid currentColor;
@@ -1151,6 +1154,9 @@ button.button-release-bounce,
 .history-item.history-item-imported-group.is-expanded::before {
   transform: translateY(0.42rem) rotate(45deg);
 }
+
+.history-item.history-item-undone-group::before {align-self:center;transform:rotate(-45deg);}
+.history-item.history-item-undone-group.is-expanded::before {transform:rotate(45deg);}
 
 .history-item.history-item-undone-group.is-undone .history-move-line {
   text-decoration: none;
@@ -1283,18 +1289,6 @@ button.button-release-bounce,
   max-height: 1.2rem;
   opacity: 0.6;
   transform: translateY(0);
-}
-
-.history-item.is-deselecting .history-move-line {
-  opacity: 0.78;
-  transform: translateY(-0.05rem);
-}
-
-.history-item.is-deselecting .history-move-at,
-[data-hover-capability="hover"] .history-item.is-deselecting:hover .history-move-at {
-  max-height: 0;
-  opacity: 0;
-  transform: translateY(-0.18rem);
 }
 
 @keyframes history-item-release {
@@ -2431,7 +2425,7 @@ textarea:focus-visible {
    of child move/action buttons; their stacking gives the most specific hit priority. */
 :is(.history-turn,.history-item-undone-group) {position:relative;isolation:isolate;margin:0;transform-origin:50% 50%;transition:transform 140ms var(--shell-game-entry-easing);}
 .history-turn-heading {min-height:44px;padding:0;display:flex;align-items:center;pointer-events:none;}
-:is(.history-turn,.history-item-undone-group) > .history-list-nested {margin:0 0 0 3px;padding-left:10px;gap:0;border-left:2px solid currentColor;pointer-events:none;}
+:is(.history-turn,.history-item-undone-group) > .history-list-nested {margin:0 0 0 var(--history-turn-rail-margin);padding-left:var(--history-turn-content-padding);gap:0;border-left:var(--history-turn-rail-width) solid currentColor;pointer-events:none;}
 .history-list:has(> :is(.history-turn,.history-item-undone-group)) {gap:6px;}
 :is(.history-turn,.history-item-undone-group) > .history-list-nested > .history-item {position:relative;display:block;pointer-events:none;}
 :is(.history-turn,.history-item-undone-group) > .history-list-nested > .history-item::before {content:none;}
@@ -2466,3 +2460,5 @@ textarea:focus-visible {
 
 .app-root :is(.history-turn,.history-item-undone-group) button.history-undone-toggle.secondary,
 .app-root .history-item-imported-group button.history-imported-toggle.secondary {position:relative;z-index:3;pointer-events:auto;min-height:44px;border:0;border-radius:0;padding:0;background:transparent;color:inherit;font:inherit;text-align:left;}
+.app-root .history-item.history-item-undone-group > button.history-undone-toggle.secondary {grid-column:1 / -1;display:flex;align-items:center;justify-content:flex-start;width:100%;padding-inline-start:calc(var(--history-turn-rail-margin) + var(--history-turn-rail-width) + var(--history-turn-content-padding));}
+.history-selection-transitioning {overflow:hidden;}

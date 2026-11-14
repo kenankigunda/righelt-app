@@ -26,6 +26,8 @@ import {
   homeSectionVisiblePageSize,
 } from './home-section-reads.js';
 import {createHistoryRendering} from './history-rendering.js';
+import {createHistorySelectionTransition} from './history-selection-transition.js';
+import {captureHistorySelectionFocus,createHistorySelectionActions} from './history-selection-actions.js';
 import * as undoHistory from './history-undo-groups.js';
 import {createGameAlertItems,renderGameAlertStackCard as renderAlertStackCard,createNotificationPatchLifecycle} from './game-alert-presentation.js';
 import {historyBoardRuntimeMessage,presentPlaybackBoardMessage,playbackTurnIndicator,refreshFollowControls} from './playback-presentation.js';
@@ -437,7 +439,6 @@ let lastRenderedRouteKey = "";
 let lastRenderedBaseRouteKey = "";
 let lastRenderedTransitionPhaseKey = "idle";
 let routeSyncRequestId = 0;
-const HISTORY_SELECTION_EXIT_MS = 56;
 const HISTORY_RELEASE_BOUNCE_MS = 140;
 const GAME_ENTRY_ROUTE_TRANSITION_MS = 320;
 const GAME_ENTRY_ROUTE_TRANSITION_COVER_MS = 160;
@@ -445,8 +446,6 @@ const GAME_ENTRY_ROUTE_TRANSITION_REVEAL_MS = 200;
 const HOME_SECTION_CARD_MIN_WIDTH_REM = 22;
 const HOME_SECTION_CARD_GAP_REM = 0.85;
 const HOME_CAROUSEL_MOTION_MS = 220;
-let pressedHistoryActionEl = null;
-let historyReleaseTimer = null;
 let pressedControlEl = null;
 let controlReleaseTimer = null;
 let stickyLayoutFrame = 0;
@@ -974,6 +973,14 @@ const renderFeedbackReveal = (message) => `
   </div>
 `;
 const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+const historySelectionTransition = createHistorySelectionTransition({ reducedMotion: prefersReducedMotion });
+const historySelectionActions = createHistorySelectionActions({
+  transition: historySelectionTransition,
+  playSound: cue => gameSound.play(cue),
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden) historySelectionTransition.cancel(); });
+window.addEventListener('hashchange', () => historySelectionTransition.cancel());
+window.addEventListener('pagehide', () => historySelectionTransition.cancel());
 const getRouteTransitionRenderKey = () =>
   routeTransition ? `${routeTransition.type}:${routeTransition.fromRoute}:${routeTransition.toRoute}:${routeTransition.gameId}` : "none";
 const getRouteTransitionPhaseKey = () => routeTransition?.phase || "idle";
@@ -1407,71 +1414,11 @@ const syncShellLayoutMode = () => {
   return layoutMode;
 };
 
-const animateHistoryDeselection = async (actionEl) => {
-  if (prefersReducedMotion() || !appEl) {
-    return;
-  }
-  const currentSelected = appEl.querySelector(".history-item.is-selected, .history-item.is-live-selected");
-  if (!(currentSelected instanceof HTMLElement) || currentSelected === actionEl) {
-    return;
-  }
-
-  currentSelected.classList.add("is-deselecting");
-  currentSelected.classList.remove("is-selected");
-  currentSelected.classList.remove("is-live-selected");
-  await delay(HISTORY_SELECTION_EXIT_MS);
-};
-
-const clearHistoryPress = () => {
-  const boardWrapEl = appEl.querySelector(".board-wrap");
-  if (boardWrapEl instanceof HTMLElement) {
-    boardWrapEl.classList.remove("history-board-pressing");
-  }
-
-  if (pressedHistoryActionEl instanceof HTMLElement) {
-    pressedHistoryActionEl.classList.remove("is-pressing");
-  }
-  pressedHistoryActionEl = null;
-};
-
 const clearControlPress = () => {
   if (pressedControlEl instanceof HTMLElement) {
     pressedControlEl.classList.remove("is-pressing");
   }
   pressedControlEl = null;
-};
-
-const playHistoryReleaseBounce = (actionEl) => {
-  if (prefersReducedMotion() || !appEl) {
-    return;
-  }
-
-  const boardWrapEl = appEl.querySelector(".board-wrap");
-  if (boardWrapEl instanceof HTMLElement) {
-    boardWrapEl.classList.remove("history-board-release");
-    void boardWrapEl.offsetWidth;
-    boardWrapEl.classList.add("history-board-release");
-  }
-
-  if (actionEl instanceof HTMLElement && (actionEl.classList.contains("history-item") || actionEl.classList.contains("history-destruction-item"))) {
-    actionEl.classList.remove("history-item-release");
-    void actionEl.offsetWidth;
-    actionEl.classList.add("history-item-release");
-  }
-
-  if (historyReleaseTimer) {
-    window.clearTimeout(historyReleaseTimer);
-  }
-  historyReleaseTimer = window.setTimeout(() => {
-    const currentBoardWrapEl = appEl.querySelector(".board-wrap");
-    if (currentBoardWrapEl instanceof HTMLElement) {
-      currentBoardWrapEl.classList.remove("history-board-release");
-    }
-    if (actionEl instanceof HTMLElement) {
-      actionEl.classList.remove("history-item-release");
-    }
-    historyReleaseTimer = null;
-  }, HISTORY_RELEASE_BOUNCE_MS);
 };
 
 const playControlReleaseBounce = (controlEl) => {
@@ -1495,23 +1442,6 @@ const playControlReleaseBounce = (controlEl) => {
 hoverCapability.subscribe(() => {
   boardRuntime?.syncInteractionCapabilities?.();
 });
-
-const startHistoryPress = (actionEl) => {
-  if (prefersReducedMotion() || !appEl || !(actionEl instanceof HTMLElement)) {
-    return;
-  }
-  clearHistoryPress();
-
-  const boardWrapEl = appEl.querySelector(".board-wrap");
-  if (boardWrapEl instanceof HTMLElement) {
-    boardWrapEl.classList.add("history-board-pressing");
-  }
-
-  if (actionEl.classList.contains("history-item") || actionEl.classList.contains("history-destruction-item")) {
-    actionEl.classList.add("is-pressing");
-    pressedHistoryActionEl = actionEl;
-  }
-};
 
 const startControlPress = (controlEl) => {
   if (prefersReducedMotion() || !(controlEl instanceof HTMLElement)) {
@@ -2778,7 +2708,9 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
     }
   }
   if (historyEl instanceof HTMLElement) {
+    const historyTransition = historySelectionTransition.capture(historyEl);
     patchToolHtml(historyEl, renderHistoryPanel(game));
+    historySelectionTransition.present(historyTransition);
     revealSelectedHistory();
   }
   syncIncomingNarrationHost(game);syncBoardContextDetails(game);boardContextPresentation.restoreIncomingFocus(incomingFocus);
@@ -4581,7 +4513,10 @@ appEl.addEventListener("click", async (event) => {
     const gameId=actionEl.dataset.gameId;
     if(action==='inspect-history-archive'){
       const entry=additionalHistory.snapshot(gameId)?.items.find(item=>item.id===actionEl.dataset.decisionId);
-      if(entry){viewingIntent.navigate(gameId);undoHistory.noteUndoHistorySelection(expandedUndoneGroups,gameId,entry.id,transport);transport.inspectDecision({gameId,entry});}
+      const restoreSelectionFocus = captureHistorySelectionFocus({ document, root: appEl, trigger: actionEl, keyboard: event.detail === 0 });
+      if(entry)await historySelectionActions.run({scope:`${gameId}:archive:${entry.id}`,select:()=>{
+        viewingIntent.navigate(gameId);undoHistory.noteUndoHistorySelection(expandedUndoneGroups,gameId,entry.id,transport);return transport.inspectDecision({gameId,entry});
+      },after:restoreSelectionFocus});
     } else {
       const work=action==='retry-history-archive'?additionalHistory.retry(gameId):additionalHistory.more(gameId);
       render({animatePanels:false,includeBoard:false});await work;
@@ -4935,10 +4870,17 @@ appEl.addEventListener("click", async (event) => {
   if (action === "jump-history-turn") {
     const gameId = actionEl.getAttribute('data-game-id');
     const turnIndex = Number(actionEl.getAttribute('data-turn-index'));
-    viewingIntent.navigate(gameId);
-    await transport.selectHistoryTurn({gameId,turnIndex});
-    if (transport.getGameViewModel(gameId)?.historyTurnIndex === turnIndex) gameSound.play("history");
-    revealSelectedHistory();
+    const restoreSelectionFocus = captureHistorySelectionFocus({ document, root: appEl, trigger: actionEl, keyboard: event.detail === 0 });
+    await historySelectionActions.run({
+      scope: `${gameId}:turn:${turnIndex}`,
+      select: async () => {
+        viewingIntent.navigate(gameId);
+        return transport.selectHistoryTurn({gameId,turnIndex});
+      },
+      accepted: () => transport.getGameViewModel(gameId)?.historyTurnIndex === turnIndex,
+      sound: "history",
+      after: () => { revealSelectedHistory(); restoreSelectionFocus(); },
+    });
     return;
   }
 
@@ -4947,15 +4889,19 @@ appEl.addEventListener("click", async (event) => {
     const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
     const moveId=actionEl.getAttribute("data-move-id")??actionEl.closest(".history-item[data-move-id]")?.getAttribute("data-move-id")??null;
     if (!gameId || !Number.isFinite(moveIndex)) return;
+    const restoreSelectionFocus = captureHistorySelectionFocus({ document, root: appEl, trigger: actionEl, keyboard: event.detail === 0 });
     clearControlPress();
-    clearHistoryPress();
-    playHistoryReleaseBounce(actionEl);
-    await animateHistoryDeselection(actionEl);
-    if (transport.getGameViewModel(gameId)?.historyIndex !== moveIndex || !transport.getGameViewModel(gameId)?.inHistoryMode) viewingIntent.navigate(gameId);
-    undoHistory.noteUndoHistorySelection(expandedUndoneGroups,gameId,moveId,transport);
-    transport.selectHistoryMove({ gameId, moveIndex, moveId });
-    revealSelectedHistory();
-    if(transport.getGameViewModel(gameId)?.inHistoryMode)gameSound.play("history");
+    await historySelectionActions.run({
+      scope: `${gameId}:move:${moveId ?? moveIndex}`,
+      select: () => {
+        if (transport.getGameViewModel(gameId)?.historyIndex !== moveIndex || !transport.getGameViewModel(gameId)?.inHistoryMode) viewingIntent.navigate(gameId);
+        undoHistory.noteUndoHistorySelection(expandedUndoneGroups,gameId,moveId,transport);
+        return transport.selectHistoryMove({ gameId, moveIndex, moveId });
+      },
+      accepted: () => transport.getGameViewModel(gameId)?.inHistoryMode === true && transport.getGameViewModel(gameId)?.historyIndex === moveIndex,
+      sound: "history",
+      after: () => { revealSelectedHistory(); restoreSelectionFocus(); },
+    });
     return;
   }
 
@@ -4963,13 +4909,18 @@ appEl.addEventListener("click", async (event) => {
     const gameId = actionEl.getAttribute("data-game-id");
     if (!gameId) return;
     if(isCompletedGame(transport.getGameViewModel(gameId)))return;
-    clearHistoryPress();
-    playHistoryReleaseBounce(actionEl);
-    await animateHistoryDeselection(actionEl);
-    viewingIntent.navigate(gameId);
-    transport.returnToLive({ gameId });
-    if (getShellLayoutMode() === "narrow") navigateTo(buildGameHash(gameId, null, getCurrentGameHashState("board")));
-    gameSound.play("history-back");
+    await historySelectionActions.run({
+      scope: `${gameId}:live`,
+      select: () => {
+        viewingIntent.navigate(gameId);
+        return transport.returnToLive({ gameId });
+      },
+      accepted: () => transport.getGameViewModel(gameId)?.inHistoryMode !== true,
+      sound: "history-back",
+      after: () => {
+        if (getShellLayoutMode() === "narrow") navigateTo(buildGameHash(gameId, null, getCurrentGameHashState("board")));
+      },
+    });
     return;
   }
 
@@ -5312,37 +5263,15 @@ appEl.addEventListener("pointerdown", (event) => {
   if (controlEl instanceof HTMLElement) {
     startControlPress(controlEl);
   }
-  const actionEl = target.closest("[data-action]");
-  if (!(actionEl instanceof HTMLElement)) {
-    return;
-  }
-  const action = actionEl.getAttribute("data-action");
-  if (action !== "jump-history" && action !== "return-live") {
-    return;
-  }
-  startHistoryPress(actionEl);
 });
 
 window.addEventListener("pointercancel",()=>{document.querySelector(".home-start")?.style.removeProperty("margin-top");clearControlPress();});
-window.addEventListener("pointerup", (event) => {
+window.addEventListener("pointerup", () => {
   window.setTimeout(()=>document.querySelector('.home-start')?.style.removeProperty('margin-top'),0);
-  const target = event.target;
   if (pressedControlEl instanceof HTMLElement) {
     playControlReleaseBounce(pressedControlEl);
   }
   clearControlPress();
-  if (target instanceof HTMLElement) {
-    const actionEl = target.closest("[data-action]");
-    const action = actionEl?.getAttribute("data-action");
-    if (action === "jump-history" || action === "return-live") {
-      return;
-    }
-  }
-  clearHistoryPress();
-});
-
-window.addEventListener("pointercancel", () => {
-  clearHistoryPress();
 });
 
 window.addEventListener("click", (event) => {

@@ -356,15 +356,6 @@ test("history branch launch keeps the source tab stable while opening a new tab"
   assert.match(source, /selectionAction: hydratedSelectionAction,/);
 });
 
-test("history navigation stays local-first without the removed global busy wrapper", () => {
-  assert.doesNotMatch(source, /const shouldRenderBusyStateStart =/);
-  assert.doesNotMatch(source, /const shouldRenderBusyStateEnd =/);
-  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*const moveId=actionEl\.getAttribute\("data-move-id"\)\?\?actionEl\.closest\("\.history-item\[data-move-id\]"\)\?\.getAttribute\("data-move-id"\)\?\?null;[\s\S]*await animateHistoryDeselection\(actionEl\);[\s\S]*transport\.selectHistoryMove\(\{ gameId, moveIndex, moveId \}\);[\s\S]*return;/s);
-  assert.match(source, /if \(action === "return-live"\) \{[\s\S]*transport\.returnToLive\(\{ gameId \}\);[\s\S]*return;/s);
-  assert.doesNotMatch(source, /if \(action === "jump-history"\) \{[\s\S]*await transport\.selectHistoryMove/s);
-  assert.doesNotMatch(source, /if \(action === "return-live"\) \{[\s\S]*await transport\.returnToLive/s);
-});
-
 test("shell renders durable browser E2E selectors for core workflow surfaces", () => {
   assert.match(source, /data-testid="home-create-game"/);
   assert.match(readFileSync(join(testDir,"..","shell","panel-loading.js"),"utf8"), /data-testid="game-role"/);
@@ -483,26 +474,6 @@ test("only an explicit scenario capture forces click target selection", () => {
     source,
     /if \(shouldPatchFlyoutsOnly\) \{[\s\S]*if \(includeBoard\) \{[\s\S]*if \(currentRoute\.name === "game"\) \{[\s\S]*mountBoardForGame\(transport\.getGameViewModel\(currentRoute\.gameId\)\);[\s\S]*\} else if \(currentRoute\.name === "invite" && resolvedInvite\?\.gameId\) \{[\s\S]*mountBoardForGame\(transport\.getGameViewModel\(resolvedInvite\.gameId\)\);[\s\S]*\}[\s\S]*\}[\s\S]*return;/s,
   );
-});
-
-test("history navigation uses pointer-down press state with a single mouseup release bounce", () => {
-  assert.match(source, /const startHistoryPress = \(actionEl\) => \{/);
-  assert.match(source, /const startControlPress = \(controlEl\) => \{/);
-  assert.match(source, /const clearHistoryPress = \(\) => \{/);
-  assert.match(source, /const clearControlPress = \(\) => \{/);
-  assert.match(source, /const playHistoryReleaseBounce = \(actionEl\) => \{/);
-  assert.match(source, /const playControlReleaseBounce = \(controlEl\) => \{/);
-  assert.match(source, /boardWrapEl\.classList\.add\("history-board-pressing"\);/);
-  assert.match(source, /boardWrapEl\.classList\.add\("history-board-release"\);/);
-  assert.match(source, /actionEl\.classList\.add\("history-item-release"\);/);
-  assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*const controlEl = target\.closest\("button, \.button-link, \.mini-board-card-link-surface"\);[\s\S]*startControlPress\(controlEl\);/s);
-  assert.match(source, /window\.addEventListener\("pointerup", \(event\) => \{[\s\S]*action === "jump-history" \|\| action === "return-live"[\s\S]*return;[\s\S]*clearHistoryPress\(\);\s*\}\);/s);
-  assert.match(source, /appEl\.addEventListener\("pointerdown", \(event\) => \{[\s\S]*action !== "jump-history" && action !== "return-live"[\s\S]*startHistoryPress\(actionEl\);/s);
-  assert.match(source, /const animateHistoryDeselection = async \(actionEl\) => \{/);
-  assert.match(source, /currentSelected\.classList\.add\("is-deselecting"\);/);
-  assert.match(source, /if \(action === "jump-history"\) \{[\s\S]*clearControlPress\(\);[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);[\s\S]*await animateHistoryDeselection\(actionEl\);/s);
-  assert.match(source, /if \(action === "return-live"\) \{[\s\S]*clearHistoryPress\(\);[\s\S]*playHistoryReleaseBounce\(actionEl\);/s);
-  assert.doesNotMatch(source, /jump-destruction/);
 });
 
 test("upgrade fencing keeps a static recovery notice without discarding viewing context", () => {

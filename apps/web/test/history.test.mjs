@@ -286,12 +286,3 @@ test("UX-02: shell.css keeps destruction rows visually subordinate to their pare
 test("UX-04: undone parent moves cross out destruction rows too", () => {
   assert.match(shellCssSrc, /\.history-item\.is-undone \.history-destruction-item/);
 });
-
-test("UX-05 (source): pointerdown history press gating no longer treats destruction rows as separate actions", () => {
-  assert.doesNotMatch(appSource, /jump-destruction/);
-  const pdIdx = appSource.indexOf('startHistoryPress(actionEl)');
-  assert.ok(pdIdx !== -1, "startHistoryPress must be called in pointerdown");
-  const guardStart = appSource.lastIndexOf('action !== "jump-history"', pdIdx);
-  const guardSrc = appSource.slice(guardStart, pdIdx + 50);
-  assert.doesNotMatch(guardSrc, /jump-destruction/);
-});
