@@ -1,5 +1,5 @@
-// Presentation identity only: never derives authority, seats, or a game key.
-// The versioned recipe depends only on the complete immutable game ID.
+// Presentation identity only: never derives authority, seats, or a storage key.
+// The versioned recipe depends only on the complete stable presentation key.
 const OUTLINES=Object.freeze([
  [[7,0],[29,0],[36,7],[36,29],[29,36],[7,36],[0,29],[0,7]],
  [[9,0],[27,0],[36,9],[36,27],[27,36],[9,36],[0,27],[0,9]],
@@ -26,9 +26,9 @@ function randomForId(id){
 function clipped(subject,clip){let output=subject;for(let i=0;i<clip.length;i++){const a=clip[i],b=clip[(i+1)%clip.length],input=output;output=[];const cross=p=>(b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0]);for(let j=0;j<input.length;j++){const p=input[j],q=input[(j+1)%input.length],cp=cross(p),cq=cross(q);if(cp>=0)output.push(p);if((cp>=0)!==(cq>=0)){const t=cp/(cp-cq);output.push([p[0]+t*(q[0]-p[0]),p[1]+t*(q[1]-p[1])]);}}}return output;}
 const rounded=points=>points.map(([x,y])=>[Number(x.toFixed(3)),Number(y.toFixed(3))]);
 
-export function gameInlayModel(gameId){
- if(typeof gameId!=='string'||!gameId)throw new TypeError('A stable game ID is required');
- const random=randomForId(gameId),outline=OUTLINES[Math.floor(random()*OUTLINES.length)],palette=PALETTES[Math.floor(random()*PALETTES.length)],x1=9+Math.floor(random()*5),x2=22+Math.floor(random()*5),y1=9+Math.floor(random()*5),y2=22+Math.floor(random()*5),xs=[0,x1,x2,36],ys=[0,y1,y2,36],tiles=[];
+export function gameInlayModel(stableKey){
+ if(typeof stableKey!=='string'||!stableKey)throw new TypeError('A stable presentation key is required');
+ const random=randomForId(stableKey),outline=OUTLINES[Math.floor(random()*OUTLINES.length)],palette=PALETTES[Math.floor(random()*PALETTES.length)],x1=9+Math.floor(random()*5),x2=22+Math.floor(random()*5),y1=9+Math.floor(random()*5),y2=22+Math.floor(random()*5),xs=[0,x1,x2,36],ys=[0,y1,y2,36],tiles=[];
  for(let row=0;row<3;row++)for(let column=0;column<3;column++){
   const inset=.28,points=clipped([[xs[column]+inset,ys[row]+inset],[xs[column+1]-inset,ys[row]+inset],[xs[column+1]-inset,ys[row+1]-inset],[xs[column]+inset,ys[row+1]-inset]],outline);
   const grain=clipped([[xs[column]+1,ys[row]+3],[xs[column+1]-1,ys[row]+5],[xs[column+1]-1,ys[row]+5.25],[xs[column]+1,ys[row]+3.25]],points);
@@ -38,7 +38,7 @@ export function gameInlayModel(gameId){
 }
 
 const points=value=>value.map(pair=>pair.join(',')).join(' ');
-export function renderGameInlay(gameId){
- const model=gameInlayModel(gameId);
+export function renderGameInlay(stableKey){
+ const model=gameInlayModel(stableKey);
  return `<svg class="game-inlay" viewBox="0 0 36 36" aria-hidden="true" focusable="false"><polygon fill="#f5f0e7" points="${points(model.outline)}"/>${model.tiles.map(tile=>`<polygon fill="${tile.fill}" points="${points(tile.points)}"/><polygon fill="#fff" opacity=".09" points="${points(tile.grain)}"/>`).join('')}</svg>`;
 }

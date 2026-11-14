@@ -57,6 +57,22 @@ test('player marks follow stable identities rather than seat color or display na
  assert.doesNotMatch(stableMark,/player-p1|player-p2|currentColor/);
 });
 
+test('guest and computer marks follow their stable identity and profile keys',()=>{
+ const guestMark=renderPlayerEmblem('guest:guest-stable');
+ const guestFirst=renderGameTitle(game({createdAt:'2026-11-13T23:30:00Z',player1:person('guest-stable','First guest')}),{identityId:'guest-stable'});
+ const guestChanged=renderGameTitle(game({createdAt:'2026-11-13T23:30:00Z',myRole:'Viewer',sideToMove:'P2',canControlComputer:true,player1:person('guest-other','Other guest'),player2:person('guest-stable','Renamed guest')}),{identityId:'viewer'});
+ assert.ok(guestFirst.includes(guestMark));
+ assert.ok(guestChanged.includes(guestMark));
+ assert.notEqual(guestMark,renderPlayerEmblem('guest:guest-other'));
+
+ const computerMark=renderPlayerEmblem('computer:horus');
+ const computerBlue=renderGameTitle(game({createdAt:'2026-11-13T23:30:00Z',myRole:'Both Players',canControlComputer:true,computer:{manual:true,seats:{p1:null,p2:'horus'}},player2:{...person('computer-blue','Horus'),computerProfile:'horus'}}),{identityId:'red'});
+ const computerRed=renderGameTitle(game({createdAt:'2026-11-13T23:30:00Z',myRole:'Viewer',sideToMove:'P2',canControlComputer:false,computer:{manual:true,seats:{p1:'horus',p2:null}},player1:{...person('computer-red','Renamed computer'),computerProfile:'horus'}}),{identityId:'viewer'});
+ assert.ok(computerBlue.includes(computerMark));
+ assert.ok(computerRed.includes(computerMark));
+ assert.notEqual(computerMark,renderPlayerEmblem('computer:babs'));
+});
+
 test('game identity remains anchored to immutable createdAt after later activity',()=>{
  const createdAt='2026-02-10T20:15:00.000Z',updatedAt='2027-09-21T04:45:00.000Z';
  const initial=renderGameTitle(game({createdAt,updatedAt,lastMoveAt:createdAt,moveCount:0}),{identityId:'red'});
@@ -83,7 +99,7 @@ test('Tessera v1 has stable known answers and bounded independent SVG instances'
   assert.doesNotMatch(svg,/\bid=|clip-path|url\(/);
  }
  assert.notDeepEqual(gameInlayModel([...answers.keys()][0]),gameInlayModel([...answers.keys()][1]));
- assert.throws(()=>gameInlayModel(''),/stable game ID/);
+ assert.throws(()=>gameInlayModel(''),/stable presentation key/);
 });
 
 test('actual Home card consumes one shared title and never exposes the raw game ID',()=>{
