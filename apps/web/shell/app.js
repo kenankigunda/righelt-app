@@ -27,6 +27,7 @@ import {
 } from './home-section-reads.js';
 import {createHistoryRendering} from './history-rendering.js';
 import {createHistorySelectionTransition} from './history-selection-transition.js';
+import {captureHistorySelectionFocus,createHistorySelectionActions} from './history-selection-actions.js';
 import * as undoHistory from './history-undo-groups.js';
 import {createGameAlertItems,renderGameAlertStackCard as renderAlertStackCard,createNotificationPatchLifecycle} from './game-alert-presentation.js';
 import {historyBoardRuntimeMessage,presentPlaybackBoardMessage,playbackTurnIndicator,refreshFollowControls} from './playback-presentation.js';
@@ -973,6 +974,10 @@ const renderFeedbackReveal = (message) => `
 `;
 const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
 const historySelectionTransition = createHistorySelectionTransition({ reducedMotion: prefersReducedMotion });
+const historySelectionActions = createHistorySelectionActions({
+  transition: historySelectionTransition,
+  playSound: cue => gameSound.play(cue),
+});
 document.addEventListener('visibilitychange', () => { if (document.hidden) historySelectionTransition.cancel(); });
 window.addEventListener('hashchange', () => historySelectionTransition.cancel());
 window.addEventListener('pagehide', () => historySelectionTransition.cancel());
@@ -4508,9 +4513,10 @@ appEl.addEventListener("click", async (event) => {
     const gameId=actionEl.dataset.gameId;
     if(action==='inspect-history-archive'){
       const entry=additionalHistory.snapshot(gameId)?.items.find(item=>item.id===actionEl.dataset.decisionId);
-      if(entry)await historySelectionTransition.run(`${gameId}:archive:${entry.id}`,()=>{
+      const restoreSelectionFocus = captureHistorySelectionFocus({ document, root: appEl, trigger: actionEl, keyboard: event.detail === 0 });
+      if(entry)await historySelectionActions.run({scope:`${gameId}:archive:${entry.id}`,select:()=>{
         viewingIntent.navigate(gameId);undoHistory.noteUndoHistorySelection(expandedUndoneGroups,gameId,entry.id,transport);return transport.inspectDecision({gameId,entry});
-      });
+      },after:restoreSelectionFocus});
     } else {
       const work=action==='retry-history-archive'?additionalHistory.retry(gameId):additionalHistory.more(gameId);
       render({animatePanels:false,includeBoard:false});await work;
@@ -4864,12 +4870,17 @@ appEl.addEventListener("click", async (event) => {
   if (action === "jump-history-turn") {
     const gameId = actionEl.getAttribute('data-game-id');
     const turnIndex = Number(actionEl.getAttribute('data-turn-index'));
-    await historySelectionTransition.run(`${gameId}:turn:${turnIndex}`,async()=>{
-      viewingIntent.navigate(gameId);
-      return transport.selectHistoryTurn({gameId,turnIndex});
+    const restoreSelectionFocus = captureHistorySelectionFocus({ document, root: appEl, trigger: actionEl, keyboard: event.detail === 0 });
+    await historySelectionActions.run({
+      scope: `${gameId}:turn:${turnIndex}`,
+      select: async () => {
+        viewingIntent.navigate(gameId);
+        return transport.selectHistoryTurn({gameId,turnIndex});
+      },
+      accepted: () => transport.getGameViewModel(gameId)?.historyTurnIndex === turnIndex,
+      sound: "history",
+      after: () => { revealSelectedHistory(); restoreSelectionFocus(); },
     });
-    if (transport.getGameViewModel(gameId)?.historyTurnIndex === turnIndex) gameSound.play("history");
-    revealSelectedHistory();
     return;
   }
 
@@ -4878,14 +4889,19 @@ appEl.addEventListener("click", async (event) => {
     const moveIndex = Number.parseInt(actionEl.getAttribute("data-move-index") || "-1", 10);
     const moveId=actionEl.getAttribute("data-move-id")??actionEl.closest(".history-item[data-move-id]")?.getAttribute("data-move-id")??null;
     if (!gameId || !Number.isFinite(moveIndex)) return;
+    const restoreSelectionFocus = captureHistorySelectionFocus({ document, root: appEl, trigger: actionEl, keyboard: event.detail === 0 });
     clearControlPress();
-    await historySelectionTransition.run(`${gameId}:move:${moveId ?? moveIndex}`,()=>{
-      if (transport.getGameViewModel(gameId)?.historyIndex !== moveIndex || !transport.getGameViewModel(gameId)?.inHistoryMode) viewingIntent.navigate(gameId);
-      undoHistory.noteUndoHistorySelection(expandedUndoneGroups,gameId,moveId,transport);
-      return transport.selectHistoryMove({ gameId, moveIndex, moveId });
+    await historySelectionActions.run({
+      scope: `${gameId}:move:${moveId ?? moveIndex}`,
+      select: () => {
+        if (transport.getGameViewModel(gameId)?.historyIndex !== moveIndex || !transport.getGameViewModel(gameId)?.inHistoryMode) viewingIntent.navigate(gameId);
+        undoHistory.noteUndoHistorySelection(expandedUndoneGroups,gameId,moveId,transport);
+        return transport.selectHistoryMove({ gameId, moveIndex, moveId });
+      },
+      accepted: () => transport.getGameViewModel(gameId)?.inHistoryMode === true && transport.getGameViewModel(gameId)?.historyIndex === moveIndex,
+      sound: "history",
+      after: () => { revealSelectedHistory(); restoreSelectionFocus(); },
     });
-    revealSelectedHistory();
-    if(transport.getGameViewModel(gameId)?.inHistoryMode)gameSound.play("history");
     return;
   }
 
@@ -4893,12 +4909,18 @@ appEl.addEventListener("click", async (event) => {
     const gameId = actionEl.getAttribute("data-game-id");
     if (!gameId) return;
     if(isCompletedGame(transport.getGameViewModel(gameId)))return;
-    await historySelectionTransition.run(`${gameId}:live`,()=>{
-      viewingIntent.navigate(gameId);
-      return transport.returnToLive({ gameId });
+    await historySelectionActions.run({
+      scope: `${gameId}:live`,
+      select: () => {
+        viewingIntent.navigate(gameId);
+        return transport.returnToLive({ gameId });
+      },
+      accepted: () => transport.getGameViewModel(gameId)?.inHistoryMode !== true,
+      sound: "history-back",
+      after: () => {
+        if (getShellLayoutMode() === "narrow") navigateTo(buildGameHash(gameId, null, getCurrentGameHashState("board")));
+      },
     });
-    if (getShellLayoutMode() === "narrow") navigateTo(buildGameHash(gameId, null, getCurrentGameHashState("board")));
-    gameSound.play("history-back");
     return;
   }
 

@@ -50,7 +50,7 @@ test('short games with no additional records never show an archive CTA',async({p
  await page.evaluate(()=>window.historyRequests[0].resolve({available:false,items:[],nextCursor:null}));await expect(page.locator('[data-testid="additional-history"]')).toBeAttached();await expect(page.getByRole('button')).toHaveCount(0);
 });
 
-test('History distinguishes turn and move emphasis, aligns Undo disclosure, and transitions atomically',async({page})=>{
+test('History distinguishes turn and move emphasis, aligns Undo disclosure, and transitions atomically',async({page},info)=>{
  await page.setViewportSize({width:390,height:844});
  await page.evaluate(()=>window.renderHistory());await expect.poll(()=>page.evaluate(()=>window.historyRequests.length)).toBe(1);
  await page.evaluate(()=>window.historyRequests[0].resolve({available:true,items:[],nextCursor:null}));await page.getByRole('button',{name:'More game history',exact:true}).click();
@@ -64,10 +64,25 @@ test('History distinguishes turn and move emphasis, aligns Undo disclosure, and 
  await move.getByRole('button').hover();expect(await railWidth()).toBe('1px');
  const turnHit=turn.locator(':scope > .history-turn-hit');await turnHit.hover({position:{x:2,y:2}});expect(await railWidth()).toBe('2px');
  await turnHit.focus();await page.keyboard.press('Enter');await expect(turn.locator(':scope > .history-turn-heading')).toHaveClass(/is-selected/);expect(await railWidth()).toBe('2px');
+ await expect(turn.locator(':scope > .history-turn-heading')).toBeFocused();expect(await page.evaluate(()=>window.historySounds)).toEqual(['history']);
+ await page.keyboard.press(info.project.name==='webkit'?'Alt+Tab':'Tab');expect(await page.evaluate(()=>document.activeElement?.matches('button,[href],[tabindex]'))).toBe(true);
  await page.evaluate(()=>window.returnArchiveLive());
  await move.getByRole('button').click();await expect(move).toHaveClass(/is-selected/);expect(await railWidth()).toBe('1px');
  await expect(page.getByTestId('history-inline-preview')).toHaveCount(1);
  expect(await page.locator('#app').evaluate(node=>node.getAnimations().some(animation=>animation.effect.getKeyframes().some(frame=>frame.height)))).toBe(true);
+ expect(await page.evaluate(()=>window.historySounds)).toEqual(['history','history']);
+
+ await page.evaluate(()=>{window.returnArchiveLive();window.historyAnimations=[];window.historySounds=[];});
+ const rapid=await page.evaluate(()=>{
+  document.querySelector('.history-turn-hit').click();
+  document.querySelector('.history-move-hit').click();
+  const beforeLifecycle=window.historyAnimations.map(animation=>animation.playState);
+  window.dispatchEvent(new Event('pagehide'));
+  return {beforeLifecycle,afterLifecycle:window.historyAnimations.map(animation=>animation.playState),transitioning:document.querySelector('#app').classList.contains('history-selection-transitioning')};
+ });
+ expect(rapid.beforeLifecycle.length).toBeGreaterThanOrEqual(2);expect(rapid.beforeLifecycle[0]).toBe('idle');expect(rapid.beforeLifecycle.at(-1)).not.toBe('idle');
+ expect(rapid.afterLifecycle.every(state=>state==='idle')).toBe(true);expect(rapid.transitioning).toBe(false);
+ await expect.poll(()=>page.evaluate(()=>window.historySounds)).toEqual(['history']);
 
  await page.evaluate(()=>window.returnArchiveLive());
  const undone=page.locator('[data-undo-boundary="unavailable"]'),toggle=undone.locator('.history-undone-toggle');
