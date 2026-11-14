@@ -2,7 +2,7 @@
 export const loadingText = (width = '72%', sample = '&nbsp;') => `<span class="panel-loading-text skeleton-pulse" style="--placeholder-width:${width}" aria-hidden="true">${sample}</span>`;
 
 export const renderSummarySlots = ({title, started, role, turn, latest}) => `
-  <h2>${title}</h2><div class="section-stack">
+  <h2 class="game-summary-title">${title}</h2><div class="section-stack">
     <p class="small">${started}</p><p class="small" data-testid="game-role">${role}</p>
     <div class="section-followup"><p class="small" data-testid="active-turn-label">${turn}</p><p class="small">${latest}</p></div>
   </div>`;

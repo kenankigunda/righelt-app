@@ -1823,6 +1823,11 @@ textarea:focus-visible {
 .game-title-player bdi {min-width:0;overflow-wrap:anywhere;}
 .game-title-player .connection-status-icon {flex:none;align-self:center;}
 .game-title-versus {font-weight:500;color:var(--muted);}
+/* Game Summary uses the quieter Home-card identity scale without changing
+   Home, result, or Players identity treatments. */
+.game-summary-title .game-title-matchup {font-size:1rem;line-height:1.5;letter-spacing:0;}
+.game-summary-title .game-title-player {align-items:center;}
+.game-summary-title .game-title-player .player-emblem {align-self:center;margin-top:0;}
 .mini-board-card-header > div {min-width:0;}
 .game-title-matchup .player-tone-both {color:#7b53ab;}
 @media (forced-colors:active) {.game-date-inlay,.player-emblem {forced-color-adjust:none;}.game-date-orbit-highlight {stroke:Canvas;}.game-date-month,.game-date-day {fill:CanvasText;}.game-title-matchup .player-tone-both {color:CanvasText;}}
