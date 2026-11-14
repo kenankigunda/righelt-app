@@ -279,7 +279,7 @@ Clear (or leave as audit trail) when the ticket moves to Ready for acceptance.
 
 ## Validation evidence and PR shepherding
 
-Use the dedicated sibling `righelt-validation-tools/skills/validate-and-shepherd/SKILL.md` for local validation or integrated PR shepherding. It is pinned to a merged release; invoke its CLI with an explicit `--candidate /absolute/path`. Do not implicitly execute candidate-local tooling. When developing validation tooling itself, review and test the candidate changes in isolation, then release/install separately. See `skills/validate-and-shepherd/references/distribution.md`.
+Use the released validation checkout named by the rendered parent workspace `AGENTS.md` for local validation or integrated PR shepherding. It is pinned to a merged release. Invoke its CLI with an explicit `--candidate /absolute/path`, and never substitute candidate-local tooling. When developing validation tooling itself, review and test the candidate changes in isolation, then release and install them separately.
 
 Validate introduced behavior and affected contracts, reuse compatible exact-revision evidence, and finish with required combined proof. Curate screenshots while preserving raw artifacts. Independent review is bounded to the coherent diff and changed findings. Separate ready-for-review, merge-ready/authorized, and activation-ready/authorized states. Scheduling is opt-in; a paused automation stays paused. Parent workspace templates are applied only during the explicit released installation, not while this tooling branch is under review.
 

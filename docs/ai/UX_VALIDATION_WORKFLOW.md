@@ -89,7 +89,7 @@ Final validation should report:
 
 ## Validation evidence and PR shepherding
 
-Follow [AGENTS validation guidance](../../AGENTS.md#validation-evidence-and-pr-shepherding) and the installed, pinned sibling `righelt-validation-tools/skills/validate-and-shepherd/SKILL.md`. Use an explicit candidate and inspect the version 3 plan before execution. The released policy owns execution, evidence reuse, publication and readiness gates. Reuse compatible evidence and inspect selected changed originals once. Additional UX checks need a mapped acceptance question or concrete regression risk. Do not substitute candidate-local tooling or copy a conflicting workflow here. Publication is currently paused until explicitly resumed. Deliver local evidence while preserving merge and activation gates.
+Follow [AGENTS validation guidance](../../AGENTS.md#validation-evidence-and-pr-shepherding) and the released validation checkout named by the rendered parent workspace `AGENTS.md`. Use an explicit candidate and inspect the version 3 plan before execution. The released policy owns execution, evidence reuse, publication and readiness gates. Reuse compatible evidence and inspect selected changed originals once. Additional UX checks need a mapped acceptance question or concrete regression risk. Do not substitute candidate-local tooling or copy a conflicting workflow here. Publication is currently paused until explicitly resumed. Deliver local evidence while preserving merge and activation gates.
 
 
 ## Studies and implementation acceptance
