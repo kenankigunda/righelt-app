@@ -63,7 +63,13 @@ const OVERLAY_MODE = {
   RECORDED_ACTION: "recorded-action",
 };
 
-export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuidanceClient = createRushSupplyGuidanceClient() }) {
+export function createBoardRuntime({
+  boardAdapter,
+  host,
+  controls = {},
+  rushGuidanceClient = createRushSupplyGuidanceClient(),
+  motionPreference = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)") ?? null,
+}) {
   let elements = {
     boardEl: null,
     overlayLinesEl: null,
@@ -1140,6 +1146,23 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     renderBoard();
   };
 
+  const settleConfirmedRemovalEffects = ({ render = true } = {}) => {
+    const shouldRender = removalEffects.length > 0 || removalEffectsTimer !== null || removalEffectsOnComplete !== null;
+    removalEffects = [];
+    if (removalEffectsTimer !== null) {
+      clearTimeout(removalEffectsTimer);
+      removalEffectsTimer = null;
+    }
+    const completion = removalEffectsOnComplete;
+    removalEffectsOnComplete = null;
+    completion?.();
+    if (render && shouldRender && !destroyed) renderBoard();
+  };
+
+  const onRemovalMotionPreferenceChange = () => {
+    if (motionPreference?.matches) settleConfirmedRemovalEffects();
+  };
+
   const setPendingRemovalEffects = (effects, previousState = state) => {
     pendingRemovalEffects = (effects ?? []).filter(effect => !effect.eventId || !playedRemovalEvents.has(effect.eventId)).map(effect => ({...effect,pending:true,piece:effect.piece ?? previousState?.pieces?.find(piece => piece.id === effect.pieceId) ?? null}));
     renderBoard();
@@ -1158,6 +1181,12 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       ...effect, startedAt,
       piece: effect.piece ?? previousState?.pieces?.find((piece) => piece.id === effect.pieceId) ?? null,
     }));
+    if (motionPreference?.matches) {
+      settleConfirmedRemovalEffects({ render: false });
+      onComplete?.();
+      renderBoard();
+      return;
+    }
     removalEffects = [...removalEffects.filter((effect) => startedAt - effect.startedAt < REMOVAL_EFFECT_DURATION_MS), ...incoming];
     if (onComplete) removalEffectsOnComplete = onComplete;
     if (removalEffectsTimer) clearTimeout(removalEffectsTimer);
@@ -1179,13 +1208,13 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     }
     clearRemovalEffects();
     destroyedPieces = [];
+    pendingHistoryDestroyedPieces = nextDestroyedPieces;
     showRemovalEffects(buildHistoryRemovalEffects(nextDestroyedPieces), null, {
       onComplete: () => {
-        destroyedPieces = pendingHistoryDestroyedPieces;
+        destroyedPieces = nextDestroyedPieces;
         pendingHistoryDestroyedPieces = [];
       },
     });
-    pendingHistoryDestroyedPieces = nextDestroyedPieces;
   };
 
   const setResult = (value) => {
@@ -1813,12 +1842,17 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     if(action||legalTarget||event.type==='keydown'&&(event.key==='Enter'||event.key===' '))mutationActivation.begin(action??cell??event.target);
   };
   let previewLifecycleBound = false;
+  let removalMotionPreferenceBound = false;
   const bindPreviewLifecycle = () => {
     if (previewLifecycleBound) return;
     previewLifecycleBound = true;
     globalThis.document?.addEventListener?.('visibilitychange', onPreviewVisibility);
     globalThis.window?.addEventListener?.('pagehide', onPreviewPageHide);
     globalThis.window?.addEventListener?.('pageshow', onPreviewVisibility);
+    if (typeof motionPreference?.addEventListener === 'function') {
+      motionPreference.addEventListener('change', onRemovalMotionPreferenceChange);
+      removalMotionPreferenceBound = true;
+    }
   };
   let messageHeightController=null;
   const initialize = async () => {
@@ -1845,6 +1879,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     document.removeEventListener('visibilitychange', onPreviewVisibility);
     globalThis.window?.removeEventListener?.('pagehide', onPreviewPageHide);
     globalThis.window?.removeEventListener?.('pageshow', onPreviewVisibility);
+    if (removalMotionPreferenceBound) {
+      motionPreference.removeEventListener?.('change', onRemovalMotionPreferenceChange);
+      removalMotionPreferenceBound = false;
+    }
     document.removeEventListener("click", handleDocumentClick);
     document.removeEventListener("keydown", handleDocumentKeydown);
     document.removeEventListener("pointerdown",handleMutationPressStart,true);

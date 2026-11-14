@@ -129,6 +129,25 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
  }
 });
 
+test('enabling reduced motion settles an active removal and later History removals immediately',async({page,baseURL})=>{
+ await page.emulateMedia({reducedMotion:'no-preference'});
+ await importScenarioGame(page,{...scenario,id:'f90fdb4c-00dd-4d44-a87f-a708e31a8621'},baseURL);
+ await switchGamePanel(page,'board');
+ await submitPlayableAction(page,fixture.action);
+ const end=page.locator('[data-board-preview-action="end-turn"]');
+ await expect(end).toBeVisible();await end.click();
+ const liveEffects=page.locator('#shell-board .removal-piece');
+ await expect(liveEffects).toHaveCount(2);
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await expect(liveEffects).toHaveCount(0);
+ await expect(page.getByTestId('history-destruction-item')).toHaveCount(2);
+
+ await switchGamePanel(page,'history');
+ await page.getByTestId('history-move-item').first().click();
+ await expect(page.locator('#shell-board .removal-piece')).toHaveCount(0);
+ await expect(page.locator('#shell-board .history-destruction-piece')).toHaveCount(2);
+});
+
 const projectFixture=JSON.parse(fs.readFileSync(new URL('../../packages/game-engine/test/fixtures/destruction-project.json',import.meta.url)));
 test('screenshot project plays five supply-loss effects on both connected clients',async({createOwnedContext,baseURL},testInfo)=>{
  const owner=await createOwnedContext({viewport:{width:1440,height:1100}}),observer=await createOwnedContext({viewport:{width:1440,height:1100}});
