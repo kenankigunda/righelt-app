@@ -12,8 +12,11 @@ Use these rules for long, ordered delivery programs. They capture what improved 
 - Keep one minimal continuation checkpoint with exact heads, the current gate, next action, owned resources, and safety restrictions.
 - Run durability first. Add failing-before proof for real regressions, run the affected subsystem, then run exact-head `PR validation`. Reuse compatible evidence and rerun only invalidated boundaries.
 - Verify the deployed artifact. Record exact web, loaded-client, and API identities before production acceptance.
+- Exercise the deployed journey across its real boundaries. For retained data, verify that a record advertised by a summary or card also opens through the stricter detail path. Local fixtures and a healthy summary endpoint do not prove production compatibility.
 - Treat browser access as a prerequisite. Record the browser, profile or session, viewport and zoom, and task-owned tab IDs. Native Safari is separate from Playwright WebKit.
 - Diagnose network defects from exact evidence. Retain the loaded build, browser and topology, episode and socket generations, current owner and blocker, request result, and resolution. Reduce the defect to deterministic failing-before proof before changing recovery ownership.
+- Classify failures before retrying them. Transport, authority, authentication, configuration, and persisted-data failures need different handling. Retire long-lived recovery, socket, reminder, and polling owners when their route or session ends.
+- When final validation finds a defect, preserve the incident, create one owner for the immediate repair, and separately track a distinct root compatibility problem when needed. Recheck the invalidated journey after deployment, then continue the campaign instead of ending at the first repair.
 - Keep scheduling opt-in. If explicitly scheduled, a heartbeat only wakes the coordinator. The coordinator checks for real progress and acts only when there is a gap. A paused schedule stays paused.
 
 ## Don't
@@ -27,6 +30,8 @@ Use these rules for long, ordered delivery programs. They capture what improved 
 - Do not inject controlled faults into production or mutate pre-existing or restricted games. Production writes use only fresh, explicitly test-owned records and supported lifecycle actions.
 - Do not create duplicate owners, canonical PRs, workflow engines, or tasks for unselected study concepts.
 - Do not hide ownership defects with scenario-specific retries, longer timers, or broad test retries.
+- Do not treat an application or data-integrity response as a transient network failure. Do not keep retrying after the owning route, game, account, or session has retired.
+- Do not claim retained-data compatibility from card, catalog, or summary reads alone when the user journey depends on a stricter full read.
 - Do not renew protected observer hashes mechanically. Confirm that the observed contract and source boundary are still correct first.
 
 ## Real progress and blockers
