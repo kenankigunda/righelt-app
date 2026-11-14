@@ -36,6 +36,8 @@ Critical pressure lasting 60 continuous seconds releases disposable preview/idle
 
 At startup, before a new heavy phase, and at completion/handoff, inspect this task's resource records. Stop services the task no longer needs. At completion, failure or cancellation, clean up temporary runs and close task-created browser sessions, previews and panels through supported tools. Maintain the exact tab/session identifiers in the task notes. Close disposable task-owned previews when sustained pressure is reported. Preserve unrelated tabs and user-requested persistent previews.
 
+Before browser-dependent work, verify access to every required native browser and profile. Record the browser, profile or session, viewport and zoom, and task-owned tab IDs. Keep native Safari evidence separate from Playwright WebKit. If one browser is blocked, continue work that does not depend on it while resolving that browser access.
+
 If the available tools cannot close a panel or tab, report its identifier and the remaining manual cleanup. Never claim closure based only on shutting down its server. Do not quit/relaunch Codex or archive chats as a memory remedy. If pressure persists after owned cleanup, report the condition and defer additional heavy work.
 
 ## Release

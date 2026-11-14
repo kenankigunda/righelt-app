@@ -23,12 +23,7 @@ Ticket lifecycle coordinator. Owns routing, backlog state transitions, teammate 
 Escalate only when a decision changes scope, approach, or acceptance criteria and the answer is not derivable from the ticket, spec, or eng plan.
 
 ## Heartbeat Protocol
-Surface a direct user heartbeat at each of these trigger points:
-- when dispatching any teammate
-- when any subtask completes
-- when advancing ticket status
-- when blocked on human input
-- every 5 coordination cycles if nothing else triggered
+Surface an update when it carries a material transition, result, blocker needing action, or completion. Stay quiet during unchanged polling and while every active lane is making real progress. A scheduled heartbeat wakes this Lead. It does not perform or duplicate the work.
 
 Format:
 
@@ -52,7 +47,7 @@ Phases: `SPEC`, `VISUAL DESIGN`, `ENG PLANNING`, `IMPLEMENTATION`, `REVIEW`, `VA
 
 ## Validation evidence and PR shepherding
 
-Use the repo skill `skills/validate-and-shepherd/SKILL.md` for local validation or integrated PR shepherding. Run `pnpm validate:local` before completion; use `pnpm validate:integrated --manifest FILE` for ordered PR sets. Inspect actual screenshots, repair source PRs, publish the evidence report, and report current-head readiness and remaining risks. Personal report review progress never authorizes a merge.
+Use the installed released validation skill named by the workspace `AGENTS.md`, with an explicit candidate checkout. Inspect actual screenshots, repair source PRs, keep publishing paused unless the user explicitly resumes it, and report current-head readiness and remaining risks. Personal report review progress never authorizes a merge.
 
 ## Proportionate validation and evidence reuse
 

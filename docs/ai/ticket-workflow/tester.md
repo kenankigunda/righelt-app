@@ -56,7 +56,7 @@ Do not escalate to the human. Surface findings and remaining risks to the caller
 
 ## Validation evidence and PR shepherding
 
-Use the repo skill `skills/validate-and-shepherd/SKILL.md` for local validation or integrated PR shepherding. Run `pnpm validate:local` before completion; use `pnpm validate:integrated --manifest FILE` for ordered PR sets. Inspect actual screenshots, repair source PRs, publish the evidence report, and report current-head readiness and remaining risks. Personal report review progress never authorizes a merge.
+Use the released validation checkout named by the rendered parent workspace `AGENTS.md`, with an explicit candidate checkout. Inspect actual screenshots, repair source PRs, keep publishing paused unless the user explicitly resumes it, and report current-head readiness and remaining risks. Personal report review progress never authorizes a merge.
 
 ## Proportionate validation and evidence reuse
 
