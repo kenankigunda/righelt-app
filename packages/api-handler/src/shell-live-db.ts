@@ -479,6 +479,25 @@ const normalizeHistoryIndexByIdentity = (value: unknown, mismatches: PersistedGa
   );
 };
 
+const normalizeImportedHistory = (value: unknown, mismatches: PersistedGameMismatch[]): LiveGame["importedHistory"] => {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || value.version !== 1 || typeof value.complete !== "boolean"
+    || !Number.isSafeInteger(value.moveCount) || Number(value.moveCount) < 0 || !Array.isArray(value.sources)) {
+    recordMismatch(mismatches, "importedHistory", "imported history v1", value, "dropped_invalid_imported_history");
+    return undefined;
+  }
+  const sources = value.sources.flatMap((source, index) => {
+    if (!isRecord(source) || typeof source.gameId !== "string" || !source.gameId
+      || !Number.isSafeInteger(source.gameplayRevision) || Number(source.gameplayRevision) < 0
+      || !Number.isSafeInteger(source.moveCount) || Number(source.moveCount) < 0) {
+      recordMismatch(mismatches, `importedHistory.sources[${index}]`, "imported history source", source, "dropped_invalid_source");
+      return [];
+    }
+    return [{ gameId: source.gameId, gameplayRevision: Number(source.gameplayRevision), moveCount: Number(source.moveCount) }];
+  });
+  return { version: 1, complete: value.complete, moveCount: Number(value.moveCount), sources };
+};
+
 const normalizeMoves = (value: unknown, mismatches: PersistedGameMismatch[]): LiveGame["moves"] => {
   if (!Array.isArray(value)) {
     recordMismatch(mismatches, "moves", "move[]", value, "defaulted_to_empty_array");
@@ -505,6 +524,25 @@ const normalizeMoves = (value: unknown, mismatches: PersistedGameMismatch[]): Li
           "defaulted_to_empty_array",
         );
       }
+      const importedFrom = isRecord(move.importedFrom)
+        && typeof move.importedFrom.gameId === "string" && move.importedFrom.gameId.length > 0
+        && typeof move.importedFrom.decisionId === "string" && move.importedFrom.decisionId.length > 0
+        && Number.isSafeInteger(move.importedFrom.gameplayRevision) && Number(move.importedFrom.gameplayRevision) >= 0
+          ? {
+              gameId: move.importedFrom.gameId,
+              decisionId: move.importedFrom.decisionId,
+              gameplayRevision: Number(move.importedFrom.gameplayRevision),
+            }
+          : undefined;
+      if (move.importedFrom !== undefined && !importedFrom) {
+        recordMismatch(
+          mismatches,
+          `moves[${index}].importedFrom`,
+          "imported move origin",
+          move.importedFrom,
+          "dropped_invalid_imported_origin",
+        );
+      }
       const next = {
         ...(entry as LiveGame["moves"][number]),
         moveId: typeof move.moveId === "string" && move.moveId.length > 0 ? move.moveId : nextMoveId(),
@@ -514,6 +552,7 @@ const normalizeMoves = (value: unknown, mismatches: PersistedGameMismatch[]): Li
             ? move.displayMoveNumber
             : activeMoveCounter,
         destroyedPieces,
+        importedFrom,
       } satisfies LiveGame["moves"][number];
       if (typeof move.moveId !== "string" || move.moveId.length === 0) {
         recordMismatch(mismatches, `moves[${index}].moveId`, "non-empty string", move.moveId, "generated_move_id");
@@ -601,6 +640,7 @@ const normalizePersistedGame = (
       parsed.initialSelectionAction,
       "defaulted_to_null",
     ), null);
+  const importedHistory = normalizeImportedHistory(parsed.importedHistory, mismatches);
   if (Array.isArray(parsed.notifications) && notifications.length !== parsed.notifications.length) {
     recordMismatch(mismatches, "notifications", "string[]", parsed.notifications, "dropped_non_string_entries");
   }
@@ -632,6 +672,8 @@ const normalizePersistedGame = (
     pendingScenarioSelection: normalizeScenarioSavedSelection(parsed.pendingScenarioSelection, mismatches),
     notifications,
     initialSelectionAction,
+    ...(importedHistory ? { importedHistory } : {}),
+    ...(typeof parsed.historyBranchCreationKey === "string" && parsed.historyBranchCreationKey ? { historyBranchCreationKey: parsed.historyBranchCreationKey } : {}),
     inviteTokens: normalizeInviteTokens(parsed.inviteTokens, mismatches),
   };
 

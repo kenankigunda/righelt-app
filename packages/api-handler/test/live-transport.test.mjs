@@ -827,9 +827,10 @@ test("live transport: history branch derives its position and next selection fro
   const secondMoveBody = await secondMove.json();
   const secondMoveEntry = secondMoveBody.game.moves[1];
 
-  const branch = await handleApiRequest(
-    req("/api/shell/history/branch", "POST", {
+  const branchGameId = "game-imported-history-branch";
+  const branchPayload = {
       identityId: "id-viewer",
+      gameId: branchGameId,
       sourceGameId: gameId,
       sourceDecisionId: secondMoveEntry.moveId,
       creatorSide: "p2",
@@ -855,19 +856,112 @@ test("live transport: history branch derives its position and next selection fro
       },
       initialSelectionAction: secondMoveEntry.action,
       participantCopyMode: "viewer_as_side_to_move",
-    }),
+    };
+  const branch = await handleApiRequest(
+    req("/api/shell/history/branch", "POST", branchPayload),
     env,
   );
   const branchBody = await branch.json();
-  assert.equal(branch.status, 200);
+  assert.equal(branch.status, 200, JSON.stringify(branchBody));
   assert.equal(branchBody.game.player1, null);
   assert.equal(branchBody.game.player2.identityId, "id-viewer");
   assert.deepEqual(branchBody.game.viewers, []);
   assert.equal(branchBody.game.inHistoryMode, false);
   assert.deepEqual(branchBody.game.initialSelectionAction, secondMoveEntry.action);
   assert.deepEqual(branchBody.game.currentSnapshot, secondMoveEntry.selectionSnapshot);
-  assert.equal(branchBody.game.moves.length, 0);
+  assert.equal(branchBody.game.moves.length, 1);
+  assert.equal(branchBody.game.moves[0].displayMoveNumber, moveEntry.displayMoveNumber);
+  assert.deepEqual(branchBody.game.moves[0].importedFrom, {
+    gameId,
+    decisionId: moveEntry.moveId,
+    gameplayRevision: secondMoveBody.game.gameplayRevision,
+  });
+  assert.deepEqual(branchBody.game.importedHistory, {
+    version: 1,
+    complete: true,
+    moveCount: 1,
+    sources: [{ gameId, gameplayRevision: secondMoveBody.game.gameplayRevision, moveCount: 1 }],
+  });
+  assert.equal(branchBody.game.canUndoLastMove, false);
   assert.equal(branchBody.game.selfPlayMode, false);
+
+  const retry = await handleApiRequest(req("/api/shell/history/branch", "POST", branchPayload), env);
+  assert.equal(retry.status, 200);
+  const retryBody = await retry.json();
+  assert.equal(retryBody.game.id, branchGameId);
+  assert.deepEqual(retryBody.game.importedHistory, branchBody.game.importedHistory);
+
+  const conflictingRetry = await handleApiRequest(req("/api/shell/history/branch", "POST", {
+    ...branchPayload,
+    sourceDecisionId: moveEntry.moveId,
+  }), env);
+  assert.equal(conflictingRetry.status, 409);
+  assert.deepEqual(await conflictingRetry.json(), { ok: false, error: "game_already_exists" });
+
+  const importedUndo = await handleApiRequest(
+    req(`/api/shell/games/${branchGameId}/revert-request`, "POST", {
+      identityId: "id-viewer",
+      targetMoveId: branchBody.game.moves[0].moveId,
+    }),
+    env,
+  );
+  assert.equal(importedUndo.status, 409);
+  assert.deepEqual(await importedUndo.json(), { ok: false, error: "imported_move_read_only" });
+
+  await handleApiRequest(
+    req(`/api/shell/games/${branchGameId}/play-as-both`, "POST", { identityId: "id-viewer" }),
+    env,
+  );
+  const firstDescendantMove = await handleApiRequest(
+    req(`/api/shell/games/${branchGameId}/moves`, "POST", { identityId: "id-viewer" }),
+    env,
+  );
+  const firstDescendantBody = await firstDescendantMove.json();
+  const secondDescendantMove = await handleApiRequest(
+    req(`/api/shell/games/${branchGameId}/moves`, "POST", { identityId: "id-viewer" }),
+    env,
+  );
+  const secondDescendantBody = await secondDescendantMove.json();
+  const descendantBranch = await handleApiRequest(
+    req("/api/shell/history/branch", "POST", {
+      identityId: "id-viewer",
+      gameId: "game-imported-history-descendant",
+      sourceGameId: branchGameId,
+      sourceDecisionId: secondDescendantBody.game.moves.at(-1).moveId,
+      creatorSide: "p1",
+    }),
+    env,
+  );
+  const descendantBody = await descendantBranch.json();
+  assert.equal(descendantBranch.status, 200, JSON.stringify(descendantBody));
+  assert.deepEqual(
+    descendantBody.game.moves.map((entry) => [entry.displayMoveNumber, entry.importedFrom.gameId, entry.importedFrom.decisionId]),
+    [
+      [moveEntry.displayMoveNumber, gameId, moveEntry.moveId],
+      [firstDescendantBody.game.moves.at(-1).displayMoveNumber, branchGameId, firstDescendantBody.game.moves.at(-1).moveId],
+    ],
+  );
+  assert.equal(new Set(descendantBody.game.moves.map((entry) => `${entry.importedFrom.gameId}:${entry.importedFrom.decisionId}`)).size, 2);
+  assert.deepEqual(descendantBody.game.importedHistory.sources, [
+    { gameId, gameplayRevision: secondMoveBody.game.gameplayRevision, moveCount: 1 },
+    { gameId: branchGameId, gameplayRevision: secondDescendantBody.game.gameplayRevision, moveCount: 1 },
+  ]);
+
+  const rebranchImported = await handleApiRequest(
+    req("/api/shell/history/branch", "POST", {
+      identityId: "id-viewer",
+      gameId: "game-imported-history-rebranch",
+      sourceGameId: "game-imported-history-descendant",
+      sourceDecisionId: descendantBody.game.moves[1].moveId,
+      creatorSide: "p1",
+    }),
+    env,
+  );
+  const rebranchBody = await rebranchImported.json();
+  assert.equal(rebranchImported.status, 200, JSON.stringify(rebranchBody));
+  assert.equal(rebranchBody.game.moves.length, 1);
+  assert.deepEqual(rebranchBody.game.moves[0].importedFrom, descendantBody.game.moves[0].importedFrom);
+  assert.equal(rebranchBody.game.importedHistory.moveCount, 1);
 });
 
 test("live transport: scenario import rejects non-UUID scenario ids", async () => {

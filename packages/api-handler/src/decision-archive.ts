@@ -1,6 +1,6 @@
 import { COMPUTER_LIMITS } from '../../shared-types/src/computer-play';
 import { canonicalCommandJson, encodedSyncBytes } from '../../shared-types/src/sync-protocol';
-import type { LiveGame, MoveEntry } from './shell-live-core';
+import { clone, type LiveGame, type MoveEntry, type PreparedImportedHistory } from './shell-live-core';
 import type { LiveGameEnv, D1Statement } from './shell-live-db';
 
 export type ArchivedDecision = { id: string; kind: 'decision' | 'restoration' | 'turn' | 'initial' | 'finalization'; revision: number; eventSeq: number; ordinal: number; at: string; move?: MoveEntry; finalizedMove?: MoveEntry; restoredIds?: string[]; targetDecisionId?: string; requesterIdentityId?: string; restorationVersion?: 1; state?: LiveGame['board']['state']; partial?: boolean };
@@ -134,6 +134,52 @@ export async function readAdditionalDecisionPage(env: LiveGameEnv, game: LiveGam
   });
   const items=entries.slice(0,COMPUTER_LIMITS.historyPage),last=items.at(-1);
   return {available:entries.length>0,items,nextCursor:entries.length>items.length&&last?{eventSeq:last.eventSeq,ordinal:last.ordinal}:null};
+}
+
+export async function prepareImportedHistory(
+  env: LiveGameEnv,
+  game: LiveGame,
+  selectedMove: MoveEntry | null,
+): Promise<PreparedImportedHistory> {
+  const archived: Array<{ move: MoveEntry; historyStatus?: string }> = [];
+  let cursor: unknown = null;
+  for (let page = 0; page < 100; page += 1) {
+    const result = await readAdditionalDecisionPage(env, game, cursor, false);
+    archived.push(...result.items.flatMap(entry => entry.kind === 'decision' && entry.move?.moveId
+      ? [{ move: entry.move, historyStatus: (entry as {historyStatus?:string}).historyStatus }]
+      : []));
+    cursor = result.nextCursor;
+    if (!cursor) break;
+    if (page === 99) throw new Error('branch_history_too_large');
+  }
+  const uncertain = archived.some(entry => entry.historyStatus === 'unknown');
+  const candidates = [
+    ...archived.filter(entry => entry.historyStatus === 'active').map(entry => entry.move),
+    ...game.moves.filter(move => !move.undone),
+  ].sort((left, right) => left.displayMoveNumber - right.displayMoveNumber || left.turnIndex - right.turnIndex || left.turnMoveIndex - right.turnMoveIndex);
+  const deduped: MoveEntry[] = [];
+  const seen = new Set<string>();
+  for (const move of candidates) {
+    const origin = move.importedFrom ?? { gameId: game.id, decisionId: move.moveId, gameplayRevision: game.gameplayRevision };
+    const key = `${origin.gameId}\u0000${origin.decisionId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push({ ...clone(move), importedFrom: clone(origin), undone: false, undoneAt: null, undoneByIdentityId: null, undoEventSeq: undefined });
+  }
+  const selectedOrigin = selectedMove?.importedFrom;
+  const selectedIndex = selectedMove ? deduped.findIndex(move => move.moveId === selectedMove.moveId
+    || Boolean(selectedOrigin && move.importedFrom?.gameId === selectedOrigin.gameId && move.importedFrom?.decisionId === selectedOrigin.decisionId)) : deduped.length;
+  if (selectedMove && selectedIndex < 0) throw new Error('branch_source_changed');
+  const moves = deduped.slice(0, selectedIndex).map((move, index) => ({ ...move, index }));
+  const sources: PreparedImportedHistory['sources'] = [];
+  for (const move of moves) {
+    const origin = move.importedFrom!;
+    const source = sources.find(entry => entry.gameId === origin.gameId && entry.gameplayRevision === origin.gameplayRevision);
+    if (source) source.moveCount += 1;
+    else sources.push({ gameId: origin.gameId, gameplayRevision: origin.gameplayRevision, moveCount: 1 });
+  }
+  const startsAtFirstMove = moves.length === 0 || moves[0].displayMoveNumber === 1;
+  return { version: 1, complete: !uncertain && startsAtFirstMove, moveCount: moves.length, sources, moves };
 }
 export async function readDecisionNotes(env: LiveGameEnv, gameId: string, accountId: string) {
   const rows = await env.DB.prepare('SELECT decision_id, note_json FROM live_decision_notes WHERE game_id = ?1 AND account_id = ?2').bind(gameId, accountId).all<{ decision_id: string; note_json: string }>();

@@ -1,7 +1,7 @@
 import { requiresUndoApproval } from '../../shared-types/src/undo-policy';
 import { EngineComputationLimit, boundedEngineOperation } from "../../game-engine/src/computation-guard";
 import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, canonicalCommandJson } from '../../shared-types/src/sync-protocol';
-import { stampAcceptedRestoration, type AcceptedRestoration, archiveStatements, readDecision, readDecisionPage, readAdditionalDecisionPage, parseHistoryCursor, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
+import { stampAcceptedRestoration, type AcceptedRestoration, archiveStatements, readDecision, readDecisionPage, readAdditionalDecisionPage, parseHistoryCursor, prepareImportedHistory, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
 import { StorageWriteLimitError } from './storage-codec';
 import { COMPUTER_CAPABILITIES, COMPUTER_LIMITS, changeComputerControl, computerCommandError, computerModelForCreation, createComputerControl, parseComputerSeats, type ComputerProof } from '../../shared-types/src/computer-play';
 import { STORAGE_POLICY, STORAGE_GENERATION_HEADER } from "../../shared-types/src/storage-policy";
@@ -34,6 +34,7 @@ import {
   addNotification,
   assignIdentityToScenarioSeat,
   applyScenarioToGame,
+  applyImportedHistoryToGame,
   applyServerActionWithExpectedState,
   applyServerMove,
   applyRevertToMove,
@@ -41,6 +42,7 @@ import {
   asGameState,
   asIdentity,
   asScenarioRecord,
+  asPreparedImportedHistory,
   applyLaunchParticipantCopyMode,
   clone,
   createInitialGame,
@@ -447,7 +449,9 @@ export class GameRoomDO {
       const scenario = asScenarioRecord(body.scenario);
       const hasInitialSelectionAction = typeof body.initialSelectionAction !== "undefined" && body.initialSelectionAction !== null;
       const initialSelectionAction = typeof body.initialSelectionAction === "undefined" ? null : asAction(body.initialSelectionAction);
-      if (!identityId || !gameId || !scenario || (hasInitialSelectionAction && !initialSelectionAction)) {
+      const importedHistory = body.importedHistory === undefined ? null : asPreparedImportedHistory(body.importedHistory);
+      if (!identityId || !gameId || !scenario || (hasInitialSelectionAction && !initialSelectionAction)
+        || (body.importedHistory !== undefined && !importedHistory)) {
         return json({ ok: false, error: "invalid_scenario_payload" }, 400);
       }
       const candidate = createInitialGame({
@@ -465,6 +469,7 @@ export class GameRoomDO {
       ) {
         reconcileGameToScenarioResultingState(candidate, scenario);
       }
+      if (importedHistory) applyImportedHistoryToGame(candidate, importedHistory);
       const creatorSeat = body.creatorSide === "p1" ? "Player 1" : body.creatorSide === "p2" ? "Player 2" : getSeatForSide(candidate.board.state.sideToMove);
       assignIdentityToScenarioSeat(candidate, identityId, creatorSeat);
       if (body.computer !== undefined) {
@@ -482,6 +487,7 @@ export class GameRoomDO {
         candidate.player1 = clone(owner); candidate.player2 = clone(owner);
       }
       candidate.initialSelectionAction = initialSelectionAction ? clone(initialSelectionAction) : null;
+      if (typeof body.historyBranchCreationKey === "string" && body.historyBranchCreationKey) candidate.historyBranchCreationKey = body.historyBranchCreationKey;
       if (authActive(this.env)) candidate.ownershipMode = "account_v1";
       await this.persistCandidate(candidate, null);
       return json({ ok: true, game: withViewModel(candidate, identityId), eventSeq: this.eventSeq });
@@ -532,7 +538,7 @@ export class GameRoomDO {
       const decisionId = asIdentity(body.sourceDecisionId);
       const index = typeof body.sourceMoveIndex === "number" && Number.isInteger(body.sourceMoveIndex) ? body.sourceMoveIndex : null;
       const archived = decisionId ? await readDecision(this.env, game.id, decisionId) : null;
-      const selected = archived?.move ?? (decisionId ? game.moves.find(move => move.moveId === decisionId) : index !== null ? game.moves[index] : null);
+      const selected = archived?.move ?? (decisionId ? game.moves.find(move => move.moveId === decisionId) : index !== null ? game.moves[index] : null) ?? null;
       const live = body.sourceGameplayRevision === game.gameplayRevision && !decisionId && index === null;
       if (!selected && !archived?.state && !live) return json({ok:false,error:"branch_source_changed"},409);
       const state = clone(selected?.selectionSnapshot ?? archived?.state ?? game.board.state);
@@ -541,7 +547,14 @@ export class GameRoomDO {
         initialState:state,resultingState:state,moves:[],savedSelection:null,
         expectedFinalStateHash:deterministicStateHash(resolveToStability(state,{artifactMode:"full"})),expectedOutcome:state.outcome.status,
       };
-      return json({ok:true,scenario,initialSelectionAction:selected?.action ?? null});
+      try {
+        const importedHistory = await prepareImportedHistory(this.env, game, selected);
+        return json({ok:true,scenario,initialSelectionAction:selected?.action ?? null,importedHistory});
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "branch_history_unavailable";
+        if (code === "branch_history_too_large") return json({ok:false,error:code},413);
+        return json({ok:false,error:code},409);
+      }
     }
 
     if (request.method === 'POST' && path === '/decision-snapshot') {
@@ -765,6 +778,10 @@ export class GameRoomDO {
       if (targetMove.undone === true) {
         this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, targetMoveId, error: "move_already_undone" });
         return json({ ok: false, error: "move_already_undone" }, 409);
+      }
+      if (targetMove.importedFrom) {
+        this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, targetMoveId, error: "imported_move_read_only" });
+        return json({ ok: false, error: "imported_move_read_only" }, 409);
       }
       const requesterSeat = role;
       const approverIdentityId = getApproverIdentityForSeat(game, requesterSeat);

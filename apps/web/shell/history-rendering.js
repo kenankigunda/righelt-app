@@ -9,7 +9,7 @@ const renderHistoryPreview = (game, preview, key) => {
   ? `<div class="history-inline-preview" data-testid="history-inline-preview"><p class="history-inline-narration">${renderBoardMessageHtml(selectedHistoryPresentation(game,{identityId:transport.getIdentityId()})?.message??{text:'Historical details unavailable'})}</p>${preview.snapshot ? renderMiniBoardPreviewRoot({previewId:key,...preview,previewKey:toStableKey(preview)}) : '<p role="status">Preview unavailable</p>'}</div>` : "";
 };
 const renderTurnHistory = (game) => {
-  const {renderIncomingHistory, getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, undoHistory, expandedUndoneGroups, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView} = getDependencies();
+  const {renderIncomingHistory, getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, undoHistory, expandedUndoneGroups, expandedImportedHistory, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView} = getDependencies();
   const archiveState=additionalHistory?.snapshot?.(game.id);
   const timeline=buildHistoryTimeline(game.id,[...(game.moves??[]),...(game.pendingMoves??[])],game.historyUndoArchiveEntries??[],game.lastRestoration,{
     archiveComplete:Boolean(archiveState?.loaded&&!archiveState.cursor),
@@ -36,13 +36,13 @@ const renderTurnHistory = (game) => {
     const liveSelected = !game.inHistoryMode && move === moves.at(-1) && !game.currentSnapshot?.continuation && game.currentTurn?.moveIndexes?.length;
     const actor = historyActorLabel(game,move,{identityId:transport.getIdentityId()});
     // Unifying the display does not grant actions that archive rows did not own.
-    const actionable=selected&&!archiveEntry&&!move.undone;
+    const actionable=selected&&!move.undone&&(!archiveEntry||Boolean(move.importedFrom));
     const number=recordedMoveNumber(move),moveLabel=number==null?'Move unavailable':`Move ${number}:`;
     const availability=archiveEntry?.historyStatus==='unknown'?' · Status unavailable':'';
-    const revertButton = actionable && game.myRoles?.some(role=>role==='Player 1'||role==='Player 2')
+    const revertButton = actionable && !move.importedFrom && game.myRoles?.some(role=>role==='Player 1'||role==='Player 2')
       ? `<button class="secondary mini-button history-branch-button" data-action="revert-to-move" data-game-id="${escapeHtml(game.id)}" data-move-id="${escapeHtml(move.moveId || '')}">${icon('back')}Undo before this move</button>` : '';
     const branchButton = actionable
-      ? `<button class="secondary mini-button history-branch-button" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}">${icon('play')}New game before this move</button>` : '';
+      ? `<button class="secondary mini-button history-branch-button" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}"${archiveEntry?` data-decision-id="${escapeHtml(archiveEntry.id)}"`:''}>${icon('play')}New game before this move</button>` : '';
     const actions = revertButton || branchButton ? `<div class="history-item-actions">${revertButton}${branchButton}</div>` : '';
     const destroyedPieces = Array.isArray(move.destroyedPieces) ? move.destroyedPieces : [];
     const destroyed = destroyedPieces.map((record)=>`<li class="history-destruction-item ${playerToneClassForSide(record.ownerSeat === "p1" ? "P1" : record.ownerSeat === "p2" ? "P2" : "neutral")}" data-testid="history-destruction-item"><span class="history-destruction-label">DESTROYED (${record.position.row},${record.position.col})</span></li>`).join('');
@@ -69,14 +69,30 @@ const renderTurnHistory = (game) => {
   };
   const undoGroups=timeline.groups;
   undoHistory.observeUndoHistoryDisclosure(expandedUndoneGroups,game,undoGroups,transport);
-  const portions=new Set();
-  const groups=timeline.nodes.map(node=>{
+  const splitNodes=imported=>timeline.nodes.flatMap(node=>{
+    if(node.type!=='retained')return imported?[]:[node];
+    const records=node.records.filter(record=>Boolean(record.move.importedFrom)===imported);
+    return records.length?[{...node,records}]:[];
+  });
+  const renderNodes=(nodes,prefix='history-turn')=>{
+    const portions=new Set();
+    return nodes.map(node=>{
     if(node.type==='gap')return `<li class="small history-order-gap" role="status" data-key="${escapeHtml(node.key)}">${node.unknown?'Original move order unavailable for some loaded records.':'Earlier pages are not loaded between these moves.'}</li>`;
     if(node.type==='undone')return undoHistory.renderUndoHistoryGroups(game.id,[node],row,expandedUndoneGroups,escapeHtml);
     const canonical=!portions.has(node.turnIndex);portions.add(node.turnIndex);
-    const key=canonical?`history-turn:${game.id}:${node.turnIndex}`:`history-turn:${game.id}:${node.turnIndex}:portion:${node.records[0].id}`;
+    const key=canonical?`${prefix}:${game.id}:${node.turnIndex}`:`${prefix}:${game.id}:${node.turnIndex}:portion:${node.records[0].id}`;
     return renderTurn(turns.get(node.turnIndex)??{index:node.turnIndex},node.records,key);
-  }).join('');
+    }).join('');
+  };
+  const groups=renderNodes(splitNodes(false));
+  const importedNodes=splitNodes(true);
+  const importedCount=Number.isSafeInteger(game.importedHistory?.moveCount)?game.importedHistory.moveCount:timeline.records.filter(record=>record.move.importedFrom).length;
+  const selectedImported=Boolean(game.inHistoryMode&&(game.inspectedDecision?.importedFrom
+    || timeline.records.some(record=>record.move.importedFrom&&(game.inspectedDecision?.moveId===record.move.moveId||game.historyIndex===record.move.index))));
+  const importedExpanded=Boolean(expandedImportedHistory?.has(game.id)||selectedImported);
+  const importedSources=(game.importedHistory?.sources??[]).map(source=>`<a class="history-imported-source" href="#/game/${encodeURIComponent(source.gameId)}">View source game · ${source.moveCount} ${source.moveCount===1?'move':'moves'}</a>`).join('');
+  const importedStatus=game.importedHistory?.complete===false?'<span class="small history-imported-status">Imported history is incomplete.</span>':'';
+  const imported=importedCount>0?`<li class="history-item history-item-imported-group${importedExpanded?' is-expanded':''}" data-testid="history-imported-group"><button type="button" class="history-imported-toggle secondary" data-action="toggle-imported-history" data-game-id="${escapeHtml(game.id)}" aria-expanded="${importedExpanded}">Imported from previous game · ${importedCount} ${importedCount===1?'move':'moves'}</button>${importedStatus}${importedExpanded?`<div class="history-imported-content">${importedSources}<ol class="history-list history-list-imported">${renderNodes(importedNodes,'imported-history-turn')}</ol></div>`:''}</li>`:'';
   const emptyTurns=[...turns.values()].filter(turn=>(!timeline.records.some(record=>record.move.turnIndex===turn.index)
     || game.historyTurnIndex===turn.index&&!timeline.nodes.some(node=>node.type==='retained'&&node.turnIndex===turn.index))
     && (turn.index!==game.currentTurn?.index||Boolean(turn.endedAt)||Boolean(turn.moveIndexes?.length)));
@@ -92,7 +108,7 @@ const renderTurnHistory = (game) => {
   const replayFallback=!game.inHistoryMode&&acknowledged?.gameId===game.id&&acknowledged.replay&&boardContexts.isDismissed(acknowledged.key)&&canReplayDisplayed(acknowledged.replay)
     ?`<li class="history-live-replay" data-key="live-replay:${escapeHtml(acknowledged.key)}"><button type="button" class="secondary" data-action="replay-board-context" data-board-context-key="${escapeHtml(acknowledged.key)}"${contextReplayEnabled(acknowledged.replay)?'':' disabled'}>Show me again</button></li>`:'';
   const incoming=getShellLayoutMode()==='wide'?renderIncomingHistory?.(game)??'':'';
-  return live + (incoming?`<li class="history-incoming-container">${incoming}</li>`:'') + waiting + replayFallback + leadingEmpty + groups + trailingEmpty;
+  return live + (incoming?`<li class="history-incoming-container">${incoming}</li>`:'') + waiting + replayFallback + leadingEmpty + groups + trailingEmpty + imported;
 };
 
 const renderAdditionalHistory = game => {

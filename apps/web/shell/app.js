@@ -426,6 +426,7 @@ const inviteChoiceCommittedByGameId = new Set();
 const ignoredApprovalRequests = new Set();
 const ignoredRevertRequests = new Set();
 const expandedUndoneGroups = new Set();
+const expandedImportedHistory = new Set();
 const pendingButtonKeys = new Set();
 const pendingHomeSectionKeys = new Set();
 let lastRenderedMarkup = "";
@@ -1607,7 +1608,7 @@ const cycleGameAlertStack = (gameId, actionEl = null) => {
 
 const renderGameAlertStackCard = options => renderAlertStackCard(options,escapeHtml);
 
-const historyRendering = createHistoryRendering(() => ({renderIncomingHistory:game=>renderIncomingNarrationHost(game,'wide'), getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, undoHistory, expandedUndoneGroups, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView}));
+const historyRendering = createHistoryRendering(() => ({renderIncomingHistory:game=>renderIncomingNarrationHost(game,'wide'), getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, undoHistory, expandedUndoneGroups, expandedImportedHistory, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView}));
 const renderHistoryPreview = (game, preview, key) => historyRendering.renderHistoryPreview(game, preview, key);
 const renderTurnHistory = game => historyRendering.renderTurnHistory(game);
 const renderHeader = () => `
@@ -5074,6 +5075,15 @@ appEl.addEventListener("click", async (event) => {
     const groupKey = actionEl.getAttribute("data-group-key");
     if (!groupKey) return;
     undoHistory.toggleUndoHistoryGroup(expandedUndoneGroups,groupKey,transport);
+    render({ animatePanels: false, includeBoard: false });
+    return;
+  }
+
+  if (action === "toggle-imported-history") {
+    const gameId = actionEl.getAttribute("data-game-id");
+    if (!gameId) return;
+    if (expandedImportedHistory.has(gameId)) expandedImportedHistory.delete(gameId);
+    else expandedImportedHistory.add(gameId);
     render({ animatePanels: false, includeBoard: false });
     return;
   }

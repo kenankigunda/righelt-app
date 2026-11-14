@@ -14,10 +14,10 @@ const escape=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;')
 const context={undoHistory,selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,boardContexts:createBoardContextStore(),boardContextScope:()=>'fixture',isCompletedGame,buildMovePreview,buildTurnPreview,escapeHtml:escape,getShellLayoutMode:()=> 'narrow',toStableKey:JSON.stringify,
  renderMiniBoardPreviewRoot:({overlay})=>`<div data-preview-mode="${overlay.mode}"></div>`,playerToneClassForSide:side=>`player-tone-${side}`,playerToneClassForSeat:()=>'',
  historyActorLabel:(_game,move)=>move.actorSide==='P2'?'Defender':'Attacker',historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:(_game,side)=>side==='Player 2'||side==='P2'?'Defender':'Attacker',
- transport:{getIdentityId:()=> 'me'},icon:()=>'',formatClientDateTime:String,expandedUndoneGroups:new Set(),liveHistoryLabel:()=> 'Waiting'};
+ transport:{getIdentityId:()=> 'me'},icon:()=>'',formatClientDateTime:String,expandedUndoneGroups:new Set(),expandedImportedHistory:new Set(),liveHistoryLabel:()=> 'Waiting'};
 const renderer=createHistoryRendering(()=>context);
 context.render=renderer.renderTurnHistory;
-test.beforeEach(()=>{context.expandedUndoneGroups=new Set();context.archiveState=undefined;});
+test.beforeEach(()=>{context.expandedUndoneGroups=new Set();context.expandedImportedHistory=new Set();context.archiveState=undefined;});
 const moves=[{index:0,turnIndex:0,turnMoveIndex:0,moveId:'a',actorSide:'P1',notation:'Push',snapshot:{pieces:[]}},
  {index:1,turnIndex:0,turnMoveIndex:1,moveId:'b',actorSide:'P2',notation:'Retreat',snapshot:{pieces:[]}},
  {index:2,turnIndex:1,turnMoveIndex:0,moveId:'c',actorSide:'P2',notation:'Move',snapshot:{pieces:[]}}];
@@ -38,6 +38,22 @@ test('selected move is inert while individual actions remain buttons and preview
  assert.doesNotMatch(selected,/data-action|role="button"|tabindex/);
  assert.match(html,/data-action="revert-to-move"/);assert.match(html,/data-action="launch-history-branch"/);
  assert.match(html,/data-preview-mode="recorded-action"/);
+});
+test('imported lineage is collapsed, source-linked, and branchable but never undoable',()=>{
+ const imported=moves.slice(0,2).map((move,index)=>({...move,importedFrom:{gameId:'source-game',decisionId:move.moveId,gameplayRevision:7},displayMoveNumber:index+1}));
+ const branched={...game,moves:[...imported,{...moves[2],index:2,displayMoveNumber:3}],importedHistory:{version:1,complete:true,moveCount:2,sources:[{gameId:'source-game',gameplayRevision:7,moveCount:2}]}};
+ const collapsed=context.render(branched);
+ assert.match(collapsed,/Imported from previous game · 2 moves/);
+ assert.match(collapsed,/aria-expanded="false"/);
+ assert.doesNotMatch(collapsed,/View source game/);
+ assert.doesNotMatch(collapsed,/>Move 1: Push/);
+ context.expandedImportedHistory.add(game.id);
+ const expanded=context.render(branched);
+ assert.match(expanded,/href="#\/game\/source-game"/);
+ assert.match(expanded,/>Move 1: Push/);
+ const selected=context.render({...branched,inHistoryMode:true,historyIndex:0,inspectedDecision:imported[0]});
+ assert.match(selected,/data-action="launch-history-branch"/);
+ assert.doesNotMatch(selected,/data-action="revert-to-move"/);
 });
 test('selected turn is inert, has aggregate preview and exposes no undo or branch actions',()=>{
  const html=context.render({...game,inHistoryMode:true,historyTurnIndex:0,historyTurnMoves:moves.slice(0,2)});
