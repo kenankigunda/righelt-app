@@ -1,4 +1,6 @@
 import {createInlineActionAvailability} from '../inline-action-availability.js';
+import {normalizeMutationSurface} from '../surface-pulse.js';
+import {createMutationActivationFence} from '../mutation-activation.js';
 import {getPushRetreatPrompt as renderPushRetreatPrompt,requiredRushContext as buildRequiredRushContext,opponentInspectionPrompt,buildHistoryRemovalEffects} from '../guidance-presentation.js';
 import {createMessageHeightController} from '../message-height.js';
 import {BOARD_PROMPT,isMappedBoardPromptHtml} from '../prompt-models.js';
@@ -94,6 +96,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   let legalActionsRequestId = 0;
   let submitting = false;
   let destroyed = false;
+  let lastRenderedMutationSurfaceKey = null;
+  const mutationActivation=createMutationActivationFence();
   let legalActions = [];
   const guidanceDiagnostics=createGuidanceDiagnostics(controls.onGuidanceDiagnostic);
   let rushGuidanceKey = null;
@@ -563,6 +567,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     syncRushGuidance();
     const effectiveMoves = getEffectiveSelectedPieceMovesForBoard();
     const canInteract = host.canInteract?.(state) !== false;
+    const mutationSurface = getMutationSurface();
     const interactiveOverlay = getOverlay();
     const displayOverlay = overlayMode === OVERLAY_MODE.INTERACTIVE
       ? controls.getDisplayOverlay?.({state,selectedPieceId,inspection:interactiveOverlay.inspection}) : null;
@@ -578,8 +583,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       allowFreeSelection: getAllowFreeSelection(),
       currentActionType: getActionType(),
       selectedPieceOverlayPhase: host.canPresentActions?.(state) === false ? "supplyCommand" : selectedPieceOverlayPhase,
+      mutationSurface,
     });
     lastRenderedCanInteract = canInteract;
+    lastRenderedMutationSurfaceKey = mutationSurfaceKey(mutationSurface);
     controls.onVisualsUpdated?.({
       command: Boolean(elements.overlayLinesEl?.querySelector('[data-legend-kind="command"]')),
       supply: Boolean(elements.overlayLinesEl?.querySelector('[data-legend-kind="supply"]')),
@@ -591,8 +598,17 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   };
 
   const inlineActionAvailability=createInlineActionAvailability();
-  const syncInlineActionAvailability=()=>inlineActionAvailability.sync(elements.boardPreviewLabelEl,
-    submitting||interactionBlocked||host.canInteract?.(state)===false);
+  const getMutationSurface=()=>{
+    const unavailable=submitting||interactionBlocked||host.canInteract?.(state)===false;
+    mutationActivation.update(unavailable);
+    return normalizeMutationSurface(host.getMutationSurface?.(state),unavailable);
+  };
+  const mutationSurfaceKey=value=>JSON.stringify({
+    unavailable:value.unavailable,
+    pulsing:value.pulsing,
+    episodeId:value.episodeId,
+  });
+  const syncInlineActionAvailability=()=>inlineActionAvailability.sync(elements.boardPreviewLabelEl,getMutationSurface());
   const setSubmitting = value => {
     submitting = value;
     syncInlineActionAvailability();
@@ -1278,7 +1294,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     return true;
   };
 
-  const handleBoardCellClick = (clickedCoord) => {
+  const handleBoardCellClick = (clickedCoord, activation = {}) => {
     if (interactionBlocked) return;
     contextIntentVersion+=1;
     if (overlayMode === OVERLAY_MODE.RECORDED_ACTION && state) {
@@ -1305,6 +1321,10 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     if (clickedPiece?.id === selectedPieceId) lastPhaseInitializedForPieceId = selectedPieceId;
     const ownerAtPoint = supplyOwnerAt(clickedCoord);
     const legalTarget = [...selectedPieceMoves, ...selectedPieceMovePreviews.filter(action => action.legal !== false)].some(action => sameCoordinate(action.to, clickedCoord));
+    if (selectedSource && legalTarget) {
+      getMutationSurface();
+      if (!mutationActivation.allow(activation.trigger)) return;
+    }
     // A transient shared-command fence hides actionable previews, but a click
     // on the prepared destination must not become a blank-square deselection.
     // Authority is checked again on a later explicit confirmation; never queue it.
@@ -1454,7 +1474,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   };
 
   const handleDocumentKeydown = (event) => {
-    if (interactionBlocked || hasInspection()) return;
+    if (event.repeat || interactionBlocked || hasInspection()) return;
     if (
       !shouldSubmitOnEnter({
         key: event.key,
@@ -1465,6 +1485,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     ) {
       return;
     }
+    getMutationSurface();
+    if (!mutationActivation.allow(event.target)) return;
     event.preventDefault();
     void submitCurrentAction();
   };
@@ -1478,6 +1500,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     const externalAction = event.target.closest("[data-board-message-action]");
     if (externalAction) {
       const action=externalAction.getAttribute("data-board-message-action");
+      if (["pass","end-turn"].includes(action)) { getMutationSurface(); if (!mutationActivation.allow(externalAction)) return; }
       if (action === "retry-rush-guidance") { rushGuidanceKey = null; syncRushGuidance(); renderStatusContent(); }
       else if (action === "pass") submitPass();
       else if(action==='end-turn'){if(!inspection&&legalActions.some(action=>action.type==='end_turn'))void endCurrentTurn();}
@@ -1490,6 +1513,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       return;
     }
     const previewAction = actionButton.getAttribute("data-board-preview-action");
+    if (["pass","end-turn"].includes(previewAction)) { getMutationSurface(); if (!mutationActivation.allow(actionButton)) return; }
     if (previewAction === "pass") {
       submitPass();
       return;
@@ -1742,6 +1766,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
   };
 
   const onPreviewVisibility = () => {
+    mutationActivation.cancel();
     previewsSuspended = Boolean(document.hidden);
     if (previewsSuspended) {
       guidanceDiagnostics.retire(); rushGuidanceGeneration++; rushGuidanceClient.cancel(); rushGuidanceKey = null; rushGuidance = null; rushGuidanceStatus = 'idle';
@@ -1753,7 +1778,15 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       });
     }
   };
-  const onPreviewPageHide = () => { guidanceDiagnostics.retire(); rushGuidanceGeneration++; rushGuidanceClient.cancel(); rushGuidanceKey = null; rushGuidance = null; rushGuidanceStatus = 'idle'; previewsSuspended = true; invalidateSelectedPieceMovesRequests(); };
+  const onPreviewPageHide = () => { mutationActivation.cancel(); guidanceDiagnostics.retire(); rushGuidanceGeneration++; rushGuidanceClient.cancel(); rushGuidanceKey = null; rushGuidance = null; rushGuidanceStatus = 'idle'; previewsSuspended = true; invalidateSelectedPieceMovesRequests(); };
+  const handleMutationPressStart=event=>{
+    if(event.type==='keydown'&&event.repeat)return;
+    const action=event.target?.closest?.('[data-board-preview-action="pass"],[data-board-preview-action="end-turn"],[data-board-message-action="pass"],[data-board-message-action="end-turn"]');
+    const cell=event.target?.closest?.('.cell');
+    const coord=cell?{row:Number(cell.dataset.row),col:Number(cell.dataset.col)}:null;
+    const legalTarget=coord&&selectedSource&&[...selectedPieceMoves,...selectedPieceMovePreviews.filter(value=>value.legal!==false)].some(value=>sameCoordinate(value.to,coord));
+    if(action||legalTarget||event.type==='keydown'&&(event.key==='Enter'||event.key===' '))mutationActivation.begin(action??cell??event.target);
+  };
   let previewLifecycleBound = false;
   const bindPreviewLifecycle = () => {
     if (previewLifecycleBound) return;
@@ -1767,6 +1800,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     bindPreviewLifecycle();
     document.addEventListener("click", handleDocumentClick);
     document.addEventListener("keydown", handleDocumentKeydown);
+    document.addEventListener("pointerdown",handleMutationPressStart,true);
+    document.addEventListener("keydown",handleMutationPressStart,true);
 
     const initial = await host.loadInitialState();
     await loadSnapshot(initial.state, { legalActions: initial.legalActions ?? [] });
@@ -1787,6 +1822,8 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
     globalThis.window?.removeEventListener?.('pageshow', onPreviewVisibility);
     document.removeEventListener("click", handleDocumentClick);
     document.removeEventListener("keydown", handleDocumentKeydown);
+    document.removeEventListener("pointerdown",handleMutationPressStart,true);
+    document.removeEventListener("keydown",handleMutationPressStart,true);
     if (elements.boardPreviewLabelEl) {
       elements.boardPreviewLabelEl.removeEventListener("click", handleBoardPreviewClick);
     }
@@ -1867,6 +1904,7 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
       // Routine control fences do not repaint action ghosts as inspection lines.
       // Restore admission styling only if a real render showed the blocked state.
       else if (host.canInteract?.(state) !== false && lastRenderedCanInteract === false) renderBoard();
+      else if (mutationSurfaceKey(getMutationSurface()) !== lastRenderedMutationSurfaceKey) renderBoard();
       renderStatus();
     },
     refreshVisuals: () => { if (!destroyed) renderBoard(); },

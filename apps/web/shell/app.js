@@ -9,6 +9,7 @@ import {createConfirmedRemovalPresentation,presentRemovalTransportChange} from '
 import {createRecoveryPresentation} from './recovery-presentation.js';
 import {mountRenderGestureOwner} from './render-gesture-owner.js';
 import {createDestinationRouteOwner,destinationReadScope,terminalColdDestination,destinationHidesGameBody,readGameDestination,destinationLiveGameId} from './destination-route-owner.js';
+import {mutationSurfacePresentation} from '../board/surface-pulse.js';
 import {mountRouteHeldPulse} from './route-held-pulse.js';
 import {createNavigationVisitOwner} from './navigation-visit-owner.js';
 import {createAccountContinuationOwner} from './account-continuation-owner.js';
@@ -215,6 +216,7 @@ document.body.appendChild(syncAnnouncement);
 const quietComputerRenewal = game => Boolean(game?.id === getCurrentViewedGameId() && computerSession?.snapshot().activity?.quietRenewal);
 const foregroundRecoveryWait = createForegroundRecoveryWait({ onChange: () => {
   updateMountedHeader();
+  boardRuntime?.refreshStatus();
   const game = currentRoute.name === 'game' ? transport.getGameViewModel(currentRoute.gameId) : null;
   updateRecoveryAnnouncement(game);
 } });
@@ -225,6 +227,7 @@ const presentedRecoveryMessage = game => recoveryMessage(game, Date.now(), recov
 document.addEventListener('visibilitychange', () => {
   foregroundRecoveryWait.reset();
   updateMountedHeader();
+  boardRuntime?.refreshStatus();
   updateRecoveryAnnouncement(currentRoute.name === 'game' ? transport.getGameViewModel(currentRoute.gameId) : null);
 });
 window.addEventListener('pagehide', () => foregroundRecoveryWait.reset());
@@ -3147,6 +3150,10 @@ const mountBoardForGame = (game) => {
         canInteract: () => {
           const view = getBoardGame(transport.getGameViewModel(game.id));
           return !forcedFollowWorking(game.id) && !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && canControlLiveBoard(view);
+        },
+        getMutationSurface: () => {
+          const view = getBoardGame(transport.getGameViewModel(game.id));
+          return mutationSurfacePresentation(view, recoveryPresentationOptions(view));
         },
       }),
       controls: {

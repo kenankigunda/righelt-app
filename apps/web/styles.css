@@ -425,6 +425,28 @@ button {
   box-shadow: inset 0 0 0 1px var(--player-p2), var(--cell-recess-shadow);
 }
 
+.cell.target.mutation-unavailable-target {
+  border:2px dashed #85877d;
+  box-shadow:var(--cell-recess-shadow);
+}
+.cell.target.mutation-unavailable-target::after {
+  content:"";
+  position:absolute;
+  inset:2px;
+  z-index:0;
+  border-radius:inherit;
+  background:color-mix(in srgb,#65675f 24%,transparent);
+  opacity:.15;
+  pointer-events:none;
+}
+.cell.target.mutation-unavailable-target[data-mutation-pulse="true"]::after {
+  animation:notification-processing var(--notification-processing-cycle,2.4s) ease-in-out infinite;
+  animation-delay:var(--surface-pulse-delay,0ms);
+}
+@media (prefers-reduced-motion: reduce), (forced-colors: active) {
+  .cell.target.mutation-unavailable-target[data-mutation-pulse="true"]::after {animation:none;opacity:.15;}
+}
+
 .board-event-label-layer {
   z-index: 6;
 }

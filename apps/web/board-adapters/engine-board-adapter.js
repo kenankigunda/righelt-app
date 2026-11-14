@@ -24,6 +24,7 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const PREVIEW_STROKE_BY_OWNER = {
   P1: "var(--player-p1)",
   P2: "var(--player-p2)",
+  neutral: "#85877d",
 };
 const PREVIEW_OPACITY = {
   default: "0.35",
@@ -625,7 +626,7 @@ export function createEngineBoardAdapter() {
     return markerId;
   };
 
-  const drawArrowLine = (from, to, owner, curved = false, selected = false) => {
+  const drawArrowLine = (from, to, owner, curved = false, selected = false, unavailable = false) => {
     if (!overlayLinesEl) {
       return;
     }
@@ -641,7 +642,7 @@ export function createEngineBoardAdapter() {
     const distance = Math.hypot(deltaX, deltaY);
     const stopBeforeGhost = 12;
     const shortenBy = Math.min(stopBeforeGhost, Math.max(0, distance - 4));
-    const stroke = PREVIEW_STROKE_BY_OWNER[owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
+    const stroke = unavailable ? PREVIEW_STROKE_BY_OWNER.neutral : PREVIEW_STROKE_BY_OWNER[owner] ?? PREVIEW_STROKE_BY_OWNER.P1;
     const previewOpacity = selected ? PREVIEW_OPACITY.selected : PREVIEW_OPACITY.default;
     const curveDirection = owner === "P2" ? -1 : 1;
     const arrowTarget = curved ? getCurvedArrowAnchor(start, end, curveDirection) : end;
@@ -655,7 +656,7 @@ export function createEngineBoardAdapter() {
       y: arrowTarget.y - arrowUnitY * shortenBy,
     };
 
-    const markerId = ensurePreviewArrowMarker(owner, previewOpacity);
+    const markerId = ensurePreviewArrowMarker(unavailable ? "neutral" : owner, previewOpacity);
     if (curved) {
       const midpoint = {
         x: (start.x + shortenedEnd.x) / 2,
@@ -673,6 +674,7 @@ export function createEngineBoardAdapter() {
       path.setAttribute("stroke-width", "3");
       path.setAttribute("stroke-linecap", "round");
       path.setAttribute("stroke-opacity", previewOpacity);
+      if (unavailable) path.setAttribute("stroke-dasharray", "6 5");
       if (markerId) {
         path.setAttribute("marker-end", `url(#${markerId})`);
       }
@@ -689,6 +691,7 @@ export function createEngineBoardAdapter() {
     line.setAttribute("stroke-width", "3");
     line.setAttribute("stroke-linecap", "round");
     line.setAttribute("stroke-opacity", previewOpacity);
+    if (unavailable) line.setAttribute("stroke-dasharray", "6 5");
     if (markerId) {
       line.setAttribute("marker-end", `url(#${markerId})`);
     }
@@ -725,6 +728,7 @@ export function createEngineBoardAdapter() {
     currentActionType: overlayActionType,
     selectedPieceOverlayPhase,
     sequenceProjection,
+    mutationSurface,
   }) => {
     if (!overlayLinesEl) {
       return;
@@ -888,9 +892,17 @@ export function createEngineBoardAdapter() {
           piece.owner,
           false,
           isSelectedTarget,
+          isSelectedTarget && mutationSurface?.unavailable,
         );
       }
       if (targetCell) {
+        if (isSelectedTarget && mutationSurface?.unavailable) {
+          targetCell.classList.add("mutation-unavailable-target");
+          if (mutationSurface.pulsing) {
+            targetCell.dataset.mutationPulse = "true";
+            targetCell.style.setProperty?.("--surface-pulse-delay", `-${mutationSurface.phaseMs}ms`);
+          }
+        }
         const ghost = buildPieceToken(action.previewPiece ?? piece, true);
         ghost.classList.add("move-ghost");
         if (action.type === "project") {
@@ -921,7 +933,7 @@ export function createEngineBoardAdapter() {
     onCellClick({
       row: Number(cell.dataset.row),
       col: Number(cell.dataset.col),
-    });
+    }, { trigger: cell, event });
   };
 
   const getCellFromEventTarget = (target) => {
@@ -1126,6 +1138,7 @@ export function createEngineBoardAdapter() {
       currentActionType,
       interactionMode: renderInteractionMode,
       selectedPieceOverlayPhase,
+      mutationSurface,
     }) {
       if (!boardEl) {
         throw new Error("Adapter not mounted");
@@ -1189,7 +1202,10 @@ export function createEngineBoardAdapter() {
           cell.removeAttribute("data-removal-label");
           cell.removeAttribute("data-disallow-reason");
           cell.removeAttribute("data-inactive-label");
-      cell.removeAttribute("data-selected-supply-owner");
+          cell.removeAttribute("data-mutation-pulse");
+          delete cell.dataset.mutationPulse;
+          cell.style.removeProperty?.("--surface-pulse-delay");
+          cell.removeAttribute("data-selected-supply-owner");
           if (effectiveInteractionMode === "interactive") {
             cell.type = "button";
           } else {
@@ -1470,6 +1486,7 @@ export function createEngineBoardAdapter() {
         currentActionType,
         selectedPieceOverlayPhase,
         sequenceProjection,
+        mutationSurface,
       });
       if (rushSupplyGuidance && overlay?.mode === 'interactive' && !overlay?.inspection) {
         const entries = new Map(rushSupplyGuidance.actions.map(entry => [rushActionKey(entry.action), entry]));
