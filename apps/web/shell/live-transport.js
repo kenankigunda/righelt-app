@@ -2302,6 +2302,12 @@ export const createLiveTransportStore = ({
       // established recovery ownership until their receipt settles.
       if (isRoutineComputerRenewal(envelope)) {
         pending.maintenanceRecoveryEpoch = optimistic.connectionRecoveryEpoch ?? 0;
+        // Renewal stays out of transport recovery, but its serialized shared
+        // mutation still changes the rendered admission boundary. Publish that
+        // projection so only the session that owns the lease work may keep an
+        // explicit Undo available while unrelated callers remain blocked.
+        recalculateOptimisticGame(gameId);
+        emitChange({ type: "optimistic_enqueue", gameId, clientCommandId: envelope.clientCommandId });
       } else {
         pending.sharedRecoveryEpoch = (optimistic.connectionRecoveryEpoch ?? 0) + 1;
         setConnectionRecovering(gameId,true);
