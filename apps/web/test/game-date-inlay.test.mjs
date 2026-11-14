@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {celestialMarkMarkup} from '../shell/celestial-mark.js';
 import {gameDateInlayModel,renderGameDateInlay} from '../shell/game-date-inlay.js';
 
 test('game start instant renders in the viewer locale and timezone',()=>{
@@ -28,6 +29,21 @@ test('seven dayparts occupy the approved open etched orbit positions',()=>{
  assert.equal(positions.size,7);
  assert.match(renderGameDateInlay(samples[0][0],{locale:'en-US',timeZone:'UTC'}),/game-date-orbit-highlight[\s\S]*game-date-orbit[\s\S]*game-date-celestial/);
  assert.doesNotMatch(renderGameDateInlay(samples[0][0],{locale:'en-US',timeZone:'UTC'}),/<rect/);
+});
+
+test('daypart boundaries preserve late-night and night classification',()=>{
+ const options={locale:'en-US',timeZone:'UTC'};
+ assert.equal(gameDateInlayModel('2026-11-13T04:59:59Z',options).phase,'late night');
+ assert.equal(gameDateInlayModel('2026-11-13T05:00:00Z',options).phase,'early morning');
+ assert.equal(gameDateInlayModel('2026-11-13T20:59:59Z',options).phase,'evening');
+ assert.equal(gameDateInlayModel('2026-11-13T21:00:00Z',options).phase,'night');
+});
+
+test('page inlays use the shared celestial mark geometry',()=>{
+ const instant='2026-11-13T21:00:00Z',options={locale:'en-US',timeZone:'UTC'};
+ const model=gameDateInlayModel(instant,options);
+ assert.match(celestialMarkMarkup(model,{className:'game-date-celestial'}),/data-celestial="moon"/);
+ assert.ok(renderGameDateInlay(instant,options).includes(celestialMarkMarkup(model,{className:'game-date-celestial'})));
 });
 
 test('invalid or unavailable starts remain a bounded decorative loading slot',()=>{
