@@ -25,11 +25,11 @@
 .app-root [data-game-panel="history"] .history-turn > .history-turn-heading {font-weight:600;}
 .app-root [data-game-panel="history"] .history-turn > .history-list-nested {position:relative;border-left-color:transparent;}
 .app-root [data-game-panel="history"] .history-turn > .history-list-nested::before {content:"";position:absolute;inset:0 auto 0 -2px;width:1px;background:currentColor;pointer-events:none;}
-.app-root [data-game-panel="history"] .history-turn:has(> .history-turn-heading.is-selected,> .history-list-nested > .history-item.is-selected) > .history-list-nested::before {width:2px;}
-[data-hover-capability="hover"] .app-root [data-game-panel="history"] .history-turn:hover > .history-list-nested::before,
-.app-root[data-hover-capability="hover"] [data-game-panel="history"] .history-turn:hover > .history-list-nested::before {width:2px;}
-[data-hover-capability="hover"] .app-root [data-game-panel="history"] .history-turn:hover > .history-turn-heading,
-.app-root[data-hover-capability="hover"] [data-game-panel="history"] .history-turn:hover > .history-turn-heading,
+.app-root [data-game-panel="history"] .history-turn:has(> .history-turn-heading.is-selected) > .history-list-nested::before {width:2px;}
+[data-hover-capability="hover"] .app-root [data-game-panel="history"] .history-turn:has(> .history-turn-hit:hover) > .history-list-nested::before,
+.app-root[data-hover-capability="hover"] [data-game-panel="history"] .history-turn:has(> .history-turn-hit:hover) > .history-list-nested::before {width:2px;}
+[data-hover-capability="hover"] .app-root [data-game-panel="history"] .history-turn:has(> .history-turn-hit:hover) > .history-turn-heading,
+.app-root[data-hover-capability="hover"] [data-game-panel="history"] .history-turn:has(> .history-turn-hit:hover) > .history-turn-heading,
 [data-hover-capability="hover"] .app-root [data-game-panel="history"] .history-item:hover .history-move-line,
 .app-root[data-hover-capability="hover"] [data-game-panel="history"] .history-item:hover .history-move-line {font-weight:800;}
 [data-hover-capability="hover"] .app-root [data-game-panel="history"] button:is(.history-turn-hit,.history-move-hit).secondary:hover,

@@ -26,6 +26,7 @@ import {
   homeSectionVisiblePageSize,
 } from './home-section-reads.js';
 import {createHistoryRendering} from './history-rendering.js';
+import {createHistorySelectionTransition} from './history-selection-transition.js';
 import * as undoHistory from './history-undo-groups.js';
 import {createGameAlertItems,renderGameAlertStackCard as renderAlertStackCard,createNotificationPatchLifecycle} from './game-alert-presentation.js';
 import {historyBoardRuntimeMessage,presentPlaybackBoardMessage,playbackTurnIndicator,refreshFollowControls} from './playback-presentation.js';
@@ -437,7 +438,6 @@ let lastRenderedRouteKey = "";
 let lastRenderedBaseRouteKey = "";
 let lastRenderedTransitionPhaseKey = "idle";
 let routeSyncRequestId = 0;
-const HISTORY_SELECTION_EXIT_MS = 56;
 const HISTORY_RELEASE_BOUNCE_MS = 140;
 const GAME_ENTRY_ROUTE_TRANSITION_MS = 320;
 const GAME_ENTRY_ROUTE_TRANSITION_COVER_MS = 160;
@@ -974,6 +974,10 @@ const renderFeedbackReveal = (message) => `
   </div>
 `;
 const prefersReducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+const historySelectionTransition = createHistorySelectionTransition({ reducedMotion: prefersReducedMotion });
+document.addEventListener('visibilitychange', () => { if (document.hidden) historySelectionTransition.cancel(); });
+window.addEventListener('hashchange', () => historySelectionTransition.cancel());
+window.addEventListener('pagehide', () => historySelectionTransition.cancel());
 const getRouteTransitionRenderKey = () =>
   routeTransition ? `${routeTransition.type}:${routeTransition.fromRoute}:${routeTransition.toRoute}:${routeTransition.gameId}` : "none";
 const getRouteTransitionPhaseKey = () => routeTransition?.phase || "idle";
@@ -1405,21 +1409,6 @@ const syncShellLayoutMode = () => {
     appEl.setAttribute("data-shell-content-width", String(Math.round(getAvailableShellContentWidth())));
   }
   return layoutMode;
-};
-
-const animateHistoryDeselection = async (actionEl) => {
-  if (prefersReducedMotion() || !appEl) {
-    return;
-  }
-  const currentSelected = appEl.querySelector(".history-item.is-selected, .history-item.is-live-selected");
-  if (!(currentSelected instanceof HTMLElement) || currentSelected === actionEl) {
-    return;
-  }
-
-  currentSelected.classList.add("is-deselecting");
-  currentSelected.classList.remove("is-selected");
-  currentSelected.classList.remove("is-live-selected");
-  await delay(HISTORY_SELECTION_EXIT_MS);
 };
 
 const clearHistoryPress = () => {
@@ -2778,7 +2767,9 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
     }
   }
   if (historyEl instanceof HTMLElement) {
+    const historyTransition = historySelectionTransition.capture(historyEl);
     patchToolHtml(historyEl, renderHistoryPanel(game));
+    historySelectionTransition.present(historyTransition);
     revealSelectedHistory();
   }
   syncIncomingNarrationHost(game);syncBoardContextDetails(game);boardContextPresentation.restoreIncomingFocus(incomingFocus);
@@ -4581,7 +4572,9 @@ appEl.addEventListener("click", async (event) => {
     const gameId=actionEl.dataset.gameId;
     if(action==='inspect-history-archive'){
       const entry=additionalHistory.snapshot(gameId)?.items.find(item=>item.id===actionEl.dataset.decisionId);
-      if(entry){viewingIntent.navigate(gameId);undoHistory.noteUndoHistorySelection(expandedUndoneGroups,gameId,entry.id,transport);transport.inspectDecision({gameId,entry});}
+      if(entry)await historySelectionTransition.run(`${gameId}:archive:${entry.id}`,()=>{
+        viewingIntent.navigate(gameId);undoHistory.noteUndoHistorySelection(expandedUndoneGroups,gameId,entry.id,transport);return transport.inspectDecision({gameId,entry});
+      });
     } else {
       const work=action==='retry-history-archive'?additionalHistory.retry(gameId):additionalHistory.more(gameId);
       render({animatePanels:false,includeBoard:false});await work;
@@ -4935,8 +4928,10 @@ appEl.addEventListener("click", async (event) => {
   if (action === "jump-history-turn") {
     const gameId = actionEl.getAttribute('data-game-id');
     const turnIndex = Number(actionEl.getAttribute('data-turn-index'));
-    viewingIntent.navigate(gameId);
-    await transport.selectHistoryTurn({gameId,turnIndex});
+    await historySelectionTransition.run(`${gameId}:turn:${turnIndex}`,async()=>{
+      viewingIntent.navigate(gameId);
+      return transport.selectHistoryTurn({gameId,turnIndex});
+    });
     if (transport.getGameViewModel(gameId)?.historyTurnIndex === turnIndex) gameSound.play("history");
     revealSelectedHistory();
     return;
@@ -4950,10 +4945,11 @@ appEl.addEventListener("click", async (event) => {
     clearControlPress();
     clearHistoryPress();
     playHistoryReleaseBounce(actionEl);
-    await animateHistoryDeselection(actionEl);
-    if (transport.getGameViewModel(gameId)?.historyIndex !== moveIndex || !transport.getGameViewModel(gameId)?.inHistoryMode) viewingIntent.navigate(gameId);
-    undoHistory.noteUndoHistorySelection(expandedUndoneGroups,gameId,moveId,transport);
-    transport.selectHistoryMove({ gameId, moveIndex, moveId });
+    await historySelectionTransition.run(`${gameId}:move:${moveId ?? moveIndex}`,()=>{
+      if (transport.getGameViewModel(gameId)?.historyIndex !== moveIndex || !transport.getGameViewModel(gameId)?.inHistoryMode) viewingIntent.navigate(gameId);
+      undoHistory.noteUndoHistorySelection(expandedUndoneGroups,gameId,moveId,transport);
+      return transport.selectHistoryMove({ gameId, moveIndex, moveId });
+    });
     revealSelectedHistory();
     if(transport.getGameViewModel(gameId)?.inHistoryMode)gameSound.play("history");
     return;
@@ -4965,9 +4961,10 @@ appEl.addEventListener("click", async (event) => {
     if(isCompletedGame(transport.getGameViewModel(gameId)))return;
     clearHistoryPress();
     playHistoryReleaseBounce(actionEl);
-    await animateHistoryDeselection(actionEl);
-    viewingIntent.navigate(gameId);
-    transport.returnToLive({ gameId });
+    await historySelectionTransition.run(`${gameId}:live`,()=>{
+      viewingIntent.navigate(gameId);
+      return transport.returnToLive({ gameId });
+    });
     if (getShellLayoutMode() === "narrow") navigateTo(buildGameHash(gameId, null, getCurrentGameHashState("board")));
     gameSound.play("history-back");
     return;

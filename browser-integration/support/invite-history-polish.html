@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Invitation and history contracts</title>
-<link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"><link rel="stylesheet" href="/apps/web/shell/computer-replay.css">
-</head><body><main id="app" class="app-root" data-action-affiliation="red"></main><div id="p1" style="background:var(--player-p1)"></div><div id="p2" style="background:var(--player-p2)"></div>
+<link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"><link rel="stylesheet" href="/apps/web/shell/computer-replay.css"><link rel="stylesheet" href="/apps/web/shell/incoming-narration.css">
+</head><body><div class="app-root" data-action-affiliation="red" data-hover-capability="hover"><main id="app" data-game-panel="history"></main></div><div id="p1" style="background:var(--player-p1)"></div><div id="p2" style="background:var(--player-p2)"></div>
 <script type="module">
 import {renderGameAlertStackCard as renderStackCard} from '/apps/web/shell/game-alert-presentation.js';
 import * as undoHistory from '/apps/web/shell/history-undo-groups.js';
@@ -17,6 +17,7 @@ import {renderInvitationSurface} from '/apps/web/shell/invitations.js';
 import {renderInviteLoadRecovery} from '/apps/web/shell/invite-load-recovery.js';
 import {createAdditionalHistory,canReadAdditionalHistory} from '/apps/web/shell/additional-history.js';
 import {patchSectionContent} from '/apps/web/shell/dom-patch.js';
+import {createHistorySelectionTransition} from '/apps/web/shell/history-selection-transition.js';
 import {mountLoadingFeedback,loadingAttributes} from '/apps/web/shell/loading.js';
 import {mountLoadingEdges} from '/apps/web/shell/loading-edge.js';
 import {renderSummaryLoading} from '/apps/web/shell/panel-loading.js';
@@ -30,7 +31,7 @@ import {COMPUTER_PROFILES} from '/apps/web/generated/packages/shared-types/src/c
 const source=await(await fetch('/apps/web/shell/app.js')).text(),root=document.querySelector('#app');
 const extract=(start,end)=>{const a=source.indexOf(start),b=source.indexOf(end,a);if(a<0||b<=a)throw Error(`Missing actual template ${start}`);return source.slice(a,b);};
 const escapeHtml=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const seatHelpers=Function('escapeHtml',`${extract('const playerToneClassForSeat =','const renderConnectionStatusIcon =')};return {playerToneClassForSeat,playerToneClassForSide,renderSeatLabel};`)(escapeHtml);
+const seatHelpers=Function('escapeHtml',`${extract('const playerToneClassForSeat =','const renderConnectionStatusIcon =')};return {playerToneClassForSeat,playerToneClassForSide};`)(escapeHtml);
 const attrs=Function('isButtonPending','escapeHtml',`${extract('const renderButtonStateAttributes =','const renderPendingStateAttributes =')};return renderButtonStateAttributes;`)(()=>false,escapeHtml);
 window.renderInvite=(role='blue',extra={})=>{
  const game={id:'g',player1:{identityId:'host'},player2:null,canJoinAsPlayer:true,showJoinActions:true,canJoinAsViewer:true,...extra};
@@ -42,15 +43,16 @@ window.renderInviteRecovery=options=>{root.innerHTML=renderInvitationSurface({co
 window.historyRequests=[];let revision=7;
 const owner={};
 const history=createAdditionalHistory({getScope:gameId=>({gameId,owner,generation:1,revision}),load:(scope,values)=>new Promise((resolve,reject)=>window.historyRequests.push({values,resolve:body=>resolve({gameplayRevision:revision,partial:false,...body}),reject})),onChange:()=>drawHistory()});
-const renderedMiniBoardPreviewPayloads=new Map(),registry=new Map();let inspectedDecision=null;
+const renderedMiniBoardPreviewPayloads=new Map(),registry=new Map();let inspectedDecision=null,inspectedTurn=null;
+const historyTransition=createHistorySelectionTransition({reducedMotion:()=>matchMedia('(prefers-reduced-motion: reduce)').matches});
 const {renderMiniBoardPreviewRoot:renderMini}=createMiniPreviewRendering({payloads:renderedMiniBoardPreviewPayloads,escapeHtml});
 const archiveGame={id:'g',myRole:'Viewer',player1:{identityId:'red'},player2:{identityId:'blue'}};
 const historyDeps={undoHistory,expandedUndoneGroups:new Set(),selectedHistoryPresentation,visibleRecordedMoves,recordedMoveNumber,renderBoardMessageHtml,canReadAdditionalHistory,...seatHelpers,playerDisplayName,buildMovePreview,buildTurnPreview,historyTurnSide,COMPUTER_PROFILES,account:{snapshot:()=>({enabled:false})},getShellLayoutMode:()=> 'narrow',renderMiniBoardPreviewRoot:renderMini,toStableKey:JSON.stringify,additionalHistory:history,escapeHtml,formatClientDateTime:()=> 'Jan 1',icon,historyActorLabel,transport:{getIdentityId:()=> 'viewer'}};
 const historyRendering=createHistoryRendering(()=>historyDeps);
 const renderHistory=game=>historyRendering.renderAdditionalHistory(game);
-function drawHistory(){root.classList.add("panel");const next=root.cloneNode(false);next.innerHTML=renderHistory({...archiveGame,inHistoryMode:Boolean(inspectedDecision),inspectedDecision});patchSectionContent(root,next);syncMiniBoardPreviews({previews:[...root.querySelectorAll('[data-mini-board-preview]')].map(rootEl=>({rootEl,...renderedMiniBoardPreviewPayloads.get(rootEl.dataset.previewId)})),registry,createAdapter:()=>createEngineBoardAdapter()});}
-root.addEventListener('click',event=>{const action=event.target.closest('[data-action]')?.dataset.action;if(action==='toggle-undone-group'){undoHistory.toggleUndoHistoryGroup(historyDeps.expandedUndoneGroups,event.target.closest('[data-action]').dataset.groupKey,historyDeps.transport);drawHistory();}if(action==='inspect-history-archive'){const id=event.target.closest('[data-action]').dataset.decisionId;inspectedDecision={...history.snapshot('g').items.find(entry=>entry.id===id).move,moveId:id};drawHistory();}if(action==='load-history-archive'){void history.more('g');drawHistory();}if(action==='retry-history-archive'){void history.retry('g');drawHistory();}});
-window.renderHistory=drawHistory;window.archiveSnapshot=createInitialBoardSnapshot();window.returnArchiveLive=()=>{inspectedDecision=null;drawHistory();};window.nextHistoryRevision=()=>{revision++;drawHistory();};
+function drawHistory(){root.classList.add("panel");const captured=historyTransition.capture(root),items=history.snapshot('g')?.items??[];const next=root.cloneNode(false);next.innerHTML=renderHistory({...archiveGame,inHistoryMode:Boolean(inspectedDecision||Number.isSafeInteger(inspectedTurn)),inspectedDecision,historyTurnIndex:inspectedTurn,historyTurnMoves:Number.isSafeInteger(inspectedTurn)?items.filter(entry=>entry.move.turnIndex===inspectedTurn).map(entry=>entry.move):null});patchSectionContent(root,next);historyTransition.present(captured);syncMiniBoardPreviews({previews:[...root.querySelectorAll('[data-mini-board-preview]')].map(rootEl=>({rootEl,...renderedMiniBoardPreviewPayloads.get(rootEl.dataset.previewId)})),registry,createAdapter:()=>createEngineBoardAdapter()});}
+root.addEventListener('click',event=>{const target=event.target.closest('[data-action]'),action=target?.dataset.action;if(action==='toggle-undone-group'){undoHistory.toggleUndoHistoryGroup(historyDeps.expandedUndoneGroups,target.dataset.groupKey,historyDeps.transport);drawHistory();}if(action==='inspect-history-archive'){const id=target.dataset.decisionId;void historyTransition.run(`move:${id}`,()=>{inspectedTurn=null;inspectedDecision={...history.snapshot('g').items.find(entry=>entry.id===id).move,moveId:id};drawHistory();});}if(action==='jump-history-turn'){const turn=Number(target.dataset.turnIndex);void historyTransition.run(`turn:${turn}`,()=>{inspectedDecision=null;inspectedTurn=turn;drawHistory();});}if(action==='load-history-archive'){void history.more('g');drawHistory();}if(action==='retry-history-archive'){void history.retry('g');drawHistory();}});
+window.renderHistory=drawHistory;window.archiveSnapshot=createInitialBoardSnapshot();window.returnArchiveLive=()=>{historyTransition.cancel();inspectedDecision=null;inspectedTurn=null;drawHistory();};window.nextHistoryRevision=()=>{revision++;drawHistory();};
 const mergeOwner={getIdentityId:()=> 'viewer'},mergeGame={id:'merge',inHistoryMode:false};
 const mergeMove=(moveId,index,undone=false,undoEventSeq=10)=>({moveId,index,turnIndex:index,turnMoveIndex:0,notation:moveId,action:{type:'rush'},...(undone?{undone:true,undoEventSeq}:{})});
 let mergeExpanded=new Set(),mergeMoves=[];

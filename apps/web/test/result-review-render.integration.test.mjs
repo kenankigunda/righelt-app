@@ -215,6 +215,7 @@ function historyRouteHarness(t) {
     getShellLayoutMode:()=> 'narrow',getShellLayoutModeForRoute:()=> 'narrow',
     expandedUndoneGroups:new Set(),getDecisionDebugState:()=>({items:[],cursor:null}),getGameResult:()=>null,
     renderMiniBoardPreviewRoot:()=>'<div class="mini-board-preview"></div>',
+    historySelectionTransition:{capture:()=>null,present:()=>false},
     patchToolHtml:(element,html)=>{element.innerHTML=html;historyPatches++;},
     syncMountedGameShellPanelUi:()=>{mountedPanel=context.currentRoute.panel;},
     updateMountedHeader:noop,updateMountedFlyouts:()=>{flyoutPatches++;},syncFlyoutAwareLinks:noop,syncCopyInviteLinks:noop,

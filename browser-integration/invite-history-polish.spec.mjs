@@ -50,6 +50,42 @@ test('short games with no additional records never show an archive CTA',async({p
  await page.evaluate(()=>window.historyRequests[0].resolve({available:false,items:[],nextCursor:null}));await expect(page.locator('[data-testid="additional-history"]')).toBeAttached();await expect(page.getByRole('button')).toHaveCount(0);
 });
 
+test('History distinguishes turn and move emphasis, aligns Undo disclosure, and transitions atomically',async({page})=>{
+ await page.setViewportSize({width:390,height:844});
+ await page.evaluate(()=>window.renderHistory());await expect.poll(()=>page.evaluate(()=>window.historyRequests.length)).toBe(1);
+ await page.evaluate(()=>window.historyRequests[0].resolve({available:true,items:[],nextCursor:null}));await page.getByRole('button',{name:'More game history',exact:true}).click();
+ await expect.poll(()=>page.evaluate(()=>window.historyRequests.length)).toBe(2);
+ await page.evaluate(()=>window.historyRequests[1].resolve({available:true,items:[
+  {id:'a',at:'2026-01-01',move:{moveId:'a',index:0,turnIndex:0,turnMoveIndex:0,actorSide:'P1',notation:'MOVE A',undone:false,snapshot:window.archiveSnapshot}},
+  {id:'b',at:'2026-01-01',move:{moveId:'b',index:1,turnIndex:1,turnMoveIndex:0,actorSide:'P2',notation:'MOVE B',undone:true,snapshot:window.archiveSnapshot}},
+ ],nextCursor:null}));
+ const turn=page.locator('.history-turn').first(),rail=turn.locator(':scope > .history-list-nested'),move=turn.locator('.history-item').first();
+ const railWidth=()=>rail.evaluate(node=>getComputedStyle(node,'::before').width);
+ await move.getByRole('button').hover();expect(await railWidth()).toBe('1px');
+ const turnHit=turn.locator(':scope > .history-turn-hit');await turnHit.hover({position:{x:2,y:2}});expect(await railWidth()).toBe('2px');
+ await turnHit.focus();await page.keyboard.press('Enter');await expect(turn.locator(':scope > .history-turn-heading')).toHaveClass(/is-selected/);expect(await railWidth()).toBe('2px');
+ await page.evaluate(()=>window.returnArchiveLive());
+ await move.getByRole('button').click();await expect(move).toHaveClass(/is-selected/);expect(await railWidth()).toBe('1px');
+ await expect(page.getByTestId('history-inline-preview')).toHaveCount(1);
+ expect(await page.locator('#app').evaluate(node=>node.getAnimations().some(animation=>animation.effect.getKeyframes().some(frame=>frame.height)))).toBe(true);
+
+ await page.evaluate(()=>window.returnArchiveLive());
+ const undone=page.locator('[data-undo-boundary="unavailable"]'),toggle=undone.locator('.history-undone-toggle');
+ const positions=await page.evaluate(()=>{
+  const label=document.querySelector('.history-turn .history-move-line'),button=document.querySelector('.history-undone-toggle'),undoneLabel=button.querySelector('.history-undone-label'),group=button.closest('.history-item-undone-group'),style=getComputedStyle(group,'::before');
+  return {moveLeft:label.getBoundingClientRect().left,labelLeft:undoneLabel.getBoundingClientRect().left,align:style.alignSelf,transform:style.transform,height:button.getBoundingClientRect().height};
+ });
+ expect(Math.abs(positions.moveLeft-positions.labelLeft)).toBeLessThanOrEqual(.5);expect(positions.align).toBe('center');expect(positions.height).toBeGreaterThanOrEqual(44);
+ await toggle.focus();await expect(toggle).toBeFocused();await page.keyboard.press('Enter');await expect(toggle).toHaveAttribute('aria-expanded','true');
+
+ await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>window.returnArchiveLive());
+ await page.locator('.history-turn').first().locator('.history-move-hit').click();await expect(page.getByTestId('history-inline-preview')).toHaveCount(1);
+ expect(await page.locator('#app').evaluate(node=>node.getAnimations().some(animation=>animation.effect.getKeyframes().some(frame=>frame.height)))).toBe(false);
+ await page.setViewportSize({width:1100,height:900});await page.emulateMedia({reducedMotion:'no-preference'});await page.evaluate(()=>window.returnArchiveLive());
+ const desktopTurn=page.locator('.history-turn').first(),desktopRail=desktopTurn.locator(':scope > .history-list-nested');
+ await desktopTurn.locator('.history-move-hit').hover();expect(await desktopRail.evaluate(node=>getComputedStyle(node,'::before').width)).toBe('1px');
+});
+
 for(const interaction of ['focus','press'])test(`merged undone History runs retain the native ${interaction} target`,async({page})=>{
  const initial=await page.evaluate(()=>window.startUndoMerge());
  const olderKey=initial.find(group=>group.members.includes('B')).key;
