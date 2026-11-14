@@ -4,7 +4,7 @@ import {SYNC_TIMING} from '../generated/packages/shared-types/src/sync-protocol.
 export const destinationFailureKind = error => {
   const code = error?.code ?? error?.message ?? '';
   if (['upgrade_required','protocol_mismatch'].includes(code)) return 'upgrade';
-  if (/invalid_(snapshot|response|confirmation)|integrity|corrupt/.test(code)) return 'integrity';
+  if (/invalid_(snapshot|response|confirmation|persisted_game)|integrity|corrupt/.test(code)) return 'integrity';
   if (['storage_reset','storage_blocked','local_storage_unavailable'].includes(code)) return 'storage';
   if ([401,403].includes(error?.status) || ['invalid_credentials','account_required','session_expired','invalid_session','unauthorized','forbidden'].includes(code)) return 'auth';
   if ([404,410].includes(error?.status) || ['game_not_found','not_found'].includes(code)) return 'missing';

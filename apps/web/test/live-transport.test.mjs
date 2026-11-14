@@ -36,6 +36,7 @@ test('initial shared capability timeout preserves intent and never submits it', 
  t.after(() => store.retire());
  await store.reconcileGame(game.id);
  assert.ok(reads.length > 0);
+ assert.equal(store.retireColdDestinationRecovery(game.id,{reason:'unavailable'}),false,'cold route retirement preserves a hydrated durable command');
  for (const { init } of reads) {
   assert.equal(init.method, 'GET'); assert.equal(init.body, undefined);
   assert.equal(init.headers['X-Righelt-Projection'], 'history-v1');

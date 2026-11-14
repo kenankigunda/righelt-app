@@ -116,6 +116,20 @@ test('a confirmed missing destination offers a native Home exit without retry or
  await page.unrouteAll({behavior:'wait'});
 });
 
+test('an invalid persisted game is terminal and Home retires its cold recovery owner',async({ownedContext,baseURL})=>{
+ const context=await ownedContext({baseURL,viewport:{width:390,height:844},hasTouch:true,reducedMotion:'reduce'}),page=await context.newPage();
+ await page.addInitScript(()=>{window.WebSocket=undefined;});
+ const [id]=await createGamesViaApi(page,1);await page.goto('/');let reads=0;
+ await page.route(url=>[`/api/shell/games/${id}`,`/api/shell/games/${id}/position`,`/api/shell/games/${id}/reconcile`].includes(url.pathname),async route=>{reads++;await route.fulfill({status:500,json:{error:'invalid_persisted_game'}});});
+ await page.locator(`[data-game-id="${id}"].mini-board-card-link-surface`).tap();
+ const notice=page.getByTestId('destination-load-notice');await expect(notice).toContainText('We couldn’t safely open your game');
+ await expect(notice.getByRole('button',{name:'Retry',exact:true})).toHaveCount(0);
+ const terminalReads=reads;await page.waitForTimeout(1000);expect(reads).toBe(terminalReads);
+ await notice.getByRole('link',{name:'Home',exact:true}).tap();await expect(page.getByTestId('home-create-game')).toBeVisible();await expect(notice).not.toBeVisible();
+ await page.waitForTimeout(1000);expect(reads).toBe(terminalReads);
+ await page.unrouteAll({behavior:'wait'});
+});
+
 test('leaving through a focused Home control retires the stale notice and focus',async({ownedContext,baseURL})=>{
  const context=await ownedContext({baseURL,viewport:{width:390,height:844},hasTouch:true,reducedMotion:'reduce'}),page=await context.newPage();
  await page.addInitScript(()=>{window.WebSocket=undefined;});

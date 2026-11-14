@@ -1781,10 +1781,14 @@ export const createSyncStore = ({
         commit: async () => transport.rescindRevertRequest({ gameId, requestId }),
       }),
     setActiveGameId: (gameId) => {
+      const previousActiveGameId = activeGameId;
       const previousRecoveryGameId = recoveryEpisodeClock.snapshot().gameId;
       activeGameId = gameId || null;
       transport.setRulesActiveGame?.(activeGameId);
       syncActiveGame();
+      if (previousActiveGameId && previousActiveGameId !== activeGameId) {
+        transport.retireColdDestinationRecovery?.(previousActiveGameId, { reason: "unavailable" });
+      }
       if (auth?.enabled && auth.pendingLogout) {
         recoveryEpisodeClock.reset();
         return;

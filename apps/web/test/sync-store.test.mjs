@@ -258,6 +258,10 @@ test("sync store setActiveGameId manages live sync connections", () => {
       getIdentityId: () => "id-test",
       getLastEventSeq: () => 0,
       getGameViewModel: () => null,
+      retireColdDestinationRecovery: (gameId, options) => {
+        calls.push(["retireColdDestinationRecovery", gameId, options]);
+        return true;
+      },
     }),
     createSyncClient: () => ({
       connectGame: (gameId) => {
@@ -287,8 +291,45 @@ test("sync store setActiveGameId manages live sync connections", () => {
     ["connect", "game-1"],
     ["disconnect", "game-1"],
     ["connect", "game-2"],
+    ["retireColdDestinationRecovery", "game-1", { reason: "unavailable" }],
     ["disconnectAll"],
+    ["retireColdDestinationRecovery", "game-2", { reason: "unavailable" }],
   ]);
+});
+
+test("sync store route retirement delegates safety to the cold recovery fence", () => {
+  const retired = [];
+  const loaded = { id: "loaded-game" };
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      subscribe: () => () => {},
+      getIdentityId: () => "id-test",
+      getLastEventSeq: () => 0,
+      getGameViewModel: (gameId) => gameId === loaded.id ? loaded : null,
+      retireColdDestinationRecovery: (gameId, options) => {
+        retired.push([gameId, options]);
+        return gameId !== loaded.id;
+      },
+    }),
+    createSyncClient: () => ({
+      connectGame: () => {},
+      disconnectGame: () => {},
+      disconnectAll: () => {},
+      getDesiredGameIds: () => [],
+    }),
+  });
+
+  store.setActiveGameId("cold-game");
+  store.setActiveGameId(loaded.id);
+  store.setActiveGameId(null);
+
+  assert.deepEqual(retired, [
+    ["cold-game", { reason: "unavailable" }],
+    [loaded.id, { reason: "unavailable" }],
+  ]);
+  assert.equal(store.getGameViewModel(loaded.id), loaded, "loaded state remains owned by the transport fence");
+  store.retire();
 });
 
 test("sync store applies authoritative live payloads before forwarding events", () => {
