@@ -967,6 +967,28 @@ const normalizePersistedStaticGameCard = (
  * SQLite removes large per-move snapshots before crossing the D1/Worker boundary.
  * Compacted history remains available through the existing paginated read APIs.
  */
+const normalizePersistedPosition = (row: PersistedGameRow): PersistedGameProjection => {
+  let positionRow = row;
+  try {
+    const parsed = JSON.parse(row.state_json) as unknown;
+    if (isRecord(parsed)) {
+      // Terminal and imported-lineage integrity depend on the snapshots and
+      // complete move prefix that this bounded projection deliberately omits.
+      // The authoritative full reader remains the only owner of those proofs.
+      const { importedHistory: _importedHistory, terminalOutcome: _terminalOutcome, ...position } = parsed;
+      const moves = Array.isArray(parsed.moves) ? parsed.moves.map(move => {
+        if (!isRecord(move)) return move;
+        const { importedFrom: _importedFrom, ...summary } = move;
+        return summary;
+      }) : parsed.moves;
+      positionRow = { ...row, state_json: JSON.stringify({ ...position, moves }) };
+    }
+  } catch {
+    // The strict normalizer below owns malformed JSON diagnostics.
+  }
+  return normalizePersistedGame(positionRow, "single");
+};
+
 export const loadPositionProjection = async (env: LiveGameEnv, gameId: string): Promise<PersistedGameProjection | null> => {
   const row = await env.DB.prepare(`SELECT game_id, created_at, updated_at,
     CASE WHEN json_valid(state_json) THEN json_set(state_json, '$.moves', json(COALESCE(
@@ -974,7 +996,7 @@ export const loadPositionProjection = async (env: LiveGameEnv, gameId: string): 
        FROM json_each(live_games.state_json, '$.moves')), '[]'))) ELSE state_json END AS state_json,
     event_seq, gameplay_revision, ownership_mode, move_count FROM ${LIVE_GAMES_TABLE} WHERE game_id = ?1`).bind(gameId).first<PersistedGameRow & { move_count: number }>();
   if (!row?.state_json) return null;
-  const projection = normalizePersistedGame(row, "single");
+  const projection = normalizePersistedPosition(row);
   if (projection.kind === "ok") {
     if (row.ownership_mode !== undefined) projection.game.ownershipMode = row.ownership_mode ?? "legacy_guest";
     const game = { ...projection.game, positionHistoryPending: row.move_count > projection.game.moves.length };
