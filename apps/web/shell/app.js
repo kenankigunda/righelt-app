@@ -125,7 +125,7 @@ import { renderPieceSymbol } from '../piece-symbols.js';
 import { invitationOptions, renderInvitationSurface, createHostInvitation, hostInvitationSettled } from './invitations.js';
 import { createIntroductionPreferences, createOpponentSession } from './opponent-session.js';
 import { renderWordmark, createBrandController, resolveActionAffiliation } from './brand.js';
-import {actionAwaitsPlayer,createDocumentIconOwner} from './document-icon.js';
+import {actionAwaitsPlayer,createDocumentIconOwner,gameDocumentStartedAt} from './document-icon.js';
 import { icon, soundToggle, headerActionContent } from './ui.js';
 import { createGameSound } from './sound.js';
 import { createModal } from './modal.js';
@@ -3438,12 +3438,15 @@ const renderContent = ({ animatePanels, includeBoard }) => {
     if(storyDialog.gameId()===currentRoute.gameId && getGameResult(confirmed,transport.getIdentityId()))storyDialog.setMatchStatus('Game finished',true);
   }
   document.title = getDocumentTitle();
-  documentIcon.sync(actionAwaitsPlayer({
-    currentGame:currentGame?.id===currentRoute.gameId,
-    canControl:canControlLiveBoard(currentGame),
-    ownsActor:ownsBoardActor(currentGame,transport.getIdentityId()),
-    computerTurn:currentGame?.computerTurn,
-  }));
+  documentIcon.sync({
+    startedAt:gameDocumentStartedAt(currentRoute.gameId,currentGame),
+    attention:actionAwaitsPlayer({
+      currentGame:currentGame?.id===currentRoute.gameId,
+      canControl:canControlLiveBoard(currentGame),
+      ownsActor:ownsBoardActor(currentGame,transport.getIdentityId()),
+      computerTurn:currentGame?.computerTurn,
+    }),
+  });
   syncRouteTransitionForCurrentRoute();
   const routeKey = getRouteRenderKey();
   const baseRouteKey = getBaseRouteRenderKey();
