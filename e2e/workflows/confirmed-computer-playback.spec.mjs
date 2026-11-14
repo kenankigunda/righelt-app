@@ -4,12 +4,25 @@ import {STORAGE_GENERATION_HEADER} from '../../packages/shared-types/src/storage
 import {test,expect} from '@playwright/test';
 import {waitForOpponentReady,readProjectedGame} from '../support/computer-projection.mjs';
 const pieces=page=>page.getByTestId('game-board').evaluate(board=>[...board.querySelectorAll('.cell .piece-token[data-piece-id]:not(.ghost):not(.destruction-piece)')].map(token=>({id:token.dataset.pieceId,row:Number(token.closest('.cell').dataset.row),col:Number(token.closest('.cell').dataset.col)})).sort((a,b)=>a.id.localeCompare(b.id)));
+const installCommandFrameGate=async page=>{
+ let generation=0,held=null,dropped=0;const stateSyncs=new Map();
+ await page.routeWebSocket(/\/api\/shell\/games\//,client=>{
+  const socketGeneration=++generation,server=client.connectToServer();
+  server.onMessage(message=>{
+   let frame;try{frame=JSON.parse(String(message));}catch{}
+   const gameId=frame?.game?.id??frame?.gameId;if(frame?.type==='state_sync'&&gameId)stateSyncs.set(gameId,(stateSyncs.get(gameId)??0)+1);
+   const matches=held&&held.generation===socketGeneration&&(frame?.clientCommandId===held.id||frame?.commandOutcome?.clientCommandId===held.id||frame?.commandOutcomes?.some?.(row=>row.clientCommandId===held.id)||frame?.game?.moves?.some?.(move=>move.clientCommandId===held.id));
+   if(matches){dropped++;return;}client.send(message);
+  });
+ });
+ return {hold:id=>{held={id,generation};},release:()=>{held=null;},stateSyncs:id=>stateSyncs.get(id)??0,dropped:()=>dropped};
+};
 for(const motion of ['no-preference','reduce'])test(`computer stays unprojected until confirmation then shows paced movement and releases human control (${motion})`,async({page,context},info)=>{
  await page.emulateMedia({reducedMotion:motion});
- await page.addInitScript(()=>{window.WebSocket=undefined;window.moveNotes=[];const original=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(original,this,args);window.moveNotes.push({frequency:this.frequency.value,at:performance.now()});return value;};});
+ await page.addInitScript(()=>{window.moveNotes=[];const original=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(original,this,args);window.moveNotes.push({frequency:this.frequency.value,at:performance.now()});return value;};});
  await page.setViewportSize({width:1440,height:1100});await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
  const created=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await created).json()).game;
- await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveText('Active here');await expect(page.getByTestId('game-board')).toBeVisible();
+ await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveAttribute('data-computer-activity','here');await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toBeEnabled();await expect(page.getByTestId('game-board')).toBeVisible();
  let release,seen;const held=new Promise(resolve=>release=resolve),submitted=new Promise(resolve=>seen=resolve);let command;
  await context.route('**/apply',async route=>{const body=route.request().postDataJSON();if(body?.payload?.computer&&!command){command=body;seen();await held;}await route.continue();});
  try{
@@ -38,11 +51,11 @@ for(const motion of ['no-preference','reduce'])test(`computer stays unprojected 
 });
 
 test('unseen update chime stays pending through History and Players and stops after live review',async({page,context},info)=>{
- test.setTimeout(120000); // Keep both real 30-second intervals plus cold preparation and native navigation within the workflow budget.
+ test.setTimeout(180000); // Keep the real 60-second reminder and stopping interval plus cold preparation and native navigation within the workflow budget.
  const {switchGamePanel}=await import('../support/app.mjs');
- await page.addInitScript(()=>{window.WebSocket=undefined;window.moveNotes=[];const original=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(original,this,args);window.moveNotes.push({frequency:this.frequency.value,at:performance.now()});return value;};});
+ await page.addInitScript(()=>{window.moveNotes=[];const original=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(original,this,args);window.moveNotes.push({frequency:this.frequency.value,at:performance.now()});return value;};});
  await page.setViewportSize({width:390,height:900});await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
- const created=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await created).json()).game;await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveText('Active here');
+ const created=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await created).json()).game;await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveAttribute('data-computer-activity','here');await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toBeEnabled();
  let release,command;const held=new Promise(resolve=>release=resolve);await context.route('**/apply',async route=>{const body=route.request().postDataJSON();if(body?.payload?.computer&&!command){command=body;await held;}await route.continue();});
  const notes=frequency=>page.evaluate(value=>window.moveNotes.filter(note=>note.frequency===value),frequency);
  try{
@@ -52,26 +65,26 @@ test('unseen update chime stays pending through History and Players and stops af
   const hit=row.locator(':scope > .history-move-hit');await expect(row).toHaveAttribute('data-move-id',recorded.moveId);await expect(hit).toHaveAttribute('data-action','jump-history');await expect(hit).toHaveAttribute('data-game-id',game.id);await expect(hit).toHaveAttribute('data-move-index',String(recorded.index));
   await hit.click();await expect(row).toHaveAttribute('aria-current','true');await expect(row).toHaveClass(/is-selected/);await page.evaluate(()=>window.moveNotes=[]);
   release();await expect.poll(async()=> (await notes(460)).length,{timeout:15000}).toBe(1);await expect.poll(async()=>(await notes(690)).length).toBe(1);expect(await notes(820)).toHaveLength(0);await expect(page.locator('.computer-replay')).toHaveCount(0);await expect(row).toHaveClass(/is-selected/);
-  await switchGamePanel(page,'players');expect(await notes(460)).toHaveLength(1);await expect.poll(async()=> (await notes(460)).length,{timeout:35000}).toBe(2);expect(await notes(820)).toHaveLength(0);
-  await switchGamePanel(page,'board');await expect(page.locator('.computer-replay')).toHaveCount(0);const seen=await notes(460);await page.waitForTimeout(31000);expect(await notes(460)).toHaveLength(seen.length);expect(await notes(820)).toHaveLength(0);
+  await page.getByRole('button',{name:'Hide previous turn',exact:true}).click();await switchGamePanel(page,'players');expect(await notes(460)).toHaveLength(1);await expect.poll(async()=> (await notes(460)).length,{timeout:65000}).toBe(2);expect(await notes(820)).toHaveLength(0);
+  await switchGamePanel(page,'board');await expect(page.locator('.computer-replay')).toHaveCount(0);const seen=await notes(460);await page.waitForTimeout(61000);expect(await notes(460)).toHaveLength(seen.length);expect(await notes(820)).toHaveLength(0);
   await info.attach('unseen-update-notes',{body:JSON.stringify(await page.evaluate(()=>window.moveNotes)),contentType:'application/json'});await page.screenshot({path:info.outputPath('unseen-update-seen-live.png')});
  }finally{release();}
 });
 
 for(const refresh of [false,true])test(`lost accepted computer reply reconciles without duplicate movement or command (refresh=${refresh})`,async({page,context},info)=>{
- await page.addInitScript(()=>{window.WebSocket=undefined;window.moveNotes=[];const original=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(original,this,args);window.moveNotes.push(this.frequency.value);return value;};});
+ const gate=await installCommandFrameGate(page);await page.addInitScript(()=>{window.moveNotes=[];const original=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(original,this,args);window.moveNotes.push(this.frequency.value);return value;};});
  await page.setViewportSize({width:1440,height:1100});await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
- const creation=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await creation).json()).game;await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveText('Active here');
+ const creation=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await creation).json()).game;await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect.poll(()=>gate.stateSyncs(game.id)).toBeGreaterThan(0);await expect(page.locator('[data-computer-activity="here"]')).toHaveAttribute('data-computer-activity','here');await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toBeEnabled();
  const applications=[],attempts=[];let accepted,blocked=true,reads=0;
  await context.route(/\/api\/shell\/games\/(?![^?]*\/presence(?:\?|$))/,async route=>{
   const request=route.request(),path=new URL(request.url()).pathname,body=request.method()==='POST'?request.postDataJSON():null;
-  if(path===`/api/shell/games/${game.id}/apply`&&body?.payload?.computer){applications.push(body);const response=await route.fetch();accepted=await response.json();await route.abort();return;}
+  if(path===`/api/shell/games/${game.id}/apply`&&body?.payload?.computer){applications.push(body);gate.hold(body.clientCommandId);const response=await route.fetch();accepted=await response.json();await route.abort();return;}
   if(path.endsWith('/decision-attempt')&&body?.operation==='write'&&body?.kind==='computer')attempts.push(body);
   if(accepted&&blocked&&(path===`/api/shell/games/${game.id}`||path.endsWith('/reconcile'))){reads++;await route.fulfill({status:503,json:{ok:false,error:'unavailable'}});return;}
   await route.continue();
  });
  try{
-  await page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true}).click();await expect.poll(()=>Boolean(accepted),{timeout:30000}).toBe(true);await expect.poll(()=>reads).toBeGreaterThan(0);
+  await page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true}).click();await expect.poll(()=>Boolean(accepted),{timeout:30000}).toBe(true);await expect.poll(()=>gate.dropped()).toBeGreaterThan(0);await expect.poll(()=>reads).toBeGreaterThan(0);
   expect(accepted.commandOutcomes.some(outcome=>outcome.clientCommandId===applications[0].clientCommandId&&outcome.outcome==='accepted')).toBe(true);const decision=accepted.game.moves.find(move=>move.clientCommandId===applications[0].clientCommandId);expect(decision?.computerProof).toBeTruthy();
   await expect(page.locator(`[data-testid="history-move-item"][data-move-id="${decision.moveId}"]`)).toHaveCount(0);await expect(page.locator('.computer-replay')).toHaveCount(0);await page.evaluate(()=>window.moveNotes=[]);
   blocked=false;
@@ -79,22 +92,23 @@ for(const refresh of [false,true])test(`lost accepted computer reply reconciles 
   else{await page.evaluate(()=>window.dispatchEvent(new Event('online')));await expect(page.locator('.computer-replay')).toBeVisible({timeout:15000});await expect(page.locator('.computer-replay')).toHaveCount(0);await expect.poll(()=>page.evaluate(()=>window.moveNotes.filter(frequency=>frequency===820).length)).toBe(1);}
   await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toBeEnabled({timeout:15000});expect(applications.length).toBeGreaterThan(0);expect(new Set(applications.map(value=>value.clientCommandId)).size).toBe(1);for(const value of applications)expect(value).toEqual(applications[0]);expect(attempts).toHaveLength(1);
   await info.attach('lost-accepted-computer-reply',{body:JSON.stringify({refresh,commandId:applications[0].clientCommandId,attemptId:attempts[0].attemptId,decisionId:decision.moveId,reads}),contentType:'application/json'});
- }finally{blocked=false;}
+ }finally{blocked=false;gate.release();}
 });
 
 test('lean confirmed frames recover automatically with foreground grace and no false intervention',async({page,context},info)=>{
- await page.addInitScript(()=>window.WebSocket=undefined);await page.setViewportSize({width:1440,height:1100});await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
- const creation=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await creation).json()).game;await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveText('Active here');
+ const gate=await installCommandFrameGate(page);await page.setViewportSize({width:1440,height:1100});await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
+ const creation=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await creation).json()).game;await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect.poll(()=>gate.stateSyncs(game.id)).toBeGreaterThan(0);await expect(page.locator('[data-computer-activity="here"]')).toHaveAttribute('data-computer-activity','here');await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toBeEnabled();
  let blocked=true,reads=0,firstReadAt,firstConfirmedAt;
  await context.route(/\/api\/shell\/games\/(?![^?]*\/presence(?:\?|$))/,async route=>{
-  const path=new URL(route.request().url()).pathname;
+  const request=route.request(),path=new URL(request.url()).pathname,requestBody=request.method()==='POST'?request.postDataJSON():null;
+  if(path===`/api/shell/games/${game.id}/apply`&&requestBody?.payload?.computer)gate.hold(requestBody.clientCommandId);
   if(path===`/api/shell/games/${game.id}/decision-snapshot`){reads++;firstReadAt??=Date.now();if(blocked){await route.fulfill({status:503,json:{ok:false,error:'unavailable'}});return;}}
   const response=await route.fetch();let body;try{body=await response.json();}catch{await route.fulfill({response});return;}
   if(body.game?.id===game.id)for(const move of body.game.moves??[])if(move.computerProof){firstConfirmedAt??=Date.now();delete move.snapshot;delete move.selectionSnapshot;}
   await route.fulfill({response,json:body});
  });
  try{
-  await page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true}).click();await expect.poll(()=>reads,{timeout:30000}).toBeGreaterThan(0);
+  await page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true}).click();await expect.poll(()=>gate.dropped(),{timeout:30000}).toBeGreaterThan(0);await expect.poll(()=>reads,{timeout:30000}).toBeGreaterThan(0);
   // Foreground blocking starts when the confirmed update is delivered, before
   // the browser's later decision-snapshot request reaches this route handler.
   expect(firstConfirmedAt).toEqual(expect.any(Number));
@@ -109,7 +123,7 @@ test('lean confirmed frames recover automatically with foreground grace and no f
   await page.screenshot({path:info.outputPath('confirmed-playback-retry-ready.png')});
   blocked=false;await expect(page.locator('.computer-replay')).toBeVisible({timeout:10000});await expect(page.locator('.computer-replay')).toHaveCount(0);await expect(notice).toHaveCount(0);await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toBeEnabled();
   await info.attach('confirmed-frame-read-recovery',{body:JSON.stringify({reads,firstReadDelayMs:firstReadAt-firstConfirmedAt,foregroundWaitMs:Date.now()-firstConfirmedAt}),contentType:'application/json'});
- }finally{blocked=false;}
+ }finally{blocked=false;gate.release();}
 });
 
 test('readiness recognizes elapsed loading detail while model response headers are pending',async({page,context},info)=>{
@@ -128,10 +142,10 @@ test('readiness recognizes elapsed loading detail while model response headers a
 
 for(const [width,height,covered] of [[390,450,true],[1440,1100,false]]){
  const utilityTest=test.extend({utilityGame:[async({page},use)=>{
- await page.addInitScript(()=>{window.WebSocket=undefined;window.moveNotes=[];const original=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(original,this,args);window.moveNotes.push({frequency:this.frequency.value,at:performance.now()});return value;};});
+ await page.addInitScript(()=>{window.moveNotes=[];const original=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(original,this,args);window.moveNotes.push({frequency:this.frequency.value,at:performance.now()});return value;};});
  await page.setViewportSize({width,height});await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
  const created=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await created).json()).game;
- await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveText('Active here');
+ await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveAttribute('data-computer-activity','here');await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toBeEnabled();
   await use(game);
  },{timeout:60000}]});
  utilityTest(`utility visibility keeps computer cues aligned with Live Board (${covered?'center-occluded':'docked'})`,async({page,context,utilityGame:game},info)=>{
@@ -208,14 +222,14 @@ if(!covered)utilityTest('a confirmed obsolete computer attempt recovers without 
 }
 
 test('initial computer control keeps Pass visible and disabled until acknowledged',async({page,context},info)=>{
- await page.addInitScript(()=>window.WebSocket=undefined);await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
+ await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
  let release,acquisition;const held=new Promise(resolve=>release=resolve),applications=[];
  await context.route('**/shared',async route=>{const body=route.request().postDataJSON();if(body?.payload?.operation==='computer-control'&&body.payload.values?.action==='acquire'){acquisition=body;await held;}await route.continue();});
  page.on('request',request=>{if(request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/apply'))applications.push(request.postDataJSON());});
  try{
   await page.getByRole('button',{name:'Play Babs',exact:true}).click();await expect.poll(()=>Boolean(acquisition)).toBe(true);await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');
   const pass=page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true});await expect(pass).toBeVisible();await expect(pass).toBeDisabled();expect(applications).toHaveLength(0);
-  release();await expect(page.locator('[data-computer-activity="here"]')).toHaveText('Active here');await expect(pass).toBeEnabled();expect(applications).toHaveLength(0);
+  release();await expect(page.locator('[data-computer-activity="here"]')).toHaveAttribute('data-computer-activity','here');await expect(pass).toBeEnabled();expect(applications).toHaveLength(0);
   await info.attach('initial-computer-admission',{body:JSON.stringify({commandId:acquisition.clientCommandId,applicationsBeforeHumanAction:applications.length}),contentType:'application/json'});
  }finally{release();await context.unrouteAll({behavior:'wait'});}
 });
