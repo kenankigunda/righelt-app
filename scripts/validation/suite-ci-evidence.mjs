@@ -70,7 +70,7 @@ export function assertSuiteRequest(name, request) {
     throw Error("Named suite and requested command differ");
 }
 export const PR_GATE_LAYOUT='pr-gate-v3';
-export const PR_GATE_LAYOUTS=['pr-gate-v2',PR_GATE_LAYOUT,'pr-gate-v4','pr-gate-v5'];
+export const PR_GATE_LAYOUTS=['pr-gate-v2',PR_GATE_LAYOUT,'pr-gate-v5'];
 export const immutablePRLayout = layout => PR_GATE_LAYOUTS.includes(layout) && layout !== 'pr-gate-v2';
 export function suiteRequestProfile(name,request,profile){
  assertSuiteRequest(name,request);

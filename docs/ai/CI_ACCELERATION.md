@@ -25,8 +25,9 @@ fault-injection log messages never trigger that annotation.
 
 ## Release order
 
-1. Merge reader and runner support while `NODE_PARTITIONS=1`. Layout v4 retains
-   the existing nineteen lanes. Register the exact prospective v5 catalogue and
+1. Merge reader and runner support without changing the active catalogue or
+   generated workflow bytes. Existing layout v3 retains nineteen lanes and remains
+   readable by the currently installed tools. Register the exact prospective v5 catalogue and
    generated workflow hashes for twenty-five lanes. Keep historical layouts.
 2. Install the merged release in a separate detached checkout, with frozen
    dependencies and an isolated skill root. Qualify old and new imports there.

@@ -1,8 +1,5 @@
 import { createHash } from "node:crypto";
 
-// Release reader support before changing this to four.
-export const NODE_PARTITIONS = 1;
-
 export const TOOLING_WEB_FILES = Object.freeze([
   "ci-workflow.test.mjs",
   "deploy-config.test.mjs",
@@ -249,7 +246,7 @@ export function fullLanes() {
       : [{ suite: s.id, project: null, shard: 1, shards: 1 }],
   );
 }
-const lanesForSuites = (suites, nodePartitions = 1) => suites.flatMap((s) =>
+const lanesForSuites = (suites) => suites.flatMap((s) =>
   s.projects
     ? s.projects.flatMap((project) =>
         Array.from({ length: s.shards }, (_, i) => ({
@@ -259,14 +256,11 @@ const lanesForSuites = (suites, nodePartitions = 1) => suites.flatMap((s) =>
           shards: s.shards,
         })),
       )
-    : Array.from({ length: ["tooling", "sync-stress"].includes(s.id) ? nodePartitions : 1 }, (_, i) => ({ suite: s.id, project: null, shard: i + 1, shards: ["tooling", "sync-stress"].includes(s.id) ? nodePartitions : 1 })),
+    : [{ suite: s.id, project: null, shard: 1, shards: 1 }],
 );
-export const prGateLanes = (partitions = NODE_PARTITIONS) => {
-  if (![1, 4].includes(partitions)) throw Error("Unsupported Node partition count");
-  return lanesForSuites(SUITES.filter((s) =>
+export const prGateLanes = () => lanesForSuites(SUITES.filter((s) =>
   !s.nightlyOnly && (!s.browser || s.gateOnly),
-), partitions);
-};
+));
 export const nightlyFullLanes = () => lanesForSuites(SUITES);
 export const laneKey = (lane) =>
   `${lane.suite}:${lane.project ?? "default"}:${lane.shard}/${lane.shards}`;
