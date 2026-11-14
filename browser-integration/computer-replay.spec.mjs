@@ -7,6 +7,26 @@ const rect=locator=>locator.evaluate(el=>{const r=el.getBoundingClientRect();ret
 const expectRect=(actual,expected)=>{for(const key of ['left','top','width','height'])expect(Math.abs(actual[key]-expected[key]),key).toBeLessThanOrEqual(1);};
 test.use({viewport:{width:390,height:844},video:'on'});
 
+test('replay attaches a complete transparent board without exposing an alternate foundation',async({page})=>{
+  await open(page);
+  await page.evaluate(()=>{
+    window.replayAttachment=[];
+    const append=Element.prototype.appendChild;
+    Element.prototype.appendChild=function(child){
+      if(child instanceof HTMLElement&&child.classList.contains('computer-replay')){
+        window.replayAttachment.push({cells:child.querySelectorAll('.cell').length,background:child.style.background});
+      }
+      return Reflect.apply(append,this,[child]);
+    };
+  });
+  await page.evaluate(()=>window.replayFixture.start());
+  await expect(page.locator('.computer-replay')).toBeVisible();
+  expect(await page.evaluate(()=>window.replayAttachment)).toEqual([{cells:100,background:''}]);
+  await expect(page.locator('.computer-replay')).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
+  await expect(page.locator('.computer-replay .cell')).toHaveCount(100);
+  await expect(page.locator('.computer-replay')).toHaveCSS('pointer-events','auto');
+});
+
 test('actual adapter animates exact stacked push, retreat, and follow tokens without changing live state',async({page},info)=>{
   await open(page);
   const writes=[];page.on('request',request=>{if(request.method()!=='GET')writes.push(request.url());});
