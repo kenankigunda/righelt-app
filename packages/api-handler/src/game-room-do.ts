@@ -43,6 +43,7 @@ import {
   applyServerMove,
   applyRevertToMove,
   asAction,
+  asCompatiblePersistedAction,
   asGameState,
   asIdentity,
   asScenarioRecord,
@@ -1469,8 +1470,9 @@ export class GameRoomDO {
     const decisiveTurnIndex = getActiveTurn(game)?.index ?? game.board.state.turnIndex;
     const decisiveActorSide = ownerSeat === "Player 1" ? "P1" as const : "P2" as const;
     const turnOwnerSide = getTurnOwnerSideForState(game.board.state);
-    const requestedAction = command.kind === "end_turn" ? { type: "end_turn" as const }
+    const requestedCandidate = command.kind === "end_turn" ? { type: "end_turn" as const }
       : command.kind === "move" ? resolveServerMoveAction(game) : asAction(payload.action);
+    const requestedAction = requestedCandidate ? asCompatiblePersistedAction(requestedCandidate)?.action ?? null : null;
     const effectBefore = clone(game.board.state);
     const commit = { clientCommandId: command.clientCommandId, eventSeq: this.eventSeq + 1,
       gameplayRevision: game.gameplayRevision + 1, actorSide: decisiveActorSide, turnOwnerSide, turnIndex: decisiveTurnIndex };

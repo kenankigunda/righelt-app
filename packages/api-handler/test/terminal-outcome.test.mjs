@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fixture from '../../game-engine/test/fixtures/destruction-turn-end.json' with { type: 'json' };
 import { GameRoomDO } from '../src/game-room-do.ts';
-import { activeActionEvidence, applyAcceptedAutomaticEnding, applyRevertToMove, applyScenarioToGame, createInitialGame } from '../src/shell-live-core.ts';
+import { activeActionEvidence, applyAcceptedAutomaticEnding, applyRevertToMove, applyScenarioToGame, applyServerAction, createInitialGame, resolveServerMoveAction } from '../src/shell-live-core.ts';
 import { loadGameProjection, loadPositionProjection, persistGameState } from '../src/shell-live-db.ts';
 import { ACTION_CONTRACT_VERSION, commandFingerprint } from '../../shared-types/src/sync-protocol.ts';
 import { createFakeD1 } from './support/fake-d1.mjs';
@@ -443,6 +443,46 @@ test('accepted-action integration applies proven continuation finality but not a
   assert.deepEqual(move.snapshot, game.board.state);
 });
 
+test('compressed decisive rush finality remains strict-readable after persistence', async () => {
+  const pieces = [commander('C1', 'P1', 0, 9), commander('C2', 'P2', 3, 6),
+    unit('V0', 'P1', 0, 4), unit('V2', 'P1', 2, 4), unit('H1', 'P1', 5, 4),
+    unit('H9', 'P1', 5, 9), unit('V8', 'P1', 8, 4), unit('V9', 'P1', 9, 4), unit('bait', 'P2', 1, 5)];
+  const state = makeState({ pieces, continuation: { type: 'rush', owner: 'P1', frozenOwner: 'P1',
+    frozenPieceStatesById: Object.fromEntries(pieces.filter(piece => piece.owner === 'P1')
+      .map(piece => [piece.id, { supplied: true, commanded: true }])),
+    rushedPieceIds: pieces.filter(piece => piece.owner === 'P1' && piece.id !== 'V0').map(piece => piece.id),
+    rushChainPieceIds: ['C1'], chainLength: 1 } });
+  const game = createInitialGame({ gameId: 'compressed-early-finality', identityId: 'owner', selfPlayMode: true });
+  game.board.state = state;
+  const canonicalAction = resolveServerMoveAction(game);
+  const action = { ...canonicalAction, targetId: 'legacy-unused-target' };
+  assert.equal(action?.type, 'rush');
+  const move = { moveId: 'decisive-rush', index: 0, turnIndex: 0, turnMoveIndex: 0, displayMoveNumber: 1,
+    actorSide: 'P1', at: game.createdAt, notation: 'Rush', action, clientCommandId: 'v2:early',
+    selectionSnapshot: structuredClone(state), snapshot: structuredClone(state), destroyedPieces: [] };
+  game.moves = [move];
+  game.turns[0].moveIndexes = [0];
+  game.gameplayRevision = 1;
+  const record = applyAcceptedAutomaticEnding(game, action, { move, destroyedPieces: [] },
+    { clientCommandId: 'v2:early', eventSeq: 2, gameplayRevision: 1, actorSide: 'P1', turnOwnerSide: 'P1', turnIndex: 0 });
+  assert.equal(record?.cause.kind, 'relevant-continuation-finality');
+  // Pre-T-144 Action was a broad durable shape. Recreate a record accepted by
+  // the engine before the per-type closed decoder was introduced.
+  game.moves[0].action = structuredClone(action);
+  game.terminalOutcome.decisive.action = structuredClone(action);
+
+  const env = { DB: createFakeD1(), STORAGE_COMPRESSION: 'true' };
+  await persistGameState(env, createInitialGame({ gameId: game.id, identityId: 'owner', selfPlayMode: true }), 1);
+  await persistGameState(env, game, 2);
+  game.player1.connected = false;
+  game.player1.sessionCount = 0;
+  await persistGameState(env, game, 3, null, { metadataOnly: true });
+  const loaded = await loadGameProjection(env, game.id);
+  assert.equal(loaded.kind, 'ok');
+  assert.deepEqual(loaded.game.moves[0].action, canonicalAction);
+  assert.deepEqual(loaded.game.terminalOutcome.decisive.action, canonicalAction);
+});
+
 test('accepted turn settlement applies exhaustive sole-Pass incoming loss and freezes Pass in the action count', () => {
   const game = createInitialGame({ gameId: 'incoming-immobile', identityId: 'owner', selfPlayMode: true });
   game.board.state = packedState();
@@ -496,6 +536,12 @@ test('persisted terminal provenance binds every frozen field family to authorita
     ['board', game => { game.terminalOutcome.board.turnIndex += 1; }],
     ['action', game => { game.terminalOutcome.decisive.action = { type: 'end_turn' }; }],
     ['unknown action', game => { game.terminalOutcome.decisive.action = { type: 'teleport' }; }],
+    ['unknown action field', game => { game.terminalOutcome.decisive.action = {
+      ...game.terminalOutcome.decisive.action, unknownField: 'unexpected',
+    }; }],
+    ['malformed legacy action field', game => { game.terminalOutcome.decisive.action = {
+      ...game.terminalOutcome.decisive.action, targetId: 42,
+    }; }],
     ['malformed action', game => { game.terminalOutcome.decisive.action = { type: 'move', actorId: 'C1' }; }],
     ['decision', game => { game.terminalOutcome.decisive.decisionId = 'missing-decision'; }],
     ['decisive command', game => { game.terminalOutcome.decisive.clientCommandId = 'v2:other'; }],
@@ -559,7 +605,7 @@ test('persisted move actions reject unknown and malformed per-type shapes', asyn
     { type: 'teleport' },
     { type: 'move', actorId: 'C1' },
     { type: 'move', to: { row: 2, col: 6 } },
-    { type: 'move', actorId: 'C1', to: { row: 2, col: 6 }, targetId: 'unexpected' },
+    { type: 'move', actorId: 'C1', to: { row: 2, col: 6 }, unknownField: 'unexpected' },
     { type: 'push', actorId: 'C1', to: { row: 3, col: 5 }, targetId: '' },
   ]) {
     const env = { DB: createFakeD1() }, game = createInitialGame({ gameId: `bad-${action.type}-${Object.keys(action).length}`,
@@ -570,6 +616,15 @@ test('persisted move actions reject unknown and malformed per-type shapes', asyn
     await persistGameState(env, game, 1);
     assert.equal((await loadGameProjection(env, game.id)).kind, 'invalid');
   }
+});
+
+test('accepted broad Action input is canonicalized before the current writer persists it', () => {
+  const game = createInitialGame({ gameId: 'canonical-write', identityId: 'owner', selfPlayMode: true });
+  const result = applyServerAction(game, {
+    type: 'pass', actorId: 'legacy-actor', from: { row: 0, col: 0 }, to: { row: 0, col: 0 }, targetId: 'legacy-target',
+  }, undefined, 'v2:canonical-write');
+  assert.equal(result.ok, true);
+  assert.deepEqual(game.moves[0].action, { type: 'pass' });
 });
 
 test('retained sparse push actions round-trip with optional targetId', async () => {

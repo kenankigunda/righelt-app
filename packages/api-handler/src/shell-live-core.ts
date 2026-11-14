@@ -333,6 +333,48 @@ export const asPersistedAction = (value: unknown): Action | null => {
   return { type: candidate.type as Action["type"], ...(actorId ? { actorId } : {}), ...(from ? { from } : {}), to,
     ...(candidate.type === "push" && candidate.targetId !== undefined ? { targetId: String(candidate.targetId) } : {}) };
 };
+/** The original durable Action contract exposed the same optional fields for
+ * every action type. Canonicalize those closed legacy shapes once at the
+ * read/write boundary while continuing to reject unknown keys and malformed
+ * coordinates. */
+export const asCompatiblePersistedAction = (
+  value: unknown,
+): { action: Action; repaired: boolean } | null => {
+  const strict = asPersistedAction(value);
+  if (strict) return { action: strict, repaired: false };
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  const legacyKeys = new Set(["type", "actorId", "from", "to", "targetId"]);
+  if (Object.keys(candidate).some(key => !legacyKeys.has(key))) return null;
+  if (candidate.type === "pass" || candidate.type === "end_turn") {
+    const actorId = candidate.actorId === undefined ? undefined
+      : typeof candidate.actorId === "string" && candidate.actorId ? candidate.actorId : null;
+    const from = candidate.from === undefined ? undefined : asActionCoordinate(candidate.from);
+    const to = candidate.to === undefined ? undefined : asActionCoordinate(candidate.to);
+    const targetId = candidate.targetId === undefined ? undefined
+      : typeof candidate.targetId === "string" && candidate.targetId ? candidate.targetId : null;
+    if (actorId === null || from === null || to === null || targetId === null) return null;
+    return { action: { type: candidate.type }, repaired: true };
+  }
+  if (!["move", "project", "rush", "push", "follow", "retreat"].includes(String(candidate.type))) return null;
+  const actorId = candidate.actorId === undefined ? undefined
+    : typeof candidate.actorId === "string" && candidate.actorId ? candidate.actorId : null;
+  const from = candidate.from === undefined ? undefined : asActionCoordinate(candidate.from);
+  const to = asActionCoordinate(candidate.to);
+  const targetId = candidate.targetId === undefined ? undefined
+    : typeof candidate.targetId === "string" && candidate.targetId ? candidate.targetId : null;
+  if (actorId === null || from === null || !to || targetId === null || (actorId === undefined && from === undefined)) return null;
+  return {
+    action: {
+      type: candidate.type as Action["type"],
+      ...(actorId ? { actorId } : {}),
+      ...(from ? { from } : {}),
+      to,
+      ...(candidate.type === "push" && targetId ? { targetId } : {}),
+    },
+    repaired: true,
+  };
+};
 const asCoordinate = (value: unknown): { row: number; col: number } | null => {
   if (!value || typeof value !== "object") {
     return null;
@@ -1600,6 +1642,9 @@ const applyServerActionInternal = (
   clientCommandId: string | null | undefined,
   retreatSemantics: RetreatSemantics,
 ) => {
+  const compatibleAction = asCompatiblePersistedAction(action);
+  if (!compatibleAction) return { ok: false as const, error: "invalid_action" };
+  action = compatibleAction.action;
   if (clientCommandId) {
     const existingMove = game.moves.find((entry) => !isMoveUndone(entry) && entry.clientCommandId === clientCommandId);
     if (existingMove) {

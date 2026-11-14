@@ -10,7 +10,7 @@ import type { CutoverPolicy } from './account-cutover';
 import type { ServerEvent } from "../../shared-types/src/events";
 import {
   asAction,
-  asPersistedAction,
+  asCompatiblePersistedAction,
   asGameState,
   activeActionEvidence,
   createInviteToken,
@@ -524,7 +524,11 @@ const normalizeTerminalOutcome = (
     || Number(value.activeActionCount) < 0 || typeof value.activeActionCountComplete !== "boolean") return invalid();
   const decisive = value.decisive;
   const terminalBoard = asGameState(value.board);
-  const action = asPersistedAction(decisive.action);
+  const compatibleAction = asCompatiblePersistedAction(decisive.action);
+  const action = compatibleAction?.action ?? null;
+  if (compatibleAction?.repaired) {
+    recordMismatch(mismatches, "terminalOutcome.decisive.action", "canonical persisted Action", decisive.action, "canonicalized_legacy_action");
+  }
   const status = value.result.status;
   if (!terminalBoard || !action || !TERMINAL_OUTCOME_STATUSES.includes(status as never)
     || terminalBoard.outcome.status !== status || board.outcome.status !== status
@@ -619,7 +623,11 @@ const normalizeMoves = (value: unknown, mismatches: PersistedGameMismatch[]): Li
     .filter((entry) => Boolean(entry) && typeof entry === "object")
     .map((entry, index) => {
       const move = entry as Record<string, unknown>;
-      const action = asPersistedAction(move.action);
+      const compatibleAction = asCompatiblePersistedAction(move.action);
+      const action = compatibleAction?.action ?? null;
+      if (compatibleAction?.repaired) {
+        recordMismatch(mismatches, `moves[${index}].action`, "canonical persisted Action", move.action, "canonicalized_legacy_action");
+      }
       if (!action) recordMismatch(mismatches, `moves[${index}].action`, "closed persisted Action", move.action, "rejected_invalid_action");
       const undone = move.undone === true;
       if (!undone) {
