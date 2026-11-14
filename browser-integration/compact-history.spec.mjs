@@ -81,7 +81,7 @@ for(const width of [390,1440])test(`imported lineage disclosure keeps native His
  expect(await page.evaluate(()=>window.historyActions)).toEqual(['toggle-imported-history','toggle-imported-history','toggle-imported-history','jump-history','launch-history-branch','jump-history']);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
  if(width===390){
-  for(const button of await page.locator('.history-imported-toggle,.history-move-hit,.history-item-actions button').all()){
+  for(const button of await page.locator('.history-imported-toggle,.history-imported-source,.history-move-hit,.history-item-actions button').all()){
    if(await button.isVisible()){const rect=await button.boundingBox();expect(rect.height).toBeGreaterThanOrEqual(44);}
   }
  }

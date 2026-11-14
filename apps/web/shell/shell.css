@@ -1181,7 +1181,10 @@ button.button-release-bounce,
 }
 
 .history-imported-source {
+  display: inline-flex;
+  align-items: center;
   width: fit-content;
+  min-height: 44px;
   font-size: 0.875em;
 }
 
