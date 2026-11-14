@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {BOARD_MESSAGE_PRIORITY,isMeaningfulHistoryMessage,resolveBoardMessageOwner} from '../board/message-priority.js';
+import {BOARD_MESSAGE_PRIORITY,isBoardMessageResolution,isMeaningfulHistoryMessage,resolveBoardMessageOwner} from '../board/message-priority.js';
 
 const prompt=text=>({text});
 const context=text=>({text,purpose:'selected-history'});
@@ -31,6 +31,13 @@ test('generic instructions remain when no stronger state explains the Board',()=
   owner:BOARD_MESSAGE_PRIORITY.GENERIC_INSTRUCTION,prompt:generic,context:null,
  });
  assert.deepEqual(resolveBoardMessageOwner(),{owner:null,prompt:null,context:null});
+});
+
+test('only complete priority resolutions cross the runtime owner boundary',()=>{
+ assert.equal(isBoardMessageResolution(resolveBoardMessageOwner({generic:prompt('Choose a move in History')})),true);
+ assert.equal(isBoardMessageResolution({text:'Choose a move in History'}),false);
+ assert.equal(isBoardMessageResolution({owner:BOARD_MESSAGE_PRIORITY.SEMANTIC,prompt:null}),false);
+ assert.equal(isBoardMessageResolution({owner:99,prompt:null,context:context('Outcome')}),false);
 });
 
 test('History strength, not English copy or actor metadata, distinguishes placeholders from narration',()=>{

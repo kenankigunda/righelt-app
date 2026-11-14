@@ -17,6 +17,11 @@ export function isMeaningfulHistoryMessage(message,strength=BOARD_MESSAGE_STRENG
  return Boolean(message)&&strength===BOARD_MESSAGE_STRENGTH.SEMANTIC;
 }
 
+export function isBoardMessageResolution(value){
+ return Boolean(value)&&Object.values(BOARD_MESSAGE_PRIORITY).includes(value.owner)
+  &&Object.hasOwn(value,'prompt')&&Object.hasOwn(value,'context');
+}
+
 // One owner chooses the visible Board message. Generic usage instructions
 // yield to meaningful state, required actions, and blocking recovery.
 export function resolveBoardMessageOwner({blocking=null,required=null,semantic=null,context=null,generic=null}={}){
