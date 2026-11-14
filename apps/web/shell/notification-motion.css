@@ -1,4 +1,5 @@
 /* Motion belongs to a uniform surface layer. Copy and controls never fade. */
+:root { --notification-processing-cycle: 2.4s; }
 html .shell-game-alert {
   position: relative;
   isolation: isolate;
@@ -15,7 +16,7 @@ html .shell-game-alert::after {
   pointer-events: none;
 }
 html .shell-game-alert[data-notification-activity="processing"]::after {
-  animation: notification-processing 2.4s ease-in-out infinite;
+  animation: notification-processing var(--notification-processing-cycle) ease-in-out infinite;
 }
 html .shell-game-alert[data-notification-activity="waiting"]::after {
   background: color-mix(in srgb,var(--activity-color,var(--player-p2)) 8%,transparent);

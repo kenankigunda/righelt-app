@@ -50,7 +50,12 @@ class FakeElement {
     this.parentNode = null;
     this.dataset = {};
     this.attributes = new Map();
-    this.style = {};
+    const styleValues = new Map();
+    this.style = {
+      setProperty: (name, value) => styleValues.set(name, value),
+      removeProperty: (name) => styleValues.delete(name),
+      getPropertyValue: (name) => styleValues.get(name) ?? "",
+    };
     this.classList = new FakeClassList();
     this._className = "";
     this._innerHTML = "";
@@ -1161,9 +1166,9 @@ test("rush blocker chip styling matches the dedicated board-square treatment", (
 });
 
 test("project previews use a plus badge while move-style previews use lightweight owner-colored arrows", () => {
-  assert.match(adapterSource, /const PREVIEW_STROKE_BY_OWNER = \{\s*P1: "var\(--player-p1\)",\s*P2: "var\(--player-p2\)",\s*\};/s);
+  assert.match(adapterSource, /const PREVIEW_STROKE_BY_OWNER = \{\s*P1: "var\(--player-p1\)",\s*P2: "var\(--player-p2\)",\s*neutral: "#85877d",\s*\};/s);
   assert.match(adapterSource, /const PREVIEW_OPACITY = \{\s*default: "0\.35",\s*selected: "0\.7",\s*\};/s);
-  assert.match(adapterSource, /const drawArrowLine = \(from, to, owner, curved = false, selected = false\) => \{/);
+  assert.match(adapterSource, /const drawArrowLine = \(from, to, owner, curved = false, selected = false, unavailable = false\) => \{/);
   assert.match(adapterSource, /line\.setAttribute\("stroke-width", "3"\);/);
   assert.match(adapterSource, /path\.setAttribute\("stroke-width", "3"\);/);
   assert.match(adapterSource, /const previewOpacity = selected \? PREVIEW_OPACITY\.selected : PREVIEW_OPACITY\.default;/);
@@ -1173,7 +1178,7 @@ test("project previews use a plus badge while move-style previews use lightweigh
   assert.match(adapterSource, /const isSelectedTarget = targetCell\?\.classList\.contains\("target"\) \?\? false;/);
   assert.match(
     adapterSource,
-    /drawArrowLine\(\s*piece\.position,\s*action\.to,\s*piece\.owner,\s*false,\s*isSelectedTarget,\s*\)/s,
+    /drawArrowLine\(\s*piece\.position,\s*action\.to,\s*piece\.owner,\s*false,\s*isSelectedTarget,\s*isSelectedTarget && mutationSurface\?\.unavailable,\s*\)/s,
   );
   assert.doesNotMatch(adapterSource, /drawPath\(\[piece\.position, action\.to\], "#8b5ec0", "5 5"\)/);
   assert.match(adapterSource, /if \(action\.type === "project"\) \{\s*const existingToken = findRenderablePieceToken\(targetCell\);[\s\S]*existingToken\.classList\.add\("preview-created"\);[\s\S]*return;[\s\S]*\}/s);
@@ -1405,4 +1410,53 @@ test('pending removed-token copy is static, hidden from accessibility, unlabeled
    adapter.render({...payload,snapshot:{sideToMove:'P1',pieces:[{...piece,id:'replacement',owner:'P2'}]}});const updated=getCell(boardEl,4,3);assert.equal(updated.querySelector('.pending-removal-piece'),null);assert(updated.querySelector('.piece-token'));
   }finally{adapter.unmount();}
  });
+});
+
+test("every mutation destination uses one neutral incident surface without pulsing pieces", async () => {
+  await withFakeDocument(async () => {
+    for (const type of ["move", "project", "rush", "push", "retreat", "follow"]) {
+      const { adapter, boardEl, overlayLinesEl } = createMountedAdapter();
+      const source = { row: 4, col: 2 }, target = { row: 4, col: 3 };
+      const actor = { id: "A", owner: "P1", kind: type === "project" ? "commander" : "unit", position: source, supplied: true, commanded: true };
+      const action = { type, actorId: actor.id, from: source, to: target, previewPiece: actor };
+      const payload = {
+        snapshot: { sideToMove: "P1", turnIndex: 0, continuation: null, pieces: [actor] },
+        selection: { selectedPieceId: actor.id, source, target }, overlay: { mode: "interactive" },
+        legalActions: [action], selectedPieceMoves: [action], selectedPieceMovePreviews: [action],
+        removalEffects: [], allowFreeSelection: false, currentActionType: type,
+        selectedPieceOverlayPhase: "actionPreviews",
+      };
+      const elapsedMs = 9_725 + ["move", "project", "rush", "push", "retreat", "follow"].indexOf(type);
+      adapter.render({ ...payload, mutationSurface: { unavailable: true, pulsing: true, elapsedMs, episodeId: "episode" } });
+      const sourceCell = getCell(boardEl, source.row, source.col), targetCell = getCell(boardEl, target.row, target.col);
+      assert.equal(targetCell.classList.contains("mutation-unavailable-target"), true, type);
+      assert.equal(targetCell.dataset.mutationPulse, "true", type);
+      assert.equal(targetCell.style.getPropertyValue("--surface-pulse-delay"), `-${elapsedMs}ms`, `${type} uses incident elapsed time`);
+      assert.equal(sourceCell.classList.contains("mutation-unavailable-target"), false, type);
+      assert.equal(sourceCell.querySelector(".piece-token")?.classList.contains("mutation-unavailable-target"), false, type);
+      const ghost = targetCell.querySelector(".move-ghost");
+      assert(ghost, `${type} keeps its steady preview ghost`);
+      assert.equal(ghost.dataset.mutationPulse, undefined, `${type} never assigns pulse ownership to the ghost`);
+      if (type !== "project") {
+        const arrow = overlayLinesEl.querySelector("line");
+        assert.equal(arrow?.getAttribute("stroke"), "#85877d", `${type} arrow is neutral`);
+        assert.equal(arrow?.getAttribute("stroke-dasharray"), "6 5", `${type} arrow is dashed`);
+      }
+      adapter.render({ ...payload, mutationSurface: { unavailable: true, pulsing: true, elapsedMs, episodeId: "episode" } });
+      assert.equal(targetCell.style.getPropertyValue("--surface-pulse-delay"), `-${elapsedMs}ms`, `${type} rerender stays synchronized`);
+      adapter.render({ ...payload, mutationSurface: { unavailable: false, pulsing: false, elapsedMs: 0, episodeId: null } });
+      assert.equal(targetCell.classList.contains("mutation-unavailable-target"), false, `${type} settles`);
+      assert.equal(targetCell.dataset.mutationPulse, undefined, `${type} pulse retires`);
+      assert.equal(targetCell.style.getPropertyValue("--surface-pulse-delay"), "", `${type} delay retires`);
+      adapter.unmount();
+    }
+  });
+});
+
+test("mutation wash is an isolated underlay beneath steady preview content", () => {
+  assert.match(styleSource, /\.cell\.target\.mutation-unavailable-target\s*\{[\s\S]*isolation:isolate;/s);
+  assert.match(styleSource, /\.cell\.target\.mutation-unavailable-target::after\s*\{[\s\S]*z-index:0;/s);
+  assert.match(styleSource, /\.cell\.target\.mutation-unavailable-target > \.piece-token\.move-ghost\s*\{z-index:1;\}/);
+  assert.match(styleSource, /\.cell\.target\.mutation-unavailable-target > \.piece-token:not\(\.move-ghost\)[\s\S]*z-index:2;/s);
+  assert.doesNotMatch(styleSource, /\.piece-token\.move-ghost[^}]*animation:/s);
 });

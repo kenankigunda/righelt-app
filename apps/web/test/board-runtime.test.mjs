@@ -3518,10 +3518,12 @@ test('status refresh redraws admission changes without losing the selected move'
  const prepared=structuredClone(runtime.getSelection());
  const beforeFence=renders.length;
  interactive=false;runtime.refreshStatus();
- assert.equal(renders.length,beforeFence,'a brief status-only fence must not replace action previews with inspection lines');
+ assert.equal(renders.length,beforeFence+1,'the destination surface repaints when its admission becomes unavailable');
+ assert.equal(renders.at(-1).mutationSurface.unavailable,true);
  assert.deepEqual(renders.at(-1).selectedPieceMoves,[action]);
  interactive=true;runtime.refreshStatus();
- assert.equal(renders.length,beforeFence,'an unpainted fence must not cause a settlement redraw');
+ assert.equal(renders.length,beforeFence+2,'settlement repaints the prepared destination as available');
+ assert.equal(renders.at(-1).mutationSurface.unavailable,false);
  interactive=false;runtime.refreshVisuals();runtime.refreshStatus();
  assert.deepEqual(renders.at(-1).selectedPieceMoves,[action]);
  interactive=true;runtime.refreshStatus();
