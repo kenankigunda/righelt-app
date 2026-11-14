@@ -5,9 +5,9 @@ const metrics=page=>page.evaluate(()=>{
  const box=node=>{const value=node.getBoundingClientRect();return{x:value.x,y:value.y,width:value.width,height:value.height,right:value.right,bottom:value.bottom,centerY:value.y+value.height/2};};
  const root=document.documentElement,summary=document.querySelector('#summary'),matchup=summary.querySelector('.game-title-matchup'),players=document.querySelector('#players');
  const summaryPlayers=[...matchup.querySelectorAll('.game-title-player')].map(node=>({box:box(node),name:box(node.querySelector('bdi')),emblem:box(node.querySelector('.player-emblem')),fontSize:parseFloat(getComputedStyle(node.querySelector('bdi')).fontSize),color:getComputedStyle(node).color}));
- const home=document.querySelector('#home'),homePlayer=home.querySelector('.game-title-player'),homeEmblem=homePlayer.querySelector('.player-emblem'),playerEmblem=players.querySelector('.player-emblem');
+ const home=document.querySelector('#home'),homeMatchup=home.querySelector('.game-title-matchup'),homePlayer=home.querySelector('.game-title-player'),homeEmblem=homePlayer.querySelector('.player-emblem'),playerEmblem=players.querySelector('.player-emblem');
  return{rootFont:parseFloat(getComputedStyle(root).fontSize),viewport:innerWidth,scrollWidth:root.scrollWidth,summary:box(summary),matchup:box(matchup),summaryPlayers,date:box(summary.querySelector('.game-date-inlay')),
-  home:{date:box(home.querySelector('.game-date-inlay')),fontSize:parseFloat(getComputedStyle(homePlayer.querySelector('bdi')).fontSize),emblem:box(homeEmblem),emblemAlign:getComputedStyle(homeEmblem).alignSelf,emblemMarginTop:parseFloat(getComputedStyle(homeEmblem).marginTop)},
+  home:{date:box(home.querySelector('.game-date-inlay')),matchup:box(homeMatchup),fontSize:parseFloat(getComputedStyle(homePlayer.querySelector('bdi')).fontSize),emblem:box(homeEmblem),emblemAlign:getComputedStyle(homeEmblem).alignSelf,emblemMarginTop:parseFloat(getComputedStyle(homeEmblem).marginTop)},
   players:{emblem:box(playerEmblem),color:getComputedStyle(players.querySelector('.player-name')).color},focusables:summary.querySelectorAll('a,button,[tabindex]').length,sr:[...summary.querySelectorAll('.sr-only')].map(node=>node.textContent)};
 });
 
@@ -23,6 +23,8 @@ test('Game Summary alone uses centered 16px names with existing 17px Tessera mar
   expect(value.sr).toEqual(['Red: ','Blue: ']);
   expect(value.date.width).toBeCloseTo(value.rootFont*3,1);expect(value.date.height).toBeCloseTo(value.rootFont*3.5,1);
   expect(value.home.date.width).toBeCloseTo(value.date.width,2);expect(value.home.date.height).toBeCloseTo(value.date.height,2);
+  expect(Math.abs(value.date.centerY-value.matchup.centerY)).toBeLessThanOrEqual(1);
+  expect(Math.abs(value.home.date.centerY-value.home.matchup.centerY)).toBeLessThanOrEqual(1);
   for(const player of value.summaryPlayers){
    expect(player.fontSize).toBeCloseTo(expectedName,2);expect(player.emblem.width).toBeCloseTo(expectedMark,2);expect(player.emblem.height).toBeCloseTo(expectedMark,2);
    expect(Math.abs(player.emblem.centerY-player.name.centerY)).toBeLessThanOrEqual(1);

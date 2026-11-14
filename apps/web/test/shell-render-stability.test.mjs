@@ -412,8 +412,6 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   assert.match(html,/<div class="mini-board-card-copy">/);assert.match(html,/<div class="mini-board-card-meta mini-board-card-meta-primary">/);assert.match(html,/Move 5/);
   const completed=presenter.renderHomeGameCard({...card,confirmedOutcomeStatus:'p2_win'});assert.match(completed,/4 moves/);assert.match(completed,/Review game/);
   assert.match(source, /const scenarioPreviewPayload = selectedScenario \? buildScenarioStaticPreviewModel\(selectedScenario\) : null;/);
-  assert.match(source, /role:renderGameRoleLine\(game\),/);
-  assert.match(source, /const renderConnectionStatusIcon = \(status, label\) =>/);
   const named={myRole:'Player 1',player1:{identityId:'me',profile:{displayName:'Kenan'}},player2:{identityId:'other',profile:{displayName:'Ada'}}};
   const quiet=renderHomeCardIdentity(named,{identityId:'me',quiet:true});
   assert.match(quiet,/<bdi>You<\/bdi>/);assert.match(quiet,/<bdi>Ada<\/bdi>/);assert.doesNotMatch(quiet,/connection-status-icon/);

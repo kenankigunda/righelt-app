@@ -7,13 +7,25 @@ const escape = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<
 export function renderPlayersPanel(game,{identityId,expanded=false,pendingSeat,icon=()=>'',formatStatus=()=>'',computerActivity,expandedComputers=new Set()}={}) {
  const ownedSides=humanControlledSides(game,{identityId});
  const qualifiers=viewerAliasQualifiers(['P1','P2'].map(side=>({side,owned:ownedSides.includes(side),name:playerIdentityLabel(game,side).text,username:game[side==='P1'?'player1':'player2']?.profile?.username})));
- const seats=['P1','P2'].map((side,index)=>{
+ const seatModels=['P1','P2'].map((side,index)=>{
   const person=game[index?'player2':'player1'],color=index?'Blue':'Red';
   const computerProfile=game.computer ? game.computer.seats?.[index?'p2':'p1'] : person?.computerProfile;
+  return {side,index,person,color,computerProfile};
+ });
+ const humanPresence=new Map();
+ for(const model of seatModels){
+  const key=!model.computerProfile&&model.person?.identityId;
+  if(!key)continue;
+  const current=humanPresence.get(key);
+  humanPresence.set(key,{ownerSide:current?.ownerSide??model.side,connected:Boolean(current?.connected||model.person.connected)});
+ }
+ const seats=seatModels.map(({side,index,person,color,computerProfile})=>{
   const identity=playerIdentityLabel(game,side,{identityId});
   const owned=ownedSides.includes(side);
   const mainLabel=owned ? owningPerspective(game,{identityId}).kind==='self' ? `You · ${color}` : 'You' : identity.text;
-  const content=computerProfile?renderComputerPlayerCard({...person,computerProfile},{gameId:game.id,side,expanded:expandedComputers.has(side),activity:computerActivity}):person?participantButton(person,{key:`seat:${side}`,side:side.toLowerCase(),presence:formatStatus(person.connected),displayName:mainLabel,qualifier:qualifiers[side],profileName:owned ? identity.text : undefined,accessibleName:`${identity.accessibleName}${qualifiers[side]?.startsWith('@') ? `, ${qualifiers[side]}` : ''}, ${person.connected?'Connected':'Disconnected'}`}):`<span class="participant-empty" data-player-side="${side.toLowerCase()}" ${pendingSeat===(index?'blue':'red')?'data-testid="pending-invitation"':''}>${icon('account')}<span>${pendingSeat===(index?'blue':'red')?'Awaiting player':'Open seat'}</span><span class="sr-only">${color}</span></span>`;
+  const personPresence=humanPresence.get(person?.identityId),connected=personPresence?.connected??Boolean(person?.connected);
+  const presence=!personPresence||personPresence.ownerSide===side?formatStatus(connected):'';
+  const content=computerProfile?renderComputerPlayerCard({...person,computerProfile},{gameId:game.id,side,expanded:expandedComputers.has(side),activity:computerActivity}):person?participantButton(person,{key:`seat:${side}`,side:side.toLowerCase(),presence,displayName:mainLabel,qualifier:qualifiers[side],profileName:owned ? identity.text : undefined,accessibleName:`${identity.accessibleName}${qualifiers[side]?.startsWith('@') ? `, ${qualifiers[side]}` : ''}, ${connected?'Connected':'Disconnected'}`}):`<span class="participant-empty" data-player-side="${side.toLowerCase()}" ${pendingSeat===(index?'blue':'red')?'data-testid="pending-invitation"':''}>${icon('account')}<span>${pendingSeat===(index?'blue':'red')?'Awaiting player':'Open seat'}</span><span class="sr-only">${color}</span></span>`;
   return `<li data-testid="participant-player-${index+1}">${content}</li>`;
  }).join('');
  return `<ul class="participant-list perspective-participants" data-testid="participants-list">${seats}</ul>`;

@@ -604,7 +604,8 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .participant-identity[data-player-side="p1"] .participant-computer .player-name {color:var(--player-p1);}
 .participant-identity[data-player-side="p2"] .participant-computer .player-name {color:var(--player-p2);}
 [data-testid="participants-list"] .participant-computer {width:100%;min-height:44px;flex-wrap:nowrap;}
-[data-testid="participants-list"] .participant-computer .player-name-stack {flex:1;max-width:none;overflow:visible;}
+[data-testid="participants-list"] .participant-computer .player-name-stack {flex:0 1 auto;max-width:none;overflow:visible;}
+[data-testid="participants-list"] .participant-computer .computer-tab-status {margin-inline-start:0;}
 .computer-tab-status.computer-status-badge {position:relative;display:inline-flex;width:24px;height:24px;flex:0 0 24px;justify-content:center;align-items:center;color:var(--text-primary);overflow:visible;}
 .computer-status-badge > .righelt-icon {width:22px;height:22px;stroke-width:2;}
 .computer-status-mark {--status-bg:var(--connection-status-disconnected-bg);--status-ring:var(--connection-status-disconnected-ring);position:absolute;right:-2px;bottom:-2px;display:flex;align-items:center;justify-content:center;width:12px;height:12px;border-radius:50%;background:var(--status-bg);color:var(--computer-status-dark-symbol);box-shadow:inset 0 0 0 1px var(--status-ring),0 0 0 1.5px var(--surface-raised);}

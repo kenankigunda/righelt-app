@@ -53,9 +53,16 @@ export function playerDisplayName(game,side) {
 export function playerIdentityLabel(game,side,options={}) {
   const actor=normalizeActivitySide(side);
   if(!actor)return {text:'Player',side:null,color:null,accessibleName:'Player'};
-  const text=playerDisplayName(game,actor),color=sideColorName(actor);
-  const owned=humanControlledSides(game,options).includes(actor);
-  return {text,side:actor,color,accessibleName:`${text}${owned?', you':''}, ${color}`};
+  const ownedSides=humanControlledSides(game,options),owned=ownedSides.includes(actor),color=sideColorName(actor);
+  let text=playerDisplayName(game,actor);
+  if(options.viewerRelative){
+    if(owned)text='You';
+    else if(/^Guest [12]$/.test(text)){
+      const unnamedOthers=['P1','P2'].filter(candidate=>seat(game,candidate)&&!ownedSides.includes(candidate)&&!computerSeat(game,candidate)&&rawName(game,candidate)==='Guest');
+      if(unnamedOthers.length===1)text='Guest';
+    }
+  }
+  return {text,side:actor,color,accessibleName:options.viewerRelative&&owned?`You, ${color}`:`${text}${owned?', you':''}, ${color}`};
 }
 
 export function perspectiveActorLabel(game,side,options={}) {
