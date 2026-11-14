@@ -1126,6 +1126,9 @@ export const createLiveTransportStore = ({
   };
 
   const internalCommand = (envelope) => ({ envelope, kind: envelope.kind === "shared" ? "shared" : envelope.kind === "action" ? "apply" : "end-turn", clientCommandId: envelope.clientCommandId, state: clone(envelope.expectedState), action: envelope.payload.action, notation: envelope.payload.notation, computer: envelope.payload.computer, queuedAt: Number.isFinite(envelope.submittedAt) ? new Date(envelope.submittedAt).toISOString() : new Date().toISOString() });
+  const isRoutineComputerRenewal = envelope => envelope?.kind === 'shared'
+    && envelope.payload?.operation === 'computer-control'
+    && envelope.payload?.values?.action === 'renew';
   const mayHydrateJournal = gameId => !auth?.enabled
     || auth.session.authenticated && gameById.get(gameId)?.ownershipMode === "account_v1";
   const hydrateJournalOnce = async (gameId, isCurrent) => {
@@ -1232,6 +1235,7 @@ export const createLiveTransportStore = ({
       const gameplayRecoveryBlocked = game => Boolean(optimistic.storageBlocked || optimistic.unsavedCommand
         || optimistic.forceSnapshot || optimistic.upgradeRequired || optimistic.confirmationOverdue || optimistic.recoveryIssue
         || optimistic.recoveryPromise || optimistic.syncStatus === 'confirming'
+        || optimistic.pendingCommands.some(entry => entry.kind === 'shared') && !hasOnlySafeHumanRenewal(game, optimistic)
         || optimistic.connectionRecovering && !hasOnlySafeHumanRenewal(game, optimistic));
       rulesExecutor.cancel(`project:${gameId}`);
       optimistic.projectionJob = null;
@@ -2251,9 +2255,16 @@ export const createLiveTransportStore = ({
       const completion=new Promise((resolve,reject)=>sharedWaiters.set(envelope.clientCommandId,{resolve,reject}));
       const pending = internalCommand(envelope);
       optimistic.pendingCommands.push(pending);
-      pending.sharedRecoveryEpoch = (optimistic.connectionRecoveryEpoch ?? 0) + 1;
-      setConnectionRecovering(gameId,true);
-      pending.sharedRecoveryEpoch = optimistic.connectionRecoveryEpoch;
+      // A routine lease renewal is serialized and durably receipt-owned, but it
+      // does not mean the transport connection is recovering. If its outcome
+      // becomes uncertain, the sender's existing error path establishes the
+      // recovery episode at that point. Other shared mutations keep their
+      // established recovery ownership until their receipt settles.
+      if (!isRoutineComputerRenewal(envelope)) {
+        pending.sharedRecoveryEpoch = (optimistic.connectionRecoveryEpoch ?? 0) + 1;
+        setConnectionRecovering(gameId,true);
+        pending.sharedRecoveryEpoch = optimistic.connectionRecoveryEpoch;
+      }
       void sendNextPendingCommand(gameId);
       return {completion};
     });

@@ -84,12 +84,14 @@ test("copied recovery details isolate the failed request from later successful r
  const d=createIssueDiagnostics({now:()=>1000,environment:()=>({}),recoveryTimeline:()=>timeline.snapshot()});
  const id=d.capture(`recovery:${gameId}`,{operation:"move_recovery",gameId,stage:"command_confirmation",requestId:failedId,requestKind:"apply",requestPhase:"body",requestRelationship:"failure",activeEpisodeRelation:"active",status:503});
  d.capture(`recovery:${gameId}`,{stage:"response_received",requestId:laterId,requestKind:"read",requestPhase:"complete",requestRelationship:"latest_observed",activeEpisodeRelation:"unrelated",status:200});
+ d.capture(`recovery:${gameId}`,{stage:"response_received",requestId:laterId,requestKind:"read",requestPhase:"complete",requestRelationship:"latest_observed",activeEpisodeRelation:"unrelated",status:200});
  const details=JSON.parse(d.text(id).split("\n\n").at(-1));
  assert.equal(details.failedRecoveryRequest.requestId,failedId);
  assert.equal(details.failedRecoveryRequest.status,503);
  assert.equal(details.requestTimeline.at(-1).requestId,laterId);
  assert.equal(details.requestTimeline.at(-1).activeEpisodeRelation,"unrelated");
  assert.equal(details.requestTimeline.at(-1).result,"succeeded");
+ assert.equal(details.requestTimeline.filter(request=>request.requestId===laterId).length,1,'one request ID appears once in copied details');
  assert.equal(details.recoveryTimeline.at(-1).requestId,laterId);
  assert.notEqual(details.failedRecoveryRequest.requestId,details.recoveryTimeline.at(-1).requestId);
 });

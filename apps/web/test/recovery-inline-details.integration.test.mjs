@@ -91,6 +91,21 @@ test('an incompatible client notice has details before publishing its failure',t
  assert.match(renderGameAlertCard({incidentId:published}),/>Details<\/button>/);
 });
 
+test('resolved recovery stays in debug history without rendering a normal gameplay notice',t=>{
+ issueDiagnostics.clear();
+ const game={id:'resolved-recovery-game'};
+ const recoveryId=issueDiagnostics.capture(`recovery:${game.id}`,{gameId:game.id,operation:'move_recovery',stage:'connection_failed'});
+ issueDiagnostics.resolve(`recovery:${game.id}`);
+ const operationId=issueDiagnostics.capture('operation:kept',{gameId:game.id,operation:'other_operation',stage:'failed'});
+ issueDiagnostics.resolve('operation:kept');
+ t.after(()=>issueDiagnostics.clear());
+ const getItems=createGameAlertItems(()=>({transport:{getFailedOperations:()=>[]},maybeUpdateUndoRequestOutcomeFeedback(){},presentedRecoveryMessage:()=>null,needsRecoveryAction:()=>false,recoveryPresentationOptions:()=>({}),issueDiagnostics,isDiagnosticOpen:()=>true,dismissedRecoveryNotices:new Map(),escapeHtml:String,recoveryActivity,activityActorSide,playbackRecoveryWait:{update:()=>0},viewingScope:()=> 'resolved',liveBoardVisible:()=>true,SYNC_TIMING,renderComputerProgress:()=>'',computerSession:null,getActiveRevertRequest:()=>null,getActivePendingRevertRequest:()=>null,boardContextScope:()=> 'resolved',boardContexts:{items:()=>[]},contextReplayEnabled:()=>false}));
+ const items=getItems(game);
+ assert.equal(items.some(item=>item.key===`resolved:${recoveryId}`),false,'successful Retry returns directly to the valid game');
+ assert.equal(items.some(item=>item.key===`resolved:${operationId}`),true,'unrelated explicitly opened diagnostics retain their existing behavior');
+ assert.ok(issueDiagnostics.get(recoveryId)?.resolvedAt,'debug history keeps the resolved recovery incident');
+});
+
 const {createForegroundRecoveryWait}=await import('../shell/foreground-recovery.js');
 const {createRecoveryTelemetry}=await import('../shell/recovery-telemetry.js');
 

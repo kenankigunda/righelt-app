@@ -57,7 +57,12 @@ export function projectRecoveryCopyDetails(report, timeline = []) {
     const attempts = [report?.initial, ...(Array.isArray(report?.events) ? report.events : [])].filter(Boolean);
     const failure = attempts.findLast(event => event.requestRelationship === 'failure' && UUID.test(event.requestId ?? '')) ?? null;
     const failedRecoveryRequest = projectRequestEvidence(failure);
-    const requestTimeline = Object.freeze(attempts.map(projectRequestEvidence).filter(Boolean).slice(-RECOVERY_TIMELINE_LIMIT));
+    const requestsById = new Map();
+    for (const attempt of attempts) {
+      const projected = projectRequestEvidence(attempt);
+      if (projected) requestsById.set(projected.requestId, projected);
+    }
+    const requestTimeline = Object.freeze([...requestsById.values()].slice(-RECOVERY_TIMELINE_LIMIT));
     const recoveryTimeline = Object.freeze(timeline.map(projectTimelineEvent).filter(Boolean));
     return Object.freeze({ schemaVersion: 1,
       incident: Object.freeze({

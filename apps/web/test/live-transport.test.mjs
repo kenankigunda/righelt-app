@@ -1942,6 +1942,40 @@ test('a held computer control fences human submission without changing its board
  }finally{store.retire();await completion;}
 });
 
+for (const sideToMove of ['P1', 'P2']) test(`routine computer renewal stays outside transport recovery on ${sideToMove === 'P1' ? 'the human' : 'the computer'} turn`, async t => {
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
+ const game=buildLiveGame();game.sharedReceipts=true;game.board.state.sideToMove=sideToMove;game.currentSnapshot.sideToMove=sideToMove;
+ game.computer=createComputerControl('id-a',{p1:null,p2:'babs'});game.computer.lease={deviceId:'device',authContextId:'',expiresAt:Date.now()+60_000};
+ game.canControlComputer=true;game.canRecordMove=sideToMove==='P1';game.canEndTurn=sideToMove==='P1';
+ let envelope,release;const saved=new Map();
+ const store=createLiveTransportStore({storage,
+  commandJournal:{list:async()=>[...saved.values()],admit:async value=>saved.set(value.clientCommandId,clone(value)),remove:async value=>saved.delete(value.clientCommandId),close:async()=>{}},
+  fetcher:async(_url,init)=>{envelope=JSON.parse(init.body);return new Promise(resolve=>{release=resolve;});},
+ });
+ t.after(()=>store.retire());store.applyLiveGameUpdate({game,eventSeq:1});
+ if(sideToMove==='P1'){
+  assert.equal(store.setConnectionRecovering(game.id,true,{reason:'socket_closed'}),true);
+  const episodeId=store.getGameViewModel(game.id).recoveryEpisodeId;
+  assert.equal(store.stopConnectionRecovery(game.id,{episodeId}),true);
+  assert.equal(store.retryConnectionRecovery(game.id),true,'the second incident ordering begins after manual Retry');
+  assert.equal(store.setConnectionRecovering(game.id,true,{reason:'manual_reconnect'}),true);
+  assert.equal(store.setConnectionRecovering(game.id,false),true,'the Retry socket restores valid authority before renewal');
+ }
+ const recoveryEpisodeBeforeRenewal=store.getGameViewModel(game.id).recoveryEpisodeId;
+ const incidentBeforeRenewal=store.getGameViewModel(game.id).incidentId;
+ const completion=store.computerControl(game.id,{action:'renew',deviceId:'device',generation:game.computer.generation});
+ for(let i=0;i<50&&!envelope;i++)await tick();assert.ok(envelope);
+ const pending=store.getGameViewModel(game.id);
+ assert.equal(pending.pendingComputerControl,true);assert.equal(pending.recovering,false);
+ assert.equal(pending.recoveryEpisodeId,recoveryEpisodeBeforeRenewal,'maintenance cannot acquire a new transport failure clock');
+ assert.equal(pending.canRecordMove,sideToMove==='P1','a safe human-turn renewal preserves human authority');
+ const outcome={gameId:game.id,identityId:envelope.identityId,clientCommandId:envelope.clientCommandId,fingerprint:envelope.fingerprint,outcome:'accepted',reason:null,eventSeq:2,gameplayRevision:game.gameplayRevision};
+ release(Response.json({ok:true,accepted:true,protocolVersion:2,gameId:game.id,game,eventSeq:2,gameplayRevision:game.gameplayRevision,commandOutcomes:[outcome]}));
+ await completion;
+ const settled=store.getGameViewModel(game.id);assert.equal(settled.pendingCommandCount,0);assert.equal(settled.recovering,false);
+ assert.equal(settled.recoveryEpisodeId,recoveryEpisodeBeforeRenewal);assert.equal(settled.incidentId,incidentBeforeRenewal);assert.equal(saved.size,0);
+});
+
 for (const operation of ["computer-control", "revert-request"]) for(const accepted of [true,false]) for(const repair of [null,"connection","snapshot"]) test(`socket ${accepted ? "acceptance" : "rejection"} completes ${operation} while preserving ${repair ?? "no newer"} recovery`,async()=>{
  const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,"id-live");
  let envelope,signal;
