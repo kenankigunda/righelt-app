@@ -3147,13 +3147,13 @@ const mountBoardForGame = (game) => {
           const view = getBoardGame(transport.getGameViewModel(game.id));
           return !view?.positionOnly && !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && ownsBoardActor(view, transport.getIdentityId());
         },
-        canInteract: () => {
-          const view = getBoardGame(transport.getGameViewModel(game.id));
-          return !forcedFollowWorking(game.id) && !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && canControlLiveBoard(view);
-        },
         getMutationSurface: () => {
           const view = getBoardGame(transport.getGameViewModel(game.id));
           return mutationSurfacePresentation(view, recoveryPresentationOptions(view));
+        },
+        canInteract: () => {
+          const view = getBoardGame(transport.getGameViewModel(game.id));
+          return !forcedFollowWorking(game.id) && !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && canControlLiveBoard(view);
         },
       }),
       controls: {
