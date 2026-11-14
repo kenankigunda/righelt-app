@@ -28,7 +28,7 @@ import {
 import {createHistoryRendering} from './history-rendering.js';
 import * as undoHistory from './history-undo-groups.js';
 import {createGameAlertItems,renderGameAlertStackCard as renderAlertStackCard,createNotificationPatchLifecycle} from './game-alert-presentation.js';
-import {presentPlaybackBoardMessage,playbackTurnIndicator,refreshFollowControls} from './playback-presentation.js';
+import {historyBoardRuntimeMessage,presentPlaybackBoardMessage,playbackTurnIndicator,refreshFollowControls} from './playback-presentation.js';
 import {isLiveBoardVisible} from './live-board-visibility.js';
 import {mountDecisionNoteEditor} from './decision-note-editor.js';
 import {renderResultPanel} from './result-panel.js';
@@ -36,7 +36,7 @@ import {createDestinationRecovery,destinationRecoveryMessage} from './destinatio
 import {createDestinationNoticeRetirementOwner,mountDestinationNotice,presentDestinationNotice,quietFieldDestinationNotice,renderQuietFieldDestinationNotice,retireDestinationNotice} from './destination-load-notice.js';
 import {createNavigationHistory} from './navigation-history.js';
 import {createNotificationPaper} from './notification-paper.js';
-import {selectedHistoryPresentation,recordedHistoryView,historyBoardMessage} from './history-narration.js';
+import {selectedHistoryPresentation,recordedHistoryView} from './history-narration.js';
 import {recordedMoveNumber,visibleRecordedMoves,recordedActorSide} from './recorded-narration.js';
 import {renderBoardMessageHtml} from '../board/message-presentation.js';
 import { createPendingInvitationFocus } from './pending-invitation-focus.js';
@@ -3158,7 +3158,6 @@ const mountBoardForGame = (game) => {
           const replayFeedback = replayRequests.snapshot();
           const replay = replayController?.snapshot();
           const status = computerSession?.snapshot();
-          const historyMessage=view?.inHistoryMode?historyBoardMessage(view,{identityId:transport.getIdentityId()}):null;
           const confirmedMessage=presentPlaybackBoardMessage(view,status,{activityHost:document.getElementById('shell-board-preview-label')?.parentElement.querySelector('.board-message-activity'),selection,followWorking:forcedFollowWorking(game.id),replay,replayFeedback,scope:viewingScope(),step:confirmedPlayback?.snapshot().current,onRecorded:acknowledgedBoardMessage,identityId:transport.getIdentityId()});
           if(confirmedMessage)return confirmedMessage;
           if (replayFeedback?.gameId === game.id) return replayFeedback.phase === "loading"
@@ -3167,7 +3166,8 @@ const mountBoardForGame = (game) => {
           if (replay?.playing) return {text:replay.manual?BOARD_PROMPT.manualReplay:BOARD_PROMPT.replay,actions:[...(replay.manual?[{id:'replay-next',label:'Next'}]:[]),{id:'replay-stop',label:'Stop replay'}],context:{kind:'replay-progress',message:{rows:[selectedHistoryPresentation({...view,inHistoryMode:true,historyTurnIndex:null,inspectedDecision:replay.recordedMove},{identityId:transport.getIdentityId()})?.message??{text:'Historical move details unavailable'},{text:recordedReplayLabel(view,replay.recordedMove,{identityId:transport.getIdentityId()})},{text:`Replay · ${Math.max(1,replay.step)} of ${replay.total}`}]}}};
           const options={canInteract:!(currentRoute.scenarios&&scenarioCapture?.mode==='frozen'&&scenarioCapture.gameId===game.id)&&hostInvite?.gameId!==game.id&&canControlLiveBoard(view),identityId:transport.getIdentityId()};
           acknowledgedBoardMessage(view,status,options);
-          if(view?.inHistoryMode&&!selection.selectedPieceId&&!selection.inspection)return historyMessage?.prompt??null;
+          const historyMessage=historyBoardRuntimeMessage(view,selection,{identityId:options.identityId});
+          if(historyMessage)return historyMessage;
           if(forcedFollowWorking(game.id))return BOARD_PROMPT.following;
           return withPushSequenceMessage(opponentBoardMessage(view,status,selection,options),view,selection,transport.getIdentityId());
         },

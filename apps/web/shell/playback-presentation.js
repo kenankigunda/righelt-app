@@ -32,6 +32,10 @@ export function playbackTurnIndicator(view,state,{replay,step,identityId}={}) {
 }
 export const contextReplayAvailable=({descriptor,followWorking,playbackPlaying,replayPending,replayPlaying,canReplay})=>
  !followWorking&&!playbackPlaying&&canReplay(descriptor)&&!replayPending&&!replayPlaying;
+export function historyBoardRuntimeMessage(view,selection={},options={}) {
+ if(!view?.inHistoryMode||selection.selectedPieceId||selection.inspection)return null;
+ return historyBoardMessage(view,options);
+}
 export function refreshFollowControls({boardRuntime,followWorking,replayPlaying,playbackPlaying,refreshContext}) {
  boardRuntime?.setInteractionBlocked(Boolean(followWorking||replayPlaying||playbackPlaying));
  boardRuntime?.refreshStatus();

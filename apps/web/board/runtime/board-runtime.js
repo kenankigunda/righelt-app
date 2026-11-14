@@ -4,7 +4,7 @@ import {createMutationActivationFence} from '../mutation-activation.js';
 import {getPushRetreatPrompt as renderPushRetreatPrompt,requiredRushContext as buildRequiredRushContext,opponentInspectionPrompt,buildHistoryRemovalEffects} from '../guidance-presentation.js';
 import {createMessageHeightController} from '../message-height.js';
 import {BOARD_PROMPT,isMappedBoardPromptHtml} from '../prompt-models.js';
-import {BOARD_MESSAGE_STRENGTH,isMeaningfulHistoryMessage,resolveBoardMessageOwner} from '../message-priority.js';
+import {BOARD_MESSAGE_STRENGTH,isBoardMessageResolution,isMeaningfulHistoryMessage,resolveBoardMessageOwner} from '../message-priority.js';
 import {createGuidanceDiagnostics} from '../guidance-diagnostics.js';
 import { createRushSupplyGuidanceClient, rushActionKey } from '../rush-supply-guidance.js';
 import {boardMessagePresentation,renderBoardMessageHtml,renderBoardInlineAction,updateBoardInlineActionLabel,patchBoardMessage} from '../message-presentation.js';
@@ -679,6 +679,12 @@ export function createBoardRuntime({ boardAdapter, host, controls = {}, rushGuid
 
     const externalMessage = controls.getBoardMessage?.({state, selectedPieceId, inspection});
     if (externalMessage) {
+      if(isBoardMessageResolution(externalMessage)){
+        if(statusContext?.mandatory){setBoardPreviewPromptHtml(renderBoardMessageHtml({text:BOARD_PROMPT.requiredRush,badge:'Obligatory'}));return;}
+        if(externalMessage.prompt)setBoardPreviewPromptHtml(renderBoardMessageHtml(externalMessage.prompt));
+        else hideBoardPreviewPrompt();
+        return;
+      }
       const message = typeof externalMessage === "string" ? {text: externalMessage} : externalMessage;
       if(message.context?.kind==='replay-progress')addStatusContext(message.context.message,{kind:'replay-progress'});
       const {actorName,rest,actions} = boardMessagePresentation(message);
