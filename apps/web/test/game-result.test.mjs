@@ -26,6 +26,12 @@ test("result automatic entry happens once on an observed live finish, never hydr
     assert.equal(tracker.observe(game("draw")), false);
   }
 });
+test("authoritative completion retires cosmetic playback before result entry",()=>{
+  const tracker=createResultTransitions(),calls=[],playback={reset(){calls.push('reset');}};
+  assert.equal(tracker.observe(game(),{},playback),false);
+  assert.equal(tracker.observe(game('p1_win'),{},playback),true);
+  assert.deepEqual(calls,['reset']);
+});
 test("History rematch eligibility follows saved human seats, not result visibility or temporary control", () => {
   const completed=game("p1_win");
   assert.equal(getEligibleRematchResult(completed,"red").side,"p1");

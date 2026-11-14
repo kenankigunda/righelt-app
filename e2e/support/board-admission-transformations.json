@@ -337,8 +337,8 @@
   },
   "/shell/app.js": {
     "file": "apps/web/shell/app.js",
-    "sourceSha256": "73d4433699a056d8d606294fe33862def48a54830cc277a7df5e2aaf7b0d96f4",
-    "outputSha256": "c362f230a556ec9fb6c3cda111ac76e678e19b86b24479382dbaebc3d9c4c037",
+    "sourceSha256": "c8285dff040b958e48ca07ae1af1f2c199302e481245f27b6691c16b68732f35",
+    "outputSha256": "ee693e89b1e976bca6600c154118d81359b2d90567cbf7366bf3006186fb541e",
     "operations": [
       {
         "start": 163173,
