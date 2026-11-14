@@ -47,7 +47,10 @@ const start = ({ renderStart = true } = {}) => {
       render({ animatePanels: false, includeBoard: false });
       if(destinationRead && !succeeded && !usableDestination){
         syncLiveChannels();
-        if(read.route.name==='game' && state.destinationLoadPresentation?.kind && state.destinationLoadPresentation.kind!=='retry')read.owner?.setConnectionRecovering?.(read.route.gameId,false);
+        if(read.route.name==='game' && state.destinationLoadPresentation?.kind && state.destinationLoadPresentation.kind!=='retry'){
+          const retired=read.owner?.retireColdDestinationRecovery?.(read.route.gameId,{reason:state.destinationLoadPresentation.kind});
+          if(!retired)read.owner?.setConnectionRecovering?.(read.route.gameId,false);
+        }
       }
       maybeRevealRouteTransition();
     }

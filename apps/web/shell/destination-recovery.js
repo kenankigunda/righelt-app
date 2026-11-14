@@ -17,7 +17,9 @@ export const destinationRecoveryMessage = (state,route='game') => {
   const destination=route==='home'?'your games':'your game';
   const messages={auth:`Sign in to open ${destination}.`,missing:route==='home'?'Your games are no longer available.':'This game is no longer available.',upgrade:'Righelt has an update. Reload to keep playing.',integrity:`We couldn’t safely open ${destination}. Try reloading.`,storage:'Righelt couldn’t use storage on this device. Allow site storage, then reload.',unavailable:`We couldn’t open ${destination}.`};
   const terminal=state.kind && state.kind!=='retry';
-  return {message:terminal?messages[state.kind]:state.actions?`Still opening ${destination}. We’ll keep trying.`:`Opening ${destination}`,
+  const heading=terminal?messages[state.kind]:state.actions?`Still opening ${destination}.`:`Opening ${destination}`;
+  const support=!terminal&&state.actions?'We’ll keep trying.':null;
+  return {message:support?`${heading} ${support}`:heading,heading,support,
     action:terminal?state.kind==='auth'?'signin':['upgrade','integrity','storage','unavailable'].includes(state.kind)?'reload':null:state.actions?'retry':null,
     home:Boolean(terminal || state.actions)};
 };

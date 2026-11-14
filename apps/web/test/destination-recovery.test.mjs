@@ -12,7 +12,7 @@ test('slow destination uses shared foreground4/15boundaries without restarting a
  const h=harness();h.recovery.begin(h.context.scope);assert.equal(h.state().show,false);
  h.advance(3999);assert.equal(h.state().show,false);h.advance(1);assert.equal(h.state().show,true);assert.equal(h.state().actions,false);
  h.recovery.fail(h.context.scope,{status:503});h.advance(500);assert.equal(h.retries(),1);assert.equal(h.state().elapsed,4500);
- h.advance(10500);assert.equal(h.state().actions,true);assert.equal(destinationRecoveryMessage(h.state()).action,'retry');
+ h.advance(10500);assert.equal(h.state().actions,true);const message=destinationRecoveryMessage(h.state());assert.equal(message.action,'retry');assert.equal(message.heading,'Still opening your game.');assert.equal(message.support,'We’ll keep trying.');assert.equal(message.message,'Still opening your game. We’ll keep trying.');
  h.recovery.reset();assert.equal(h.state(),null);assert.equal(h.timers.size,0);
 });
 test('hidden time and changed route/account scopes cancel retry work and restart visible wait',()=>{
