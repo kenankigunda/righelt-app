@@ -9,12 +9,15 @@ Use these rules for long, ordered delivery programs. They capture what improved 
 - Keep PRs coherent and small. Group changes by one product contract, not by file count. Refresh each successor against the actual merged squash commit. Only its merge waits for the predecessor's deployed identity.
 - Work ahead while gates run. CI or deployment verification blocks only the next dependent merge. Continue independent implementation, review, tests, evidence, and successor preparation.
 - Track four transitions only: Exploratory, Approved and queued, Canonical PR, Deployed and accepted. The coordinator is the sole canonical register writer. Run the existing read-only consistency check at PR opening, before merge, and during final reconciliation. Completion requires approval, PR, merge, served identity, acceptance evidence, and pushed tracking evidence.
-- Keep one minimal continuation checkpoint with exact heads, the current gate, next action, owned resources, and safety restrictions.
+- Keep one minimal continuation checkpoint with exact heads, the current gate, next action, owned resources, and safety restrictions. Keep it current-tense. Move historical evidence to the decision register, ticket, or validation artifact instead of letting the checkpoint become a second ledger.
 - Run durability first. Add failing-before proof for real regressions, run the affected subsystem, then run exact-head `PR validation`. Reuse compatible evidence and rerun only invalidated boundaries.
 - Verify the deployed artifact. Record exact web, loaded-client, and API identities before production acceptance.
 - Exercise the deployed journey across its real boundaries. For retained data, verify that a record advertised by a summary or card also opens through the stricter detail path. Local fixtures and a healthy summary endpoint do not prove production compatibility.
 - Treat browser access as a prerequisite. Record the browser, profile or session, viewport and zoom, and task-owned tab IDs. Native Safari is separate from Playwright WebKit.
 - Diagnose network defects from exact evidence. Retain the loaded build, browser and topology, episode and socket generations, current owner and blocker, request result, and resolution. Reduce the defect to deterministic failing-before proof before changing recovery ownership.
+- Separate canonical state from viewer-relative presentation in multi-user tests. Compare authority-neutral state across participants, then assert each participant's labels and controls independently.
+- Prove that a fault-injection test reached the intended fault before using its result. A pre-fault mismatch is a harness or setup defect until evidence shows otherwise.
+- Repair the owning lifecycle contract, not only the visible symptom. For example, clearing a recovery banner must not clear a socket-authority fence, and an HTTP read must not grant gameplay authority.
 - Classify failures before retrying them. Transport, authority, authentication, configuration, and persisted-data failures need different handling. Retire long-lived recovery, socket, reminder, and polling owners when their route or session ends.
 - When final validation finds a defect, preserve the incident, create one owner for the immediate repair, and separately track a distinct root compatibility problem when needed. Recheck the invalidated journey after deployment, then continue the campaign instead of ending at the first repair.
 - Keep scheduling opt-in. If explicitly scheduled, a heartbeat only wakes the coordinator. The coordinator checks for real progress and acts only when there is a gap. A paused schedule stays paused.
@@ -29,7 +32,10 @@ Use these rules for long, ordered delivery programs. They capture what improved 
 - Do not use Playwright WebKit as native Safari evidence.
 - Do not inject controlled faults into production or mutate pre-existing or restricted games. Production writes use only fresh, explicitly test-owned records and supported lifecycle actions.
 - Do not create duplicate owners, canonical PRs, workflow engines, or tasks for unselected study concepts.
+- Do not weaken a convergence check because different participants use different labels. Remove perspective from the shared digest and keep explicit perspective assertions.
+- Do not call a test green when it exited before the behavior it was meant to exercise. Record the reached phase or fault boundary in the evidence.
 - Do not hide ownership defects with scenario-specific retries, longer timers, or broad test retries.
+- Do not remove a recovery notice by settling or transferring authority that the current transport has not earned.
 - Do not treat an application or data-integrity response as a transient network failure. Do not keep retrying after the owning route, game, account, or session has retired.
 - Do not claim retained-data compatibility from card, catalog, or summary reads alone when the user journey depends on a stricter full read.
 - Do not renew protected observer hashes mechanically. Confirm that the observed contract and source boundary are still correct first.
