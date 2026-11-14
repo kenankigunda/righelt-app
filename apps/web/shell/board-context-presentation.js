@@ -18,7 +18,7 @@ export function createBoardContextPresentation({appEl,document,getDependencies,c
   return {owner:transport,key:JSON.stringify([viewingScope(),boardContextVisit,currentRoute.name,currentRoute.gameId,game?.inHistoryMode?[game.historyIndex,game.historyTurnIndex]:'live'])};
  },onRetire:()=>{
   const {incomingNarrationState,replayRequests,replayController}=getDependencies();
-  activeDisplayedReplay=null;cancelPendingBoardContextReplay();boardContextFocus.retire();incomingNarrationState.retire();appEl.querySelector(':scope > [data-incoming-narration-root]')?.replaceChildren();contextAnnouncement.textContent='';
+  activeDisplayedReplay=null;cancelPendingBoardContextReplay();boardContextFocus.retire();incomingNarrationState.retire();appEl.querySelector('[data-incoming-narration-root]')?.replaceChildren();contextAnnouncement.textContent='';
   replayRequests.cancel();replayController?.stop('view-changed');
  },onIntentChange:()=>{
   const {replayRequests,replayController}=getDependencies();

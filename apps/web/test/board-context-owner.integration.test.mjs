@@ -1,6 +1,6 @@
 import {createBoardContextPresentation} from '../shell/board-context-presentation.js';
 import {createDisplayedReplayStarter,displayedReplayFocusTarget} from '../shell/displayed-replay-starter.js';
-import {createIncomingNarrationState} from '../shell/incoming-narration.js';
+import {createIncomingNarrationState,syncIncomingNarrationRoot} from '../shell/incoming-narration.js';
 import {createRenderGestureGate} from '../shell/render-gesture.js';
 import {createDestinationRouteOwner,destinationReadScope} from '../shell/destination-route-owner.js';
 import {createDestinationRecovery} from '../shell/destination-recovery.js';
@@ -115,6 +115,19 @@ test('production scope retires both context channels on account and same-game hi
  const b=f.c.store.channel('acknowledged');assert.notEqual(b.key,a.key);assert(!f.c.store.isDismissed(b.key));assert(f.c.store.takeAnnouncement(b.key));
  const token=f.c.owner.capture();f.context.view={...f.context.view,inHistoryMode:true,historyIndex:0};f.c.scope();assert(!f.c.owner.current(token));assert.equal(f.c.store.get(b.key),null);
  f.context.view={...f.context.view,inHistoryMode:false};f.c.scope();assert.notEqual(f.c.scope(),token.scope);
+});
+test('retiring presentation synchronously clears the nested canonical incoming root',t=>{
+ const f=fixture(t),header={name:'header'},shell={name:'game-shell'},children=[header,shell],control={isConnected:true,disabled:false};
+ const refresh=()=>children.forEach((node,index)=>{node.parentElement=main;node.nextElementSibling=children[index+1]??null;});
+ const main={insertBefore(node,before){const current=children.indexOf(node);if(current>=0)children.splice(current,1);const target=children.indexOf(before);children.splice(target<0?children.length:target,0,node);refresh();}};refresh();
+ const originalQuery=f.context.appEl.querySelector.bind(f.context.appEl);
+ f.doc.createElement=()=>({attributes:new Map(),children:[],parentElement:null,nextElementSibling:null,setAttribute(name,value){this.attributes.set(name,value);},replaceChildren(){for(const child of this.children)child.isConnected=false;this.children=[];if(f.doc.activeElement===control)f.doc.activeElement=f.doc.body;}});
+ f.context.appEl.querySelector=selector=>selector==='[data-game-shell-root]'?shell:selector==='[data-incoming-narration-root]'?children.find(node=>node.attributes?.has('data-incoming-narration-root'))??null:selector===':scope > [data-incoming-narration-root]'?null:originalQuery(selector);
+ const root=syncIncomingNarrationRoot(f.context.appEl,'<button>Show previous turn</button>',host=>{host.children=[control];});
+ assert.deepEqual(children,[header,root,shell]);assert.equal(root.children[0],control);
+ f.doc.activeElement=control;f.c.retire();
+ assert.deepEqual(root.children,[],'retirement removes stale incoming controls before another view can observe them');
+ assert.equal(control.isConnected,false);assert.equal(f.doc.activeElement,f.doc.body);
 });
 test('actual queued dismissal reaches informational Board guidance and loses to a later native outside focus',async t=>{
  const f=fixture(t);f.c.receive({message:{text:'Observer context'}},f.meta());const key=f.c.store.channel('piece').key;

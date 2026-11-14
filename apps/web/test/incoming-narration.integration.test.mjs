@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {incomingNarrationContext,createIncomingNarrationState,renderIncomingNarration} from '../shell/incoming-narration.js';
+import {incomingNarrationContext,createIncomingNarrationState,renderIncomingNarration,syncIncomingNarrationRoot} from '../shell/incoming-narration.js';
 
 const entry = () => ({key:'scope:accepted7',gameId:'g',purpose:'incoming-narration',actorSide:'P2',
  message:{actorName:'Maya <(8, 8)>',text:'Maya <(8, 8)> rushed from (1, 2) to (2, 3)',coordinates:[{row:1,col:2},{row:2,col:3}],action:{id:'replay-computer',label:'Show me again'}},
@@ -55,4 +55,26 @@ test('final outer purpose routes a synthetic incoming frame without trusting its
  const synthetic={...entry(),message:{...entry().message,purpose:'selected-history'}};
  assert.match(renderIncomingNarration(synthetic,{layout:'wide'}),/history-incoming/);
  assert.equal(renderIncomingNarration({...synthetic,purpose:'selected-history',message:{...synthetic.message,purpose:'incoming-narration'}},{layout:'narrow'}),'');
+});
+
+test('mobile incoming root mounts once between the header and game shell and repairs reversed order',()=>{
+ const document={createElement:()=>({attributes:new Map(),parentElement:null,nextElementSibling:null,setAttribute(name,value){this.attributes.set(name,value);}})};
+ const header={name:'header'},shell={name:'game-shell'},children=[header,shell],patches=[];
+ const refresh=()=>children.forEach((node,index)=>{node.parentElement=main;node.nextElementSibling=children[index+1]??null;});
+ const main={insertBefore(node,before){const current=children.indexOf(node);if(current>=0)children.splice(current,1);const target=children.indexOf(before);children.splice(target<0?children.length:target,0,node);refresh();}};refresh();
+ const app={ownerDocument:document,get firstElementChild(){return main;},querySelector(selector){if(selector==='[data-game-shell-root]')return shell;return children.find(node=>node.attributes?.has('data-incoming-narration-root'))??null;},insertBefore(){assert.fail('incoming root belongs with the game shell, not before the page header');}};
+ const patch=(host,html)=>patches.push({host,html});
+ const host=syncIncomingNarrationRoot(app,'<aside>incoming</aside>',patch);
+ assert.deepEqual(children,[header,host,shell]);assert.equal(host.attributes.get('data-incoming-narration-root'),'');
+ assert.deepEqual(patches.map(entry=>entry.html),['<aside>incoming</aside>']);
+ assert.equal(syncIncomingNarrationRoot(app,'<aside>updated</aside>',patch),host);assert.equal(children.filter(node=>node===host).length,1);
+ children.splice(1,2,shell,host);refresh();
+ assert.equal(syncIncomingNarrationRoot(app,'<aside>settled</aside>',patch),host);assert.deepEqual(children,[header,host,shell]);
+ assert.deepEqual(patches.map(entry=>entry.html),['<aside>incoming</aside>','<aside>updated</aside>','<aside>settled</aside>']);
+});
+
+test('empty mobile narration does not manufacture a focus stop',()=>{
+ const shell={},children=[shell],app={ownerDocument:{createElement(){assert.fail('empty narration cannot create a root');}},get firstElementChild(){return children[0];},querySelector(){return null;},insertBefore(){assert.fail('empty narration cannot change document order');}};
+ assert.equal(syncIncomingNarrationRoot(app,'',()=>assert.fail('empty narration has nothing to patch')),null);
+ assert.deepEqual(children,[shell]);
 });

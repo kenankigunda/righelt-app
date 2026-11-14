@@ -1,14 +1,14 @@
 {
   "/shell/app.js": {
     "file": "apps/web/shell/app.js",
-    "rawSourceSha256": "acf28f40b44f172bf275a2e67f096948409e92ee90ca49a219e30aff2256d946",
-    "sourceSha256": "28cbf6a2a696fef2f35c47500cc3306998ea12067988ad82c069653952da476c",
-    "outputSha256": "86dce70ea5d7a023ee0d341a9f8878a644d017ce46f353dc0e9c2b1c778c0f2b",
+    "rawSourceSha256": "f1a634a3148d8207afa33dc0c67def8d2ab6a37ccf748574f13da4d881a2f4c0",
+    "sourceSha256": "6a31f15bdc64109ca92e0bbe729e6e81475d9d3caac0e805c67a2935a05b0b98",
+    "outputSha256": "894cc0e7ea3c072505716297542c964810702c08ae7ab0e98f5b6e4b25a57313",
     "prefix": "",
     "operations": [
       {
-        "start": 167178,
-        "end": 167507,
+        "start": 167021,
+        "end": 167350,
         "before": "        canInteract: () => {\n          const view = getBoardGame(transport.getGameViewModel(game.id));\n          return !forcedFollowWorking(game.id) && !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && canControlLiveBoard(view);\n        },",
         "after": "        canInteract: (() => {\n          const settlementStore = transport;\n          const settlementHost = () => {\n          const view = getBoardGame(transport.getGameViewModel(game.id));\n          const eligible = !forcedFollowWorking(game.id) && !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && canControlLiveBoard(view);\n          try { globalThis.__retreatClientSettlement?.capture(transport, settlementHost, {\n            scopeGameId:game.id,viewGameId:view?.id ?? null,currentGameId:getCurrentViewedGameId(),mountedGameId:mountedBoardGameId,\n            appliedEventSeq:transport.getLastEventSeq(game.id),gameplayRevision:view?.gameplayRevision ?? null,hostEligible:eligible,\n            pendingCommandCount:view?.pendingCommandCount ?? null,syncStatus:view?.syncStatus ?? null,\n            rulesChecking:view?.rulesChecking ?? null,storageBlocked:view?.storageBlocked ?? null,unsavedCommand:view?.unsavedCommand ?? null,confirmationOverdue:view?.confirmationOverdue ?? null,recovering:view?.recovering ?? null,upgradeRequired:view?.upgradeRequired ?? null,sharedMutationsBlocked:view?.sharedMutationsBlocked ?? null,gameplayMutationsBlocked:view?.gameplayMutationsBlocked ?? null,\n            inHistoryMode:view?.inHistoryMode === true,positionOnly:view?.positionOnly === true,\n          }, settlementStore); } catch { try { globalThis.__retreatClientSettlement?.invalidate(); } catch {} }\n          return eligible;\n          };\n          return settlementHost;\n        })(),",
         "anchor": "        canInteract: () => {\n          const view = getBoardGame(transport.getGameViewModel(game.id));\n          return !forcedFollowWorking(game.id) && !(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id) && hostInvite?.gameId !== game.id && canControlLiveBoard(view);\n        },",
@@ -18,14 +18,14 @@
   },
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",
-  "rawSourceSha256": "60973efc66c1d44961355f8b17875c5d3b0f78f97be8dfb7e403fd26be36c860",
-  "sourceSha256": "b339c567a0ec3299c8535451a14eab723ea3a6faef9bea80e6ccde551d709004",
-  "outputSha256": "16ddcdf0890c4cbc4c90ded34fdfeda8f9ef92c04cc6fb28b64e046e8c9f80e3",
+    "rawSourceSha256": "60973efc66c1d44961355f8b17875c5d3b0f78f97be8dfb7e403fd26be36c860",
+    "sourceSha256": "b339c567a0ec3299c8535451a14eab723ea3a6faef9bea80e6ccde551d709004",
+    "outputSha256": "16ddcdf0890c4cbc4c90ded34fdfeda8f9ef92c04cc6fb28b64e046e8c9f80e3",
     "prefix": "",
     "operations": [
       {
-      "start": 76586,
-      "end": 76821,
+        "start": 76586,
+        "end": 76821,
         "before": "    elements = {\n      boardEl: nextElements.boardEl,\n      overlayLinesEl: nextElements.overlayLinesEl,\n      boardPreviewLabelEl: nextElements.boardPreviewLabelEl,\n      boardTurnIndicatorEl: nextElements.boardTurnIndicatorEl,\n    };",
         "after": "    elements = {\n      boardEl: nextElements.boardEl,\n      overlayLinesEl: nextElements.overlayLinesEl,\n      boardPreviewLabelEl: nextElements.boardPreviewLabelEl,\n      boardTurnIndicatorEl: nextElements.boardTurnIndicatorEl,\n    };\n    try { globalThis.__retreatClientSettlement?.bind(host.canInteract, elements.boardEl); } catch { try { globalThis.__retreatClientSettlement?.invalidate(); } catch {} }",
         "anchor": "    elements = {\n      boardEl: nextElements.boardEl,\n      overlayLinesEl: nextElements.overlayLinesEl,\n      boardPreviewLabelEl: nextElements.boardPreviewLabelEl,\n      boardTurnIndicatorEl: nextElements.boardTurnIndicatorEl,\n    };",
