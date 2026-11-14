@@ -443,6 +443,100 @@ test('accepted-action integration applies proven continuation finality but not a
   assert.deepEqual(move.snapshot, game.board.state);
 });
 
+const zeroRemovalPushFinality = () => {
+  const pieces = [commander('C1', 'P1', 0, 9), unit('A', 'P1', 0, 0, { shifted: true }),
+    commander('C2', 'P2', 0, 0, { pushed: true, supplied: false, commanded: false, shifted: false }),
+    unit('wall-e', 'P1', 0, 2), unit('wall-se', 'P1', 1, 1), unit('wall-s', 'P1', 2, 0)];
+  const state = makeState({ pieces, sideToMove: 'P2', continuation: { type: 'push', owner: 'P2',
+    attackerOwner: 'P1', phase: 'retreat', pushedPieceId: 'C2', followPoint: { row: 0, col: 1 },
+    followGroupPieceIds: ['A'], chainLength: 1 } });
+  const action = { type: 'push', actorId: 'A', targetId: 'C2', from: { row: 0, col: 1 }, to: { row: 0, col: 0 } };
+  const game = createInitialGame({ gameId: 'zero-removal-finality', identityId: 'owner', selfPlayMode: true });
+  game.board.state = structuredClone(state);
+  game.gameplayRevision = 1;
+  const move = { moveId: 'decisive-push', index: 0, turnIndex: 0, turnMoveIndex: 0, displayMoveNumber: 1,
+    actorSide: 'P1', at: game.createdAt, notation: 'Push', action, clientCommandId: 'v2:zero-removal',
+    selectionSnapshot: structuredClone(state), snapshot: structuredClone(state), destroyedPieces: [] };
+  game.moves = [move];
+  game.turns[0].moveIndexes = [0];
+  const record = applyAcceptedAutomaticEnding(game, action, { move, destroyedPieces: [] },
+    { clientCommandId: move.clientCommandId, eventSeq: 2, gameplayRevision: 1,
+      actorSide: 'P1', turnOwnerSide: 'P1', turnIndex: 0 });
+  assert.equal(record?.cause.kind, 'relevant-continuation-finality');
+  assert.deepEqual(record.removals, []);
+  return { game, record, state };
+};
+
+const zeroRemovalRushFinality = () => {
+  const p1Ids = ['C1', 'U1-10', 'U1-13', 'U1-14', 'U1-5', 'U1-6', 'U1-9'];
+  const state = makeState({ sideToMove: 'P1', turnIndex: 56, pieces: [commander('C1', 'P1', 4, 5),
+    unit('U1-10', 'P1', 2, 4), unit('U1-13', 'P1', 6, 2), unit('U1-14', 'P1', 1, 2),
+    unit('U1-5', 'P1', 7, 3), unit('U1-6', 'P1', 6, 4), unit('U1-9', 'P1', 2, 3),
+    commander('C2', 'P2', 6, 3, { supplied: false, commanded: true, displaySupplied: false, displayCommanded: true })],
+  continuation: { type: 'rush', owner: 'P1', frozenOwner: 'P1', chainLength: 1,
+    rushedPieceIds: ['U1-6'], rushChainPieceIds: ['U1-13', 'U1-5', 'U1-6'],
+    frozenPieceStatesById: Object.fromEntries(p1Ids.map(id => [id, { supplied: true, commanded: true }])) } });
+  const action = { type: 'rush', actorId: 'U1-6', from: { row: 6, col: 5 }, to: { row: 6, col: 4 } };
+  const game = createInitialGame({ gameId: 'zero-removal-rush-finality', identityId: 'owner', selfPlayMode: true });
+  game.board.state = structuredClone(state);
+  game.gameplayRevision = 1;
+  game.turns = [{ index: 56, startedAt: game.createdAt, endedAt: null,
+    playerSeat: 'Player 1', status: 'active', moveIndexes: [0], lastMoveAt: game.createdAt }];
+  const move = { moveId: 'decisive-rush-zero-removal', index: 0, turnIndex: 56, turnMoveIndex: 0,
+    displayMoveNumber: 31, actorSide: 'P1', at: game.createdAt, notation: 'Rush', action,
+    clientCommandId: 'v2:zero-removal-rush', selectionSnapshot: structuredClone(state),
+    snapshot: structuredClone(state), destroyedPieces: [] };
+  game.moves = [move];
+  const record = applyAcceptedAutomaticEnding(game, action, { move, destroyedPieces: [] },
+    { clientCommandId: move.clientCommandId, eventSeq: 2, gameplayRevision: 1,
+      actorSide: 'P1', turnOwnerSide: 'P1', turnIndex: 56 });
+  assert.equal(record?.cause.kind, 'relevant-continuation-finality');
+  assert.deepEqual(record.removals, []);
+  return { game, record, state };
+};
+
+test('zero-removal automatic finality updates the decisive move snapshot before persistence', () => {
+  const { game, record } = zeroRemovalPushFinality();
+  assert.deepEqual(game.moves[0].snapshot, record.board);
+  assert.equal(game.moves[0].snapshot.outcome.status, 'p1_win');
+});
+
+test('retained zero-removal finality repairs only a deterministically re-proven decisive snapshot', async () => {
+  const { game, record, state } = zeroRemovalPushFinality();
+  game.moves[0].snapshot = structuredClone(state);
+  const env = { DB: createFakeD1(), STORAGE_COMPRESSION: 'true' };
+  await persistGameState(env, createInitialGame({ gameId: game.id, identityId: 'owner', selfPlayMode: true }), 1);
+  await persistGameState(env, game, 2);
+  game.player1.connected = false;
+  game.player1.sessionCount = 0;
+  await persistGameState(env, game, 3, null, { metadataOnly: true });
+  const loaded = await loadGameProjection(env, game.id);
+  assert.equal(loaded.kind, 'ok');
+  assert.deepEqual(loaded.game.terminalOutcome, record);
+  assert.deepEqual(loaded.game.moves[0].snapshot, record.board);
+
+  const invalid = structuredClone(game);
+  invalid.terminalOutcome.cause.endpointCount += 1;
+  await persistGameState(env, invalid, 4);
+  assert.equal((await loadGameProjection(env, game.id)).kind, 'invalid',
+    'a mismatched proof remains fail-closed instead of receiving the retained repair');
+});
+
+test('retained zero-removal rush finality re-proves the production narration class', async () => {
+  const { game, record, state } = zeroRemovalRushFinality();
+  game.moves[0].snapshot = structuredClone(state);
+  const env = { DB: createFakeD1(), STORAGE_COMPRESSION: 'true' };
+  await persistGameState(env, createInitialGame({ gameId: game.id, identityId: 'owner', selfPlayMode: true }), 1);
+  await persistGameState(env, game, 2);
+  game.player1.connected = false;
+  game.player1.sessionCount = 0;
+  await persistGameState(env, game, 3, null, { metadataOnly: true });
+  const loaded = await loadGameProjection(env, game.id);
+  assert.equal(loaded.kind, 'ok');
+  assert.deepEqual(loaded.game.moves[0].snapshot, record.board);
+  assert.deepEqual(loaded.game.terminalOutcome, record);
+});
+
 test('compressed decisive rush finality remains strict-readable after persistence', async () => {
   const pieces = [commander('C1', 'P1', 0, 9), commander('C2', 'P2', 3, 6),
     unit('V0', 'P1', 0, 4), unit('V2', 'P1', 2, 4), unit('H1', 'P1', 5, 4),

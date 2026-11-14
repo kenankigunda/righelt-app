@@ -1,6 +1,9 @@
 import {TERMINAL_OUTCOME_STATUSES} from '../../shared-types/src/engine';
 import { deterministicStateHash } from '../../game-engine/src/hash';
+import { proveRelevantContinuation } from '../../game-engine/src/early-ending-proof';
+import { probeTerminalSettlement } from '../../game-engine/src/terminal-settlement';
 import { canonicalCommandJson } from '../../shared-types/src/sync-protocol';
+import { getTurnOwnerSideForState } from '../../shared-types/src/shell-live-turn.js';
 import { parseComputerControl } from '../../shared-types/src/computer-play';
 import { archiveRow, readArchivedGame } from "./storage-archive";
 import { growthGuard } from "./storage-budget";
@@ -598,8 +601,32 @@ const normalizeTerminalOutcome = (
       || decisiveMove.actorSide !== decisive.actorSide
       || decisiveMove.turnIndex !== decisive.turnIndex
       || canonicalCommandJson(decisiveMove.action) !== canonicalCommandJson(action)
-      || canonicalCommandJson(decisiveMove.destroyedPieces ?? []) !== canonicalCommandJson(removals)
-      || deterministicStateHash(decisiveMove.snapshot) !== deterministicStateHash(terminalBoard)) return invalid();
+      || canonicalCommandJson(decisiveMove.destroyedPieces ?? []) !== canonicalCommandJson(removals)) return invalid();
+    if (deterministicStateHash(decisiveMove.snapshot) !== deterministicStateHash(terminalBoard)) {
+      const legacySnapshot = decisiveMove.snapshot;
+      const push = action.type === "push"
+        ? { decisionId: decisive.decisionId, action, frameHash: deterministicStateHash(legacySnapshot) }
+        : undefined;
+      let proof: ReturnType<typeof proveRelevantContinuation> | null = null;
+      let settlement: ReturnType<typeof probeTerminalSettlement> | null = null;
+      try {
+        const owner = getTurnOwnerSideForState(legacySnapshot);
+        proof = value.cause.kind === "relevant-continuation-finality" && removals.length === 0
+          && legacySnapshot.outcome.status === "ongoing" && legacySnapshot.continuation
+          ? proveRelevantContinuation(legacySnapshot, owner, { push }) : null;
+        settlement = proof?.kind === "proven-terminal" ? probeTerminalSettlement(legacySnapshot, push) : null;
+      } catch {
+        return invalid();
+      }
+      if (!proof || proof.kind !== "proven-terminal"
+        || proof.endpointCount !== value.cause.endpointCount
+        || proof.optionalEndpointCount !== value.cause.optionalEndpointCount
+        || settlement?.kind !== "settled" || !settlement.persistable || settlement.removals.length !== 0
+        || deterministicStateHash(settlement.frame.occupancy) !== deterministicStateHash(terminalBoard)) return invalid();
+      decisiveMove.snapshot = structuredClone(terminalBoard);
+      recordMismatch(mismatches, "terminalOutcome.decisive.snapshot", "terminal snapshot proven from legacy zero-removal finality",
+        legacySnapshot, "canonicalized_legacy_terminal_snapshot");
+    }
   } else {
     if (moves.some(move => move.clientCommandId === decisive.clientCommandId)
       || (action.type !== "end_turn" && action.type !== "pass")
