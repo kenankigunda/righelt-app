@@ -1808,9 +1808,10 @@ textarea:focus-visible {
     inset 0 1px 0 rgba(255, 255, 255, 0.92);
 }
 
-/* The localized start date occupies one fixed top-aligned slot. Names wrap beside it. */
-.game-identity-title {display:inline-flex;align-items:flex-start;gap:.55rem;min-width:0;max-width:100%;vertical-align:middle;}
-.game-date-inlay {display:block;flex:none;align-self:flex-start;width:3rem;height:3.5rem;overflow:visible;border:0;border-radius:0;box-shadow:none;filter:none;}
+/* The localized start date and the actual one- or two-line participant block
+   share one center without measuring text or shifting neighboring content. */
+.game-identity-title {display:inline-flex;align-items:center;gap:.55rem;min-width:0;max-width:100%;vertical-align:middle;}
+.game-date-inlay {display:block;flex:none;align-self:center;width:3rem;height:3.5rem;overflow:visible;border:0;border-radius:0;box-shadow:none;filter:none;}
 .game-date-orbit-highlight,.game-date-orbit {fill:none;stroke-linecap:round;stroke-linejoin:round;}
 .game-date-orbit-highlight {stroke:#fff;stroke-width:2.6;opacity:.78;}
 .game-date-orbit {stroke-width:.85;}

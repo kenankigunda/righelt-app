@@ -62,3 +62,33 @@ test('active-turn and latest summary text use canonical participant identities i
   assert.match(html, /<bdi dir="auto">/);
   assert.doesNotMatch(html, /<Owner>|rival&friend/);
 });
+
+test('active-turn and latest summary text use the viewer-relative naming hierarchy', () => {
+  const self={
+    myRole:'Both Players',myRoles:['Both Players'],selfPlayMode:true,
+    player1:person('owner'),player2:person('owner'),
+  };
+  for(const role of ['Player 1','Player 2']){
+    const html=renderGameParticipantLabel(role,self,{identityId:'owner'});
+    assert.match(html,/>You<\/bdi>/);
+    assert.match(html,new RegExp(`aria-label="You, ${role==='Player 1'?'Red':'Blue'}"`));
+    assert.doesNotMatch(html,/Guest [12]/);
+  }
+  assert.equal(
+    renderGameParticipantReferences('Turn 8 ended. Player 1 to play',self,{identityId:'owner'}),
+    'Turn 8 ended. <strong class="player-tone-p1" aria-label="You, Red"><bdi dir="auto">You</bdi></strong> to play',
+  );
+
+  const oneGuest={myRole:'Player 1',player1:person('viewer'),player2:person('other')};
+  assert.match(renderGameParticipantLabel('Player 2',oneGuest,{identityId:'viewer'}),/>Guest<\/bdi>/);
+  assert.doesNotMatch(renderGameParticipantLabel('Player 2',oneGuest,{identityId:'viewer'}),/>Guest 2<\/bdi>/);
+
+  const spectator={player1:person('guest-1'),player2:person('guest-2')};
+  assert.match(renderGameParticipantLabel('Player 1',spectator,{identityId:'watcher'}),/>Guest 1<\/bdi>/);
+  assert.match(renderGameParticipantLabel('Player 2',spectator,{identityId:'watcher'}),/>Guest 2<\/bdi>/);
+
+  const named={player1:person('viewer'),player2:person('named',{displayName:'\u202eRival'})};
+  const namedHtml=renderGameParticipantLabel('Player 2',named,{identityId:'viewer'});
+  assert.match(namedHtml,/<bdi dir="auto">\u202eRival<\/bdi>/);
+  assert.doesNotMatch(namedHtml,/>Guest/);
+});

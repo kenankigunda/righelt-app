@@ -56,6 +56,7 @@ import {homeCardResult} from './home-card-result.js';
 import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName,recordedReplayLabel} from './perspective-labels.js';
 import {renderSummarySlots,renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
 import {renderGameParticipantLabel,renderGameParticipantReferences,renderGameRoleLine} from './game-role-presentation.js';
+import {renderConnectionStatusIcon} from './participant-status.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
 import { createComputerReplay, COMPUTER_REPLAY_TIMING } from './computer-replay.js';
 import { createForcedFollow } from './forced-follow.js';
@@ -569,9 +570,6 @@ const getControlSeatForTurn = (state, turnOwnerSeat) => {
 const playerToneClassForSeat = (seat) =>
   seat === "Player 1" ? "player-tone-p1" : seat === "Player 2" ? "player-tone-p2" : seat === "Both Players" ? "player-tone-both" : "player-tone-neutral";
 const playerToneClassForSide = (side) => (side === "P1" ? "player-tone-p1" : side === "P2" ? "player-tone-p2" : "player-tone-neutral");
-const renderConnectionStatusIcon = (status, label) =>
-  `<span class="connection-status-icon is-${escapeHtml(status)}" role="img" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"></span>`;
-
 const getDocumentTitle = () => {
   const gameId=currentRoute.name==='game'?currentRoute.gameId:currentRoute.name==='invite'?resolvedInvite?.gameId:null;
   const game=gameId?transport.getGameViewModel(gameId):null;
@@ -2143,11 +2141,11 @@ const renderGameSummaryPanel = (game) => {
       role:renderGameRoleLine(game),
       turn:`Active turn: ${
           game.currentTurn
-            ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${renderGameParticipantLabel(game.currentTurn.playerSeat,game)} · ${escapeHtml(
+            ? `${escapeHtml(String(game.currentTurn.index + 1))} · ${renderGameParticipantLabel(game.currentTurn.playerSeat,game,{identityId:transport.getIdentityId()})} · ${escapeHtml(
                 String(game.currentTurn.moveIndexes.length),
               )} move(s)`
             : "n/a"
-        }`,latest:`Latest: ${renderGameParticipantReferences(latestNote,game)}`});
+        }`,latest:`Latest: ${renderGameParticipantReferences(latestNote,game,{identityId:transport.getIdentityId()})}`});
 };
 
 const renderJoinInvitePanel = (game, inviteLink) => {

@@ -26,6 +26,11 @@ test('actual summary and history renderers use shared content flow without chang
  }
  assert.match(context.history({id:'known'}),/<h2 tabindex="-1">History<\/h2>/);
  assert.match(context.history({id:'known'}),/Actual move<\/li><\/ol><div>Additional/);
+
+ const self=context.summary({id:'self',createdAt:'date',myRole:'Both Players',myRoles:['Both Players'],selfPlayMode:true,notifications:['Turn 8 ended. Player 1 to play'],player1:{identityId:'owner'},player2:{identityId:'owner'},currentTurn:{index:8,playerSeat:'Player 2',moveIndexes:[]}});
+ assert.match(self,/Active turn: 9 · [\s\S]*>You<\/bdi>/);
+ assert.match(self,/Latest: Turn 8 ended. [\s\S]*>You<\/bdi>[\s\S]* to play/);
+ assert.doesNotMatch(self,/>Guest [12]<\/bdi>/);
 });
 test('unknown loading placeholders have no identities, enabled controls or authority',()=>{
  for(const html of [slots.renderSummaryLoading(),slots.renderPlayersLoading(),slots.renderHistoryLoading(),slots.renderInvitationLoading()]){

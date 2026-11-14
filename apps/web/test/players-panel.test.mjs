@@ -11,10 +11,29 @@ test('seat emblems replace numbered seat labels and identity remains a profile a
 });
 test('anonymous self play disambiguates both guests while computers retain their identity',()=>{
  const self={...game,selfPlayMode:true,myRole:'Both Players',player2:{identityId:'me'}};
- assert.match(renderPlayersPanel(self,{identityId:'me'}),/<bdi>You · Red<\/bdi>/);
- assert.match(renderPlayersPanel(self,{identityId:'me'}),/<bdi>You · Blue<\/bdi>/);
+ const selfHtml=renderPlayersPanel(self,{identityId:'me',formatStatus:connected=>`<i data-status="${connected?'connected':'disconnected'}"></i>`});
+ assert.match(selfHtml,/<bdi>You · Red<\/bdi>/);
+ assert.match(selfHtml,/<bdi>You · Blue<\/bdi>/);
+ assert.equal((selfHtml.match(/data-status=/g)||[]).length,1,'one person controlling both seats has one person-level status');
  const html=renderPlayersPanel({...self,player2:{identityId:'me',computerProfile:'horus'}},{identityId:'me'});
  assert.match(html,/Horus/);assert.match(html,/aria-label="Horus, Blue, Computer player, Needs help"/);assert.match(html,/computer-status-badge/);assert.match(html,/data-action="toggle-computer-card"/);
+});
+
+test('participant status merges only identical human identities and retains distinct people',()=>{
+ const render=value=>renderPlayersPanel(value,{identityId:'viewer',formatStatus:connected=>`<i class="presence ${connected?'yes':'no'}"></i>`});
+ const shared={...game,myRole:'Viewer',selfPlayMode:true,player1:{identityId:'same',connected:false},player2:{identityId:'same',connected:true}};
+ const sharedHtml=render(shared);
+ assert.equal((sharedHtml.match(/class="presence/g)||[]).length,1);
+ assert.match(sharedHtml,/class="presence yes"/,'person-level presence aggregates duplicate seat projections');
+ assert.equal((sharedHtml.match(/data-identity-id="same"/g)||[]).length,2,'seat-specific profile actions remain available');
+
+ const distinct={...shared,selfPlayMode:false,player1:{identityId:'one',connected:true},player2:{identityId:'two',connected:false}};
+ const distinctHtml=render(distinct);
+ assert.equal((distinctHtml.match(/class="presence/g)||[]).length,2);
+ assert.match(distinctHtml,/class="presence yes"/);assert.match(distinctHtml,/class="presence no"/);
+
+ const unknown={...distinct,player1:{connected:true},player2:{connected:true}};
+ assert.equal((render(unknown).match(/class="presence/g)||[]).length,2,'missing identities never collapse distinct seats');
 });
 test('viewer section has static empty and singular identities, with native disclosure only for two or more',()=>{
  const empty=renderViewersPanel(game,{icon:kind=>`<svg data-icon="${kind}"></svg>`});

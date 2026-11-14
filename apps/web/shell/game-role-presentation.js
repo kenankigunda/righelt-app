@@ -14,27 +14,27 @@ const sameParticipantOwnsBothSeats = game => Boolean(game?.player1?.identityId)
   && game.player1.identityId === game?.player2?.identityId;
 const toneForSide = side => side === 'P1' ? 'player-tone-p1' : 'player-tone-p2';
 
-const renderIdentity = (game, side) => {
-  const identity = playerIdentityLabel(game, side);
+const renderIdentity = (game, side, options) => {
+  const identity = playerIdentityLabel(game, side, options);
   return `<strong class="${toneForSide(side)}" aria-label="${escape(identity.accessibleName)}"><bdi dir="auto">${escape(identity.text)}</bdi></strong>`;
 };
 
 /** Game summary prose names participants while stored seat roles remain the
  * source of authority. Unknown roles retain a neutral, escaped fallback. */
-export function renderGameParticipantLabel(role, game = null) {
+export function renderGameParticipantLabel(role, game = null, {identityId} = {}) {
   const side = sideForRole(role);
-  return side ? renderIdentity(game, side) : `<strong>${escape(role || 'Unknown')}</strong>`;
+  return side ? renderIdentity(game, side, {identityId,viewerRelative:true}) : `<strong>${escape(role || 'Unknown')}</strong>`;
 }
 
 /** Replace only authoritative seat tokens from server-authored summary text.
  * Escape all other text before composing identity markup. */
-export function renderGameParticipantReferences(text, game = null) {
+export function renderGameParticipantReferences(text, game = null, options = {}) {
   const source = String(text ?? '');
   let html = '';
   let cursor = 0;
   for (const match of source.matchAll(/Player [12]/g)) {
     html += escape(source.slice(cursor, match.index));
-    html += renderGameParticipantLabel(match[0], game);
+    html += renderGameParticipantLabel(match[0], game, options);
     cursor = match.index + match[0].length;
   }
   return html + escape(source.slice(cursor));
