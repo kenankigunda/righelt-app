@@ -145,22 +145,64 @@
               "suite": "sync-stress",
               "project": "",
               "shard": 1,
-              "shards": 1,
+              "shards": 4,
               "artifact": "node-10"
+            },
+            {
+              "suite": "sync-stress",
+              "project": "",
+              "shard": 2,
+              "shards": 4,
+              "artifact": "node-11"
+            },
+            {
+              "suite": "sync-stress",
+              "project": "",
+              "shard": 3,
+              "shards": 4,
+              "artifact": "node-12"
+            },
+            {
+              "suite": "sync-stress",
+              "project": "",
+              "shard": 4,
+              "shards": 4,
+              "artifact": "node-13"
             },
             {
               "suite": "sync-runtime",
               "project": "",
               "shard": 1,
               "shards": 1,
-              "artifact": "node-11"
+              "artifact": "node-14"
             },
             {
               "suite": "tooling",
               "project": "",
               "shard": 1,
-              "shards": 1,
-              "artifact": "node-12"
+              "shards": 4,
+              "artifact": "node-15"
+            },
+            {
+              "suite": "tooling",
+              "project": "",
+              "shard": 2,
+              "shards": 4,
+              "artifact": "node-16"
+            },
+            {
+              "suite": "tooling",
+              "project": "",
+              "shard": 3,
+              "shards": 4,
+              "artifact": "node-17"
+            },
+            {
+              "suite": "tooling",
+              "project": "",
+              "shard": 4,
+              "shards": 4,
+              "artifact": "node-18"
             }
           ]
         }

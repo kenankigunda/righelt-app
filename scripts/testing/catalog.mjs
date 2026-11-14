@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 // Release reader support before changing this to four.
-export const NODE_PARTITIONS = 1;
+export const NODE_PARTITIONS = 4;
 
 export const TOOLING_WEB_FILES = Object.freeze([
   "ci-workflow.test.mjs",
