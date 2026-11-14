@@ -12,7 +12,7 @@ export async function runPRGate({cwd=process.cwd(),out=path.join('test-results',
   const receipt=await executeSuite(lane,{cwd,out,profile:EVIDENCE_PROFILES.PR_GATE,attempt:1,priorReceiptDigest:null});receipts.push(receipt);
   if(receipt.status!=='passed')break;
  }
- const result=verifyFull(receipts,identity,{lanes,catalog:catalogDigest(),profile:EVIDENCE_PROFILES.PR_GATE,allowLegacy:false});
+ const result=verifyFull(receipts,identity,{cwd,lanes,catalog:catalogDigest(),profile:EVIDENCE_PROFILES.PR_GATE,allowLegacy:false});
  await mkdir(path.resolve(cwd,out),{recursive:true});await writeFile(path.resolve(cwd,out,'pr-gate.json'),JSON.stringify(result,null,2)+'\n');
  return result;
 }

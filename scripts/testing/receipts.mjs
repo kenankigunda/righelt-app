@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { verifyStressSeeds } from "./partition.mjs";
+import { nodeInventory, verifyInventory } from "./inventory.mjs";
+import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, lstatSync, readlinkSync } from "node:fs";
 import { catalogDigest, fullLanes, laneKey, suiteKind } from "./catalog.mjs";
@@ -212,17 +215,32 @@ export function verifyFull(
     catalog = catalogDigest(),
     profile = null,
     allowLegacy = true,
+    cwd = process.cwd(),
   } = {},
 ) {
   const errors = [];
   const environment = receipts[0]?.runtime,
     dependencies = receipts[0]?.dependencies;
+  const toolingFiles = [];
   for (const lane of lanes) {
     const key = laneKey(lane),
       matches = receipts.filter((r) => r.lane === key);
     const selected = selectLaneReceipt(matches, key, errors);
     if (!selected) continue;
     const { integrity, ...r } = selected;
+    if (lane.suite === "tooling" && lane.shards > 1) {
+      const expected = r.inventory?.expected ?? [];
+      const observed = verifyInventory(expected, r.observations, cwd);
+      const passed = verifyInventory(expected, {tests:(r.observations?.tests ?? []).filter(test => test.status === "passed")}, cwd);
+      if (new Set(expected).size !== expected.length || observed.unexpected.length || passed.missing.length || (r.observations?.tests ?? []).some(test => !["passed", "skipped"].includes(test.status)))
+        errors.push(`${key}: tooling partition inventory mismatch`);
+      toolingFiles.push(...expected);
+    }
+    if (lane.suite === "sync-stress" && lane.shards > 1) {
+      const seeds = verifyStressSeeds(r.observations, lane);
+      if (seeds.missing.length || seeds.unexpected.length || seeds.duplicates.length || seeds.notPassed.length)
+        errors.push(`${key}: stress seed inventory mismatch`);
+    }
     const isLegacy = r.version === 1;
     if (
       integrity !== digest(r) ||
@@ -301,6 +319,11 @@ export function verifyFull(
       (!r.observations?.total || !r.observations?.passed)
     )
       errors.push(`${key}: no completed tests`);
+  }
+  if (lanes.some(lane => lane.suite === "tooling" && lane.shards > 1)) {
+    const expected = nodeInventory("tooling", cwd).map(file => path.relative(cwd, file)).sort();
+    if (JSON.stringify([...toolingFiles].sort()) !== JSON.stringify(expected))
+      errors.push("tooling: incomplete or overlapping partition coverage");
   }
   const extras = receipts.filter(
     (r) => !lanes.some((l) => laneKey(l) === r.lane),

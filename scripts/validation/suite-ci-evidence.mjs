@@ -70,7 +70,8 @@ export function assertSuiteRequest(name, request) {
     throw Error("Named suite and requested command differ");
 }
 export const PR_GATE_LAYOUT='pr-gate-v3';
-export const PR_GATE_LAYOUTS=['pr-gate-v2',PR_GATE_LAYOUT];
+export const PR_GATE_LAYOUTS=['pr-gate-v2',PR_GATE_LAYOUT,'pr-gate-v4','pr-gate-v5'];
+export const immutablePRLayout = layout => PR_GATE_LAYOUTS.includes(layout) && layout !== 'pr-gate-v2';
 export function suiteRequestProfile(name,request,profile){
  assertSuiteRequest(name,request);
  const actualProfile=profile.evidenceProfile??'legacy-full',requestedProfile=request.evidenceProfile??(profile.evidenceProfile?expectedEvidenceProfile(name):'legacy-full');
@@ -200,6 +201,7 @@ export async function importCatalogCI({
       base: profile.evidenceProfile ? suiteReceipts[0]?.baseRevision : null,
     }),
     verified = verifyFull(suiteReceipts, identity, {
+      cwd,
       lanes: profile.lanes,
       catalog: profile.catalog,
       profile: profile.evidenceProfile ?? null,
@@ -228,7 +230,7 @@ export async function importCatalogCI({
         matchedSuites = new Set(matchingEvidence.map((entry) => entry.lane.split(":", 1)[0])),
         receipt = {
           importedAt: new Date(time).toISOString(),
-          ...(profile.id===PR_GATE_LAYOUT?{version:2,validity:'inputs-and-artifacts'}:{expiresAt:new Date(time+86400000).toISOString()}),
+          ...(immutablePRLayout(profile.id)?{version:2,validity:'inputs-and-artifacts'}:{expiresAt:new Date(time+86400000).toISOString()}),
           status: "passed",
           name,
           source: "github-actions",

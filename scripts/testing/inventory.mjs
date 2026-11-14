@@ -1,5 +1,6 @@
 import { readdirSync } from "node:fs";
 import path from "node:path";
+import { toolingFiles } from "./partition.mjs";
 import { TOOLING_BROWSER_FILES, TOOLING_WEB_FILES } from "./catalog.mjs";
 import { classifyWebTestFile } from "../../apps/web/test/test-layers.mjs";
 const walk = (dir) =>
@@ -22,7 +23,7 @@ export function nodeInventory(id, cwd = process.cwd()) {
   if (id === "computer-unit" || id === "computer-integration") {
     const names = id === "computer-unit"
       ? ["representation", "search", "search-fallback", "tactics", "exploration"]
-      : ["transition", "partial-legality", "cache-pilot", "exploration.integration"];
+      : ["transition", "end-turn.integration", "partial-legality", "cache-pilot", "exploration.integration", "model-release.integration"];
     return names.map(name => path.join(cwd, "packages/computer-player/tests", `${name}.test.mjs`));
   }
   if (roots[id]) return walk(path.join(cwd, roots[id]));
@@ -49,11 +50,15 @@ export function nodeInventory(id, cwd = process.cwd()) {
     return TOOLING_BROWSER_FILES.map((f) => path.join(cwd, "scripts", f));
   return null;
 }
+export function nodeLaneInventory(id, cwd, lane) {
+  const all = nodeInventory(id, cwd);
+  return id === "tooling" ? toolingFiles(all, lane, cwd) : all;
+}
 export function verifyInventory(expected, observations, cwd) {
   const normalize = (f) => (path.isAbsolute(f) ? path.relative(cwd, f) : f);
   const actual = (observations?.tests ?? []).map((t) =>
     normalize(t.file ?? ""),
   );
   const missing = expected.map(normalize).filter((f) => !actual.includes(f));
-  return { expected: expected.map(normalize), missing };
+  return { expected: expected.map(normalize), missing, unexpected: [...new Set(actual)].filter(f => !expected.map(normalize).includes(f)) };
 }
