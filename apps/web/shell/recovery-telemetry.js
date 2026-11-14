@@ -60,7 +60,13 @@ export function projectRecoveryCopyDetails(report, timeline = []) {
     const requestsById = new Map();
     for (const attempt of attempts) {
       const projected = projectRequestEvidence(attempt);
-      if (projected) requestsById.set(projected.requestId, projected);
+      if (!projected) continue;
+      const previous = requestsById.get(projected.requestId);
+      const merged = Object.freeze({ ...(previous ?? {}), ...projected, requestId: projected.requestId });
+      // Reinsert so interleaved duplicates retain the latest occurrence order,
+      // while partial lifecycle evidence keeps earlier sanitized fields.
+      requestsById.delete(projected.requestId);
+      requestsById.set(projected.requestId, merged);
     }
     const requestTimeline = Object.freeze([...requestsById.values()].slice(-RECOVERY_TIMELINE_LIMIT));
     const recoveryTimeline = Object.freeze(timeline.map(projectTimelineEvent).filter(Boolean));

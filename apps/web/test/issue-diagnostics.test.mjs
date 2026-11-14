@@ -96,6 +96,19 @@ test("copied recovery details isolate the failed request from later successful r
  assert.notEqual(details.failedRecoveryRequest.requestId,details.recoveryTimeline.at(-1).requestId);
 });
 
+test("recovery request deduplication merges partial evidence and follows latest occurrence order", () => {
+ const requestA=crypto.randomUUID(),requestB=crypto.randomUUID(),gameId=`game-${crypto.randomUUID()}`;
+ const d=createIssueDiagnostics({environment:()=>({}),recoveryTimeline:()=>[]});
+ const id=d.capture(`recovery:${gameId}`,{gameId,requestId:requestA,requestKind:'computer-control',requestPhase:'headers',requestRelationship:'failure',activeEpisodeRelation:'active',status:503});
+ d.capture(`recovery:${gameId}`,{requestId:requestB,requestKind:'read',requestPhase:'complete',requestRelationship:'unrelated',activeEpisodeRelation:'unrelated',status:200});
+ d.capture(`recovery:${gameId}`,{requestId:requestA,stage:'response_received',requestPhase:'complete',status:200});
+ const requests=JSON.parse(d.text(id).split('\n\n').at(-1)).requestTimeline;
+ assert.deepEqual(requests.map(request=>request.requestId),[requestB,requestA],'A, B, A orders the deduplicated timeline by the latest occurrence');
+ assert.equal(requests.at(-1).requestKind,'computer-control','partial later evidence retains an earlier sanitized field');
+ assert.equal(requests.at(-1).requestPhase,'complete');
+ assert.equal(requests.at(-1).status,200);assert.equal(requests.at(-1).result,'succeeded');
+});
+
 test("recovery copy projection excludes valid command, board, action and arbitrary incident sentinels", () => {
  const gameId=`game-${crypto.randomUUID()}`,requestId=crypto.randomUUID(),commandId=`v2:${crypto.randomUUID()}`;
  const d=createIssueDiagnostics({environment:()=>({browser:"SENTINEL_BROWSER"}),recoveryTimeline:()=>[]});

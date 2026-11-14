@@ -1953,14 +1953,6 @@ for (const sideToMove of ['P1', 'P2']) test(`routine computer renewal stays outs
   fetcher:async(_url,init)=>{envelope=JSON.parse(init.body);return new Promise(resolve=>{release=resolve;});},
  });
  t.after(()=>store.retire());store.applyLiveGameUpdate({game,eventSeq:1});
- if(sideToMove==='P1'){
-  assert.equal(store.setConnectionRecovering(game.id,true,{reason:'socket_closed'}),true);
-  const episodeId=store.getGameViewModel(game.id).recoveryEpisodeId;
-  assert.equal(store.stopConnectionRecovery(game.id,{episodeId}),true);
-  assert.equal(store.retryConnectionRecovery(game.id),true,'the second incident ordering begins after manual Retry');
-  assert.equal(store.setConnectionRecovering(game.id,true,{reason:'manual_reconnect'}),true);
-  assert.equal(store.setConnectionRecovering(game.id,false),true,'the Retry socket restores valid authority before renewal');
- }
  const recoveryEpisodeBeforeRenewal=store.getGameViewModel(game.id).recoveryEpisodeId;
  const incidentBeforeRenewal=store.getGameViewModel(game.id).incidentId;
  const completion=store.computerControl(game.id,{action:'renew',deviceId:'device',generation:game.computer.generation});
@@ -1974,6 +1966,70 @@ for (const sideToMove of ['P1', 'P2']) test(`routine computer renewal stays outs
  await completion;
  const settled=store.getGameViewModel(game.id);assert.equal(settled.pendingCommandCount,0);assert.equal(settled.recovering,false);
  assert.equal(settled.recoveryEpisodeId,recoveryEpisodeBeforeRenewal);assert.equal(settled.incidentId,incidentBeforeRenewal);assert.equal(saved.size,0);
+});
+
+for(const settlement of ['http','socket'])for(const newerTransport of [false,true])test(`uncertain routine renewal settled by ${settlement} ${newerTransport?'preserves newer transport recovery':'retires only maintenance recovery'}`,async t=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
+ const game=buildLiveGame();game.sharedReceipts=true;game.computer=createComputerControl('id-a',{p1:null,p2:'babs'});
+ game.computer.lease={deviceId:'device',authContextId:'',expiresAt:Date.now()+60_000};game.canControlComputer=true;game.canRecordMove=true;game.canEndTurn=true;
+ const saved=new Map();let envelope,reconcileReply;
+ const outcome=()=>({gameId:game.id,identityId:envelope.identityId,clientCommandId:envelope.clientCommandId,fingerprint:envelope.fingerprint,outcome:'accepted',reason:null,eventSeq:2,gameplayRevision:game.gameplayRevision});
+ const response=()=>({ok:true,accepted:true,protocolVersion:2,gameId:game.id,game,eventSeq:2,gameplayRevision:game.gameplayRevision,commandOutcomes:[outcome()]});
+ const store=createLiveTransportStore({storage,timing:{retryDelaysMs:[1],retryJitter:0,requestTimeoutMs:1000,confirmationBudgetMs:5000},
+  commandJournal:{list:async()=>[...saved.values()],admit:async value=>saved.set(value.clientCommandId,clone(value)),remove:async value=>saved.delete(value.clientCommandId),close:async()=>{}},
+  fetcher:async(url,init)=>{
+   if(url.endsWith('/shared')){envelope=JSON.parse(init.body);throw Object.assign(new Error('request_timeout'),{code:'request_timeout'});}
+   if(url.endsWith('/reconcile'))return new Promise(resolve=>{reconcileReply=resolve;});
+   throw Error(`unexpected request ${url}`);
+  },
+ });
+ t.after(()=>store.retire());store.applyLiveGameUpdate({game,eventSeq:1});
+ const completion=store.computerControl(game.id,{action:'renew',deviceId:'device',generation:game.computer.generation});
+ for(let i=0;i<50&&!store.getGameViewModel(game.id).recoveryIssue;i++)await tick();
+ const failed=store.getGameViewModel(game.id);assert.equal(failed.recoveryIssue,'request_timeout');assert.ok(failed.recoveryEpisodeId);assert.ok(failed.recoveryStartedAt);
+ if(newerTransport)assert.equal(store.setConnectionRecovering(game.id,true,{reason:'socket_closed'}),true);
+ const activeEpisode=store.getGameViewModel(game.id).recoveryEpisodeId;
+ if(settlement==='socket')store.applyLiveGameUpdate({game,eventSeq:2,commandOutcome:outcome()});
+ else {for(let i=0;i<50&&!reconcileReply;i++)await tick();assert.ok(reconcileReply);reconcileReply(Response.json(response()));}
+ await completion;
+ const settled=store.getGameViewModel(game.id);assert.equal(settled.pendingCommandCount,0);assert.equal(saved.size,0);
+ if(newerTransport){
+  assert.equal(settled.recovering,true,'the socket transport owner survives maintenance settlement');
+  assert.equal(settled.recoveryEpisodeId,activeEpisode);assert.ok(settled.recoveryStartedAt);
+ }else{
+  assert.equal(settled.recovering,false);assert.equal(settled.recoveryIssue,null);
+  assert.equal(settled.recoveryStartedAt,null);assert.equal(settled.recoveryEpisodeId,null);assert.equal(settled.incidentId,null);
+ }
+});
+
+test('a user-turn renewal can recur safely after Retry resolves an actual uncertain renewal',async t=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');
+ const game=buildLiveGame();game.sharedReceipts=true;game.computer=createComputerControl('id-a',{p1:null,p2:'babs'});
+ game.computer.lease={deviceId:'device',authContextId:'',expiresAt:Date.now()+60_000};game.canControlComputer=true;game.canRecordMove=true;game.canEndTurn=true;
+ const saved=new Map();let envelope,attempt=0,releaseSecond;
+ const accepted=()=>({gameId:game.id,identityId:envelope.identityId,clientCommandId:envelope.clientCommandId,fingerprint:envelope.fingerprint,outcome:'accepted',reason:null,eventSeq:attempt+1,gameplayRevision:game.gameplayRevision});
+ const store=createLiveTransportStore({storage,timing:{retryDelaysMs:[100_000],retryJitter:0,requestTimeoutMs:1000,confirmationBudgetMs:5000},
+  commandJournal:{list:async()=>[...saved.values()],admit:async value=>saved.set(value.clientCommandId,clone(value)),remove:async value=>saved.delete(value.clientCommandId),close:async()=>{}},
+  fetcher:async(url,init)=>{if(!url.endsWith('/shared'))throw Error(`unexpected request ${url}`);envelope=JSON.parse(init.body);attempt++;
+   if(attempt===1)throw Object.assign(new Error('request_timeout'),{code:'request_timeout'});
+   return new Promise(resolve=>{releaseSecond=()=>resolve(Response.json({ok:true,accepted:true,protocolVersion:2,gameId:game.id,game,eventSeq:3,gameplayRevision:game.gameplayRevision,commandOutcomes:[accepted()]}));});},
+ });
+ t.after(()=>store.retire());store.applyLiveGameUpdate({game,eventSeq:1});
+ const first=store.computerControl(game.id,{action:'renew',deviceId:'device',generation:game.computer.generation});
+ for(let i=0;i<50&&!store.getGameViewModel(game.id).recoveryIssue;i++)await tick();
+ const failedEpisode=store.getGameViewModel(game.id).recoveryEpisodeId;assert.ok(failedEpisode);
+ assert.equal(store.stopConnectionRecovery(game.id,{episodeId:failedEpisode}),true);
+ assert.equal(store.retryConnectionRecovery(game.id),true);
+ assert.equal(store.setConnectionRecovering(game.id,true,{reason:'manual_reconnect'}),true);
+ const retryEpisode=store.getGameViewModel(game.id).recoveryEpisodeId;
+ store.applyLiveGameUpdate({game,eventSeq:2,commandOutcome:accepted()});await first;
+ assert.equal(store.setConnectionRecovering(game.id,false),true);
+ assert.equal(store.getGameViewModel(game.id).recoveryEpisodeId,retryEpisode,'completed transport recovery remains bounded debug context');
+ assert.equal(store.getGameViewModel(game.id).recoveryStartedAt,null);assert.equal(store.getGameViewModel(game.id).recoveryIssue,null);
+ envelope=null;const second=store.computerControl(game.id,{action:'renew',deviceId:'device',generation:game.computer.generation});
+ for(let i=0;i<50&&!releaseSecond;i++)await tick();assert.ok(releaseSecond);
+ const recurring=store.getGameViewModel(game.id);assert.equal(recurring.recovering,false);assert.equal(recurring.canRecordMove,true);assert.equal(recurring.recoveryEpisodeId,retryEpisode);
+ releaseSecond();await second;assert.equal(store.getGameViewModel(game.id).pendingCommandCount,0);assert.equal(store.getGameViewModel(game.id).recoveryEpisodeId,retryEpisode);
 });
 
 for (const operation of ["computer-control", "revert-request"]) for(const accepted of [true,false]) for(const repair of [null,"connection","snapshot"]) test(`socket ${accepted ? "acceptance" : "rejection"} completes ${operation} while preserving ${repair ?? "no newer"} recovery`,async()=>{

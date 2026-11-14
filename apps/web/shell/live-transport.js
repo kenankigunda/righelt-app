@@ -916,7 +916,10 @@ export const createLiveTransportStore = ({
     }
     if (actionContractVersion !== undefined) serverActionContract = actionContractVersion;
     const notifications = [];
-    const receiptOwner = game && commandOutcome ? getOptimisticState(game.id).pendingCommands.find(command => command.clientCommandId === commandOutcome.clientCommandId)?.sharedRecoveryEpoch : undefined;
+    const receiptCommand = game && commandOutcome ? getOptimisticState(game.id).pendingCommands.find(command => command.clientCommandId === commandOutcome.clientCommandId) : null;
+    const receiptOwner = receiptCommand?.sharedRecoveryEpoch === undefined ? null
+      : { epoch: receiptCommand.sharedRecoveryEpoch, episodeId: receiptCommand.sharedRecoveryEpisodeId,
+        maintenance: isRoutineComputerRenewal(receiptCommand.envelope) };
     if (commandOutcome && game) {
       const confirming = getOptimisticState(game.id).syncStatus === "confirming";
       if (settleOutcome(game.id, commandOutcome, notifications) && confirming) incrementSyncMetric("wsConfirmedAfterHttpFail", game.id);
@@ -926,7 +929,14 @@ export const createLiveTransportStore = ({
       const optimistic = getOptimisticState(game.id);
       // A socket receipt may beat (and cancel) HTTP. Finish only the recovery
       // started by this shared write, never a newer connection/snapshot repair.
-      if (receiptOwner !== undefined && receiptOwner === optimistic.connectionRecoveryEpoch && !optimistic.pendingCommands.length && !optimistic.forceSnapshot) setConnectionRecovering(game.id, false);
+      if (receiptOwner && receiptOwner.epoch === (optimistic.connectionRecoveryEpoch ?? 0)
+        && receiptOwner.episodeId === optimistic.recoveryEpisodeId
+        && !optimistic.pendingCommands.length && !optimistic.forceSnapshot) {
+        setConnectionRecovering(game.id, false);
+        if (receiptOwner.maintenance && optimistic.recoveryEpisodeId === receiptOwner.episodeId) {
+          optimistic.recoveryEpisodeId = null; recalculateOptimisticGame(game.id);
+        }
+      }
     }
     for (const notification of notifications) emitChange(notification);
     if (game) { emitChange({ type: "authoritative_update", gameId: game.id, baseline }); void sendNextPendingCommand(game.id); }
@@ -981,7 +991,9 @@ export const createLiveTransportStore = ({
     if (body?.protocolVersion === 1) { markUpgradeRequired(gameId); throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" }); }
     if (!isReconcileResponse(body, gameId, envelopes) || (body.game !== undefined && (!validSyncSnapshot(body.game, gameId) || body.game.gameplayRevision !== body.gameplayRevision))) throw Object.assign(new Error("invalid_confirmation"), { code: "invalid_response" });
     const optimistic = getOptimisticState(gameId);
-    const sharedRecoveryOwners = optimistic.pendingCommands.filter(command => command.kind === "shared" && body.commandOutcomes.some(outcome => outcome.clientCommandId === command.clientCommandId && outcome.outcome !== "unknown")).map(command => command.sharedRecoveryEpoch);
+    const sharedRecoveryOwners = optimistic.pendingCommands.filter(command => command.kind === "shared" && body.commandOutcomes.some(outcome => outcome.clientCommandId === command.clientCommandId && outcome.outcome !== "unknown"))
+      .map(command => command.sharedRecoveryEpoch === undefined ? null : { epoch: command.sharedRecoveryEpoch, episodeId: command.sharedRecoveryEpisodeId,
+        maintenance: isRoutineComputerRenewal(command.envelope) });
     const notifications = [];
     for (const outcome of body.commandOutcomes) settleOutcome(gameId, outcome, notifications);
     if (body.game) upsertGameSnapshot({ game: body.game, eventSeq: body.eventSeq, publish: false });
@@ -990,7 +1002,14 @@ export const createLiveTransportStore = ({
       markUpgradeRequired(gameId);
       throw Object.assign(new Error("upgrade_required"), { code: "upgrade_required" });
     }
-    if (!optimistic.pendingCommands.length && !optimistic.forceSnapshot && (!sharedRecoveryOwners.length || sharedRecoveryOwners.some(epoch => epoch !== undefined && epoch === optimistic.connectionRecoveryEpoch))) setConnectionRecovering(gameId, false);
+    const settledOwner = sharedRecoveryOwners.find(owner => owner && owner.epoch === (optimistic.connectionRecoveryEpoch ?? 0)
+      && owner.episodeId === optimistic.recoveryEpisodeId);
+    if (!optimistic.pendingCommands.length && !optimistic.forceSnapshot && (!sharedRecoveryOwners.length || settledOwner)) {
+      setConnectionRecovering(gameId, false);
+      if (settledOwner?.maintenance && optimistic.recoveryEpisodeId === settledOwner.episodeId) {
+        optimistic.recoveryEpisodeId = null; recalculateOptimisticGame(gameId);
+      }
+    }
     // Publish a settled receipt together with its owned recovery state. An
     // intermediate pending=0/recovering=true frame disables legal controls.
     for (const notification of notifications) emitChange(notification);
@@ -1013,7 +1032,7 @@ export const createLiveTransportStore = ({
     if (!isCurrent()) return null;
     const result = processResponse(gameId, body, envelopes);
     if (getOptimisticState(gameId).forceSnapshot && !body.game) throw Object.assign(new Error("snapshot_required"), { code: "invalid_response" });
-    if (body.game && recoveryEpoch === getOptimisticState(gameId).mutationRecoveryEpoch) {
+    if (body.game && recoveryEpoch === getOptimisticState(gameId).mutationRecoveryEpoch && getOptimisticState(gameId).forceSnapshot) {
       getOptimisticState(gameId).forceSnapshot = false;
       if (!getOptimisticState(gameId).pendingCommands.length) setConnectionRecovering(gameId, false);
     }
@@ -1071,6 +1090,7 @@ export const createLiveTransportStore = ({
       if (reconcileFirst) {
         const response = await reconcileRequest(gameId, attempt.controller, () => optimistic.attempt === attempt);
         if (optimistic.attempt !== attempt || optimistic.upgradeRequired) return;
+        if (!optimistic.pendingCommands.includes(command)) return;
         const own = response.commandOutcomes.find((entry) => entry.clientCommandId === command.clientCommandId);
         const current = gameById.get(gameId);
         if (!own || own.outcome !== "unknown" || own.reason === "dependency_pending" || own.reason === "legacy_evidence") throw unresolvedCommandOutcome;
@@ -1097,9 +1117,17 @@ export const createLiveTransportStore = ({
       if (optimistic.pendingCommands.includes(command)) throw unresolvedCommandOutcome;
     } catch (error) {
       if (optimistic.attempt !== attempt) return;
+      // A socket receipt or reconciliation response may settle this command
+      // before its older HTTP attempt rejects. That obsolete request no longer
+      // owns recovery and must not recreate an episode after settlement.
+      if (!optimistic.pendingCommands.includes(command)) return;
       if(error.retryAfterMs)optimistic.retryNotBefore=Date.now()+error.retryAfterMs;
       const unresolved = error === unresolvedCommandOutcome;
       if (!optimistic.recoveryStartedAt) { optimistic.recoveryStartedAt = Date.parse(command.queuedAt) || Date.now(); optimistic.recoveryEpisodeId = crypto.randomUUID(); }
+      if (isRoutineComputerRenewal(command.envelope) && command.sharedRecoveryEpoch === undefined) {
+        command.sharedRecoveryEpoch = command.maintenanceRecoveryEpoch;
+        command.sharedRecoveryEpisodeId = optimistic.recoveryEpisodeId;
+      }
       if (error?.diagnosticEvidence) {
         error.diagnosticEvidence.recoveryEpisodeId = optimistic.recoveryEpisodeId;
         error.diagnosticEvidence.recoveryGeneration = optimistic.recoveryGeneration ?? 0;
@@ -2260,10 +2288,13 @@ export const createLiveTransportStore = ({
       // becomes uncertain, the sender's existing error path establishes the
       // recovery episode at that point. Other shared mutations keep their
       // established recovery ownership until their receipt settles.
-      if (!isRoutineComputerRenewal(envelope)) {
+      if (isRoutineComputerRenewal(envelope)) {
+        pending.maintenanceRecoveryEpoch = optimistic.connectionRecoveryEpoch ?? 0;
+      } else {
         pending.sharedRecoveryEpoch = (optimistic.connectionRecoveryEpoch ?? 0) + 1;
         setConnectionRecovering(gameId,true);
         pending.sharedRecoveryEpoch = optimistic.connectionRecoveryEpoch;
+        pending.sharedRecoveryEpisodeId = optimistic.recoveryEpisodeId;
       }
       void sendNextPendingCommand(gameId);
       return {completion};
