@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { partitionLanes } from "./partition.mjs";
 import { nightlyFullLanes, prGateLanes, suiteById, NODE_PARTITIONS } from "./catalog.mjs";
 
 const expression = (value) => "${{ " + value + " }}";
@@ -82,7 +83,7 @@ core.setOutput('ids',selected.map(a=>a.id).join(','));` },
 ];
 
 export function workflow({ nodePartitions = NODE_PARTITIONS } = {}) {
-  const jobs = {}, lanes = prGateLanes(nodePartitions);
+  const jobs = {}, lanes = partitionLanes(prGateLanes(), nodePartitions);
   const nodeLanes = lanes.filter((lane) => !suiteById(lane.suite).browser)
     .map((lane, index) => ({ ...lane, project: lane.project || "", artifact: `node-${index}` }));
   jobs.plan = {

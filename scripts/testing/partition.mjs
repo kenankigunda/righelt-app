@@ -55,3 +55,11 @@ export function verifyStressSeeds(observations, lane) {
     notPassed: (observations?.tests ?? []).filter(test => test.status !== "passed").map(test => test.name),
   };
 }
+
+// Expand scheduling without changing the active catalogue during reader release.
+export function partitionLanes(lanes, partitions = 1) {
+  partitionIdentity({shard:1,shards:partitions});
+  return lanes.flatMap(lane => ["tooling", "sync-stress"].includes(lane.suite)
+    ? lane.shard === 1 ? Array.from({length:partitions},(_,i)=>({...lane,shard:i+1,shards:partitions})) : []
+    : [lane]);
+}
