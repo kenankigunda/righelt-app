@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DOCUMENT_ICON, actionAwaitsPlayer, createDocumentIconOwner, documentIconHref, gameDocumentIconSvg } from "../shell/document-icon.js";
+import { DOCUMENT_ICON, actionAwaitsPlayer, createDocumentIconOwner, documentIconHref, gameDocumentIconSvg, gameDocumentStartedAt } from "../shell/document-icon.js";
 
 const iconFixture = ({ present = true, href = DOCUMENT_ICON.base } = {}) => {
   const attributes = new Map([["href", href]]);
@@ -42,6 +42,17 @@ test("document icon owner fails closed when the fallback icon is unavailable", (
   assert.equal(owner.sync(true), false);
   assert.deepEqual(owner.snapshot(), { attention: false, kind: "home" });
   assert.deepEqual(fixture.writes, []);
+});
+
+test("Home and unresolved game routes never claim a game start date", () => {
+  assert.equal(gameDocumentStartedAt(undefined, null), null);
+  assert.equal(gameDocumentStartedAt("game-a", null), null);
+  assert.equal(gameDocumentStartedAt("game-a", { id: "game-b", createdAt: "2026-11-13T12:00:00Z" }), null);
+  assert.equal(gameDocumentStartedAt("game-a", { id: "game-a" }), null);
+  assert.equal(
+    gameDocumentStartedAt("game-a", { id: "game-a", createdAt: "2026-11-13T12:00:00Z" }),
+    "2026-11-13T12:00:00Z",
+  );
 });
 
 test("game icons reuse the immutable localized date identity and preserve the selected attention gap", () => {

@@ -39,6 +39,11 @@ export const documentIconHref = ({ startedAt = null, attention = false, locale, 
 export const actionAwaitsPlayer = ({ currentGame = false, canControl = false, ownsActor = false, computerTurn = false } = {}) =>
   Boolean(currentGame && canControl && ownsActor && !computerTurn);
 
+export const gameDocumentStartedAt = (gameId, currentGame) => {
+  if (!gameId || !currentGame || currentGame.id !== gameId) return null;
+  return currentGame.createdAt ?? null;
+};
+
 export const createDocumentIconOwner = ({ documentObject = document } = {}) => {
   let current = null;
   const sync = (nextState = {}) => {
