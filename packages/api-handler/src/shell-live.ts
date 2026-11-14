@@ -386,16 +386,36 @@ export const handleLiveGameRequest = async (
       return { handled: true, status: 400, body: { ok: false, error: "invalid_history_branch_payload" }, cacheControl: CACHE_NO_STORE };
     }
     if (body.computer !== undefined && !computerModelForCreation(body.computerModelId)) return { handled: true, status: 400, body: { ok: false, error: 'invalid_computer_model' }, cacheControl: CACHE_NO_STORE };
+    const requestedGameId = asIdentity(body.gameId);
+    const newGameId = requestedGameId ?? nextGameId();
+    const historyBranchCreationKey = JSON.stringify([
+      sourceGameId,
+      asIdentity(body.sourceDecisionId),
+      sourceMoveIndex,
+      typeof body.sourceGameplayRevision === "number" && Number.isSafeInteger(body.sourceGameplayRevision) ? body.sourceGameplayRevision : null,
+    ]);
+    if (requestedGameId) {
+      const existing = await fetchGameRoom(request, env, newGameId, `/snapshot?identityId=${encodeURIComponent(identityId)}`, { method: "GET" });
+      if (existing.ok) {
+        const existingBody = await existing.json() as { game?: { historyBranchCreationKey?: string } };
+        return existingBody.game?.historyBranchCreationKey === historyBranchCreationKey
+          ? { handled: true, status: 200, body: existingBody, cacheControl: CACHE_NO_STORE }
+          : { handled: true, status: 409, body: { ok: false, error: "game_already_exists" }, cacheControl: CACHE_NO_STORE };
+      }
+      await existing.body?.cancel();
+    }
     // Derive the immutable position where the history lives. The outer Worker
     // handles only this bounded position, never the source's complete history.
     const prepared = await fetchGameRoom(request, env, sourceGameId, "/prepare-branch", {
       method:"POST",headers:{"content-type":"application/json"},
-      body:JSON.stringify({identityId,protocolVersion:2,sourceMoveIndex,sourceDecisionId:body.sourceDecisionId,sourceGameplayRevision:body.sourceGameplayRevision}),
+      body:JSON.stringify({identityId,protocolVersion:2,targetGameId:newGameId,sourceMoveIndex,sourceDecisionId:body.sourceDecisionId,sourceGameplayRevision:body.sourceGameplayRevision}),
     });
     if (!prepared.ok) return {handled:true,response:prepared};
-    const {scenario,initialSelectionAction} = await prepared.json() as Record<string,unknown>;
-    const requestedGameId = asIdentity(body.gameId);
-    const newGameId = requestedGameId ?? nextGameId();
+    const preparedBody = await prepared.json() as Record<string,unknown>;
+    if (preparedBody.historyLineageVersion !== 1 || preparedBody.importedHistory === undefined) {
+      return { handled: true, status: 409, body: { ok: false, error: "branch_history_upgrade_required" }, cacheControl: CACHE_NO_STORE };
+    }
+    const {scenario,initialSelectionAction,importedHistory} = preparedBody;
     const response = await fetchGameRoom(request, env, newGameId, "/create-from-scenario", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -404,12 +424,26 @@ export const handleLiveGameRequest = async (
         gameId: newGameId,
         scenario,
         initialSelectionAction,
+        importedHistory,
+        historyBranchCreationKey,
         selfPlayMode: body.selfPlayMode === true,
         creatorSide: body.creatorSide === "p2" ? "p2" : "p1",
         ...(body.computer === undefined ? {} : { computer: body.computer, computerModelId: body.computerModelId }),
         preserveResultingState: true,
       }),
     });
+    if (response.status === 409 && requestedGameId) {
+      await response.body?.cancel();
+      const existing = await fetchGameRoom(request, env, newGameId, `/snapshot?identityId=${encodeURIComponent(identityId)}`, { method: "GET" });
+      if (existing.ok) {
+        const existingBody = await existing.json() as { game?: { historyBranchCreationKey?: string } };
+        if (existingBody.game?.historyBranchCreationKey === historyBranchCreationKey) {
+          return { handled: true, status: 200, body: existingBody, cacheControl: CACHE_NO_STORE };
+        }
+      }
+      await existing.body?.cancel();
+      return { handled: true, status: 409, body: { ok: false, error: "game_already_exists" }, cacheControl: CACHE_NO_STORE };
+    }
     return { handled: true, response };
   }
 

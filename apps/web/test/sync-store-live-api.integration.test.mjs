@@ -117,6 +117,7 @@ test("integration sync store keeps the optimistic game id stable across history 
   const branchHandle = store.launchHistoryBranch({
     sourceGameId: sourceGame.id,
     sourceMoveIndex: 0,
+    sourceGameplayRevision: sourceView.gameplayRevision,
     scenario: branchSeed.scenario,
     initialSelectionAction: branchSeed.initialSelectionAction,
     participantCopyMode: branchSeed.participantCopyMode,
@@ -202,6 +203,7 @@ test("integration sync store hydrates a pending history branch from shared stora
   const branchHandle = sourceStore.launchHistoryBranch({
     sourceGameId: sourceGame.id,
     sourceMoveIndex: 0,
+    sourceGameplayRevision: sourceView.gameplayRevision,
     scenario: branchSeed.scenario,
     initialSelectionAction: branchSeed.initialSelectionAction,
     participantCopyMode: branchSeed.participantCopyMode,
@@ -386,6 +388,7 @@ test("integration sync store lets an already-created second store discover a pen
   const branchHandle = sourceStore.launchHistoryBranch({
     sourceGameId: sourceGame.id,
     sourceMoveIndex: 0,
+    sourceGameplayRevision: sourceView.gameplayRevision,
     scenario: branchSeed.scenario,
     initialSelectionAction: branchSeed.initialSelectionAction,
     participantCopyMode: branchSeed.participantCopyMode,
@@ -459,6 +462,7 @@ test("integration sync store keeps a failed shared-storage branch stub hydratabl
   const branchHandle = sourceStore.launchHistoryBranch({
     sourceGameId: sourceGame.id,
     sourceMoveIndex: 0,
+    sourceGameplayRevision: sourceView.gameplayRevision,
     scenario: branchSeed.scenario,
     initialSelectionAction: branchSeed.initialSelectionAction,
     participantCopyMode: branchSeed.participantCopyMode,

@@ -17,6 +17,6 @@ export function historyRenderingFixture(overrides={}) {
   escapeHtml:value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),icon:()=>'',
   playerToneClassForSide:side=>side==='P1'?'player-tone-p1':side==='P2'?'player-tone-p2':'player-tone-neutral',playerToneClassForSeat:()=>'',
   COMPUTER_PROFILES:{},playerDisplayName:()=> 'Player',formatClientDateTime:String,liveHistoryLabel:()=> 'Waiting',
-  boardContextScope:()=>{},boardContexts:{channel:()=>null},renderIncomingHistory:()=>'',expandedUndoneGroups:new Set(),...overrides};
+  boardContextScope:()=>{},boardContexts:{channel:()=>null},renderIncomingHistory:()=>'',expandedUndoneGroups:new Set(),expandedImportedHistory:new Set(),...overrides};
  return {context,...createHistoryRendering(()=>context)};
 }

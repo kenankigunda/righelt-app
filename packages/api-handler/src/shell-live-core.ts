@@ -66,6 +66,29 @@ export type MoveEntry = {
   snapshot: GameState;
   /** Persistent record of pieces destroyed during resolution of this move. */
   destroyedPieces?: DestroyedPieceRecord[];
+  /** Immutable source identity for history copied into a branched game. */
+  importedFrom?: {
+    gameId: string;
+    decisionId: string;
+    gameplayRevision: number;
+  };
+};
+
+export type ImportedHistorySource = {
+  gameId: string;
+  gameplayRevision: number;
+  moveCount: number;
+};
+
+export type ImportedHistory = {
+  version: 1;
+  complete: boolean;
+  moveCount: number;
+  sources: ImportedHistorySource[];
+};
+
+export type PreparedImportedHistory = ImportedHistory & {
+  moves: MoveEntry[];
 };
 
 export type RevertRequest = {
@@ -145,6 +168,8 @@ export type LiveGame = {
   pendingScenarioSelection: ScenarioSavedSelection | null;
   notifications: string[];
   initialSelectionAction?: Action | null;
+  importedHistory?: ImportedHistory;
+  historyBranchCreationKey?: string;
   inviteTokens: {
     viewer: string;
     player1: string;
@@ -349,6 +374,60 @@ export const asScenarioRecord = (value: unknown): ScenarioRecord | null => {
       asScenarioSavedSelection(candidate.savedSelection) ??
       asScenarioSavedSelection(candidate.saved_selection) ??
       null,
+  };
+};
+
+export const asPreparedImportedHistory = (value: unknown): PreparedImportedHistory | null => {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.version !== 1 || typeof candidate.complete !== "boolean" || !Number.isSafeInteger(candidate.moveCount)
+    || Number(candidate.moveCount) < 0 || !Array.isArray(candidate.sources) || !Array.isArray(candidate.moves)) return null;
+  const sources = candidate.sources.map(source => {
+    if (!source || typeof source !== "object") return null;
+    const record = source as Record<string, unknown>;
+    if (!asIdentity(record.gameId) || !Number.isSafeInteger(record.gameplayRevision) || Number(record.gameplayRevision) < 0
+      || !Number.isSafeInteger(record.moveCount) || Number(record.moveCount) < 0) return null;
+    return { gameId: String(record.gameId), gameplayRevision: Number(record.gameplayRevision), moveCount: Number(record.moveCount) };
+  });
+  if (sources.some(source => source === null)) return null;
+  const moves = candidate.moves.map(entry => {
+    if (!entry || typeof entry !== "object") return null;
+    const move = entry as MoveEntry;
+    if (!asIdentity(move.moveId) || !Number.isSafeInteger(move.index) || !Number.isSafeInteger(move.turnIndex)
+      || !Number.isSafeInteger(move.turnMoveIndex) || !Number.isFinite(move.displayMoveNumber)
+      || (move.actorSide !== "P1" && move.actorSide !== "P2") || typeof move.at !== "string"
+      || typeof move.notation !== "string" || !asAction(move.action) || !asGameState(move.selectionSnapshot)
+      || !asGameState(move.snapshot) || !move.importedFrom || !asIdentity(move.importedFrom.gameId)
+      || !asIdentity(move.importedFrom.decisionId) || !Number.isSafeInteger(move.importedFrom.gameplayRevision)) return null;
+    return clone(move);
+  });
+  if (moves.some(move => move === null) || moves.length !== Number(candidate.moveCount)) return null;
+  const parsedSources = sources as ImportedHistorySource[];
+  const parsedMoves = moves as MoveEntry[];
+  const sourceCounts = new Map<string, number>();
+  for (const source of parsedSources) {
+    const key = `${source.gameId}\u0000${source.gameplayRevision}`;
+    if (source.moveCount < 1 || sourceCounts.has(key)) return null;
+    sourceCounts.set(key, source.moveCount);
+  }
+  const originCounts = new Map<string, number>();
+  const originDecisions = new Set<string>();
+  for (const move of parsedMoves) {
+    const origin = move.importedFrom!;
+    const decisionKey = `${origin.gameId}\u0000${origin.decisionId}`;
+    const sourceKey = `${origin.gameId}\u0000${origin.gameplayRevision}`;
+    if (originDecisions.has(decisionKey) || !sourceCounts.has(sourceKey)) return null;
+    originDecisions.add(decisionKey);
+    originCounts.set(sourceKey, (originCounts.get(sourceKey) ?? 0) + 1);
+  }
+  if (parsedSources.some(source => originCounts.get(`${source.gameId}\u0000${source.gameplayRevision}`) !== source.moveCount)) return null;
+  if (parsedSources.reduce((total, source) => total + source.moveCount, 0) !== Number(candidate.moveCount)) return null;
+  return {
+    version: 1,
+    complete: candidate.complete,
+    moveCount: Number(candidate.moveCount),
+    sources: parsedSources,
+    moves: parsedMoves,
   };
 };
 
@@ -944,6 +1023,7 @@ const buildViewModel = (game: LiveGame, identityId: string, includeLegalActions:
   const latestActiveMoveSeat = latestActiveMove ? getSeatForSide(latestActiveMove.actorSide) : null;
   const canUndoLastMove = Boolean(
     latestActiveMove &&
+      !latestActiveMove.importedFrom &&
       latestActiveMoveSeat &&
       getSeatIdentity(game, latestActiveMoveSeat) === identityId,
   );
@@ -1096,6 +1176,26 @@ const rebuildTurnsFromActiveMoves = (game: LiveGame, referenceState: GameState) 
   }
 };
 
+export const applyImportedHistoryToGame = (game: LiveGame, prepared: PreparedImportedHistory) => {
+  const seen = new Set<string>();
+  const activeMoves = prepared.moves.flatMap(move => {
+    const origin = move.importedFrom!;
+    const key = `${origin.gameId}\u0000${origin.decisionId}`;
+    if (seen.has(key) || move.undone) return [];
+    seen.add(key);
+    return [clone(move)];
+  });
+  if (activeMoves.length !== prepared.moveCount) throw new Error("invalid_imported_history_count");
+  game.moves = activeMoves.map((move, index) => ({ ...move, index }));
+  game.importedHistory = {
+    version: 1,
+    complete: prepared.complete,
+    moveCount: activeMoves.length,
+    sources: clone(prepared.sources),
+  };
+  rebuildTurnsFromActiveMoves(game, game.board.state);
+};
+
 const toSavedSelectionFromMove = (move: MoveEntry) => {
   const source = move.action?.from ?? null;
   const target = move.action?.to ?? null;
@@ -1116,6 +1216,9 @@ export const applyRevertToMove = (game: LiveGame, targetMoveId: string, requeste
     return { ok: false as const, error: "move_not_found" };
   }
   const targetMove = targetIndex < 0 ? archivedTarget! : game.moves[targetIndex];
+  if (targetMove.importedFrom) {
+    return { ok: false as const, error: "imported_move_read_only" };
+  }
   const revertedAt = now();
   const previouslyUndone = new Set(game.moves.filter(move => move.undone === true));
   for (let index = Math.max(0, targetIndex); index < game.moves.length; index += 1) {
@@ -1234,7 +1337,10 @@ const applyServerActionInternal = (
   activeTurn.moveIndexes.push(move.index);
   activeTurn.lastMoveAt = move.at;
   game.pendingScenarioSelection = null;
-  if (game.moves.length > MAX_HISTORY) {
+  // Imported ancestry is the destination's immutable evidence, not a bounded
+  // live-history cache. Keep it intact; the existing atomic storage bound
+  // rejects an oversized write instead of silently rewriting the lineage.
+  if (game.moves.length > MAX_HISTORY && !game.importedHistory) {
     game.moves.shift();
     renumberHistory(game);
   }

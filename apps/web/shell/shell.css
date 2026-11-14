@@ -1115,12 +1115,14 @@ button.button-release-bounce,
   font-weight: 500;
 }
 
-.history-item.history-item-undone-group {
+.history-item.history-item-undone-group,
+.history-item.history-item-imported-group {
   cursor: pointer;
   user-select: none;
 }
 
-.history-item.history-item-undone-group::before {
+.history-item.history-item-undone-group::before,
+.history-item.history-item-imported-group::before {
   content: "";
   grid-column: 1;
   grid-row: 1;
@@ -1145,7 +1147,8 @@ button.button-release-bounce,
   cursor: not-allowed;
 }
 
-.history-item.history-item-undone-group.is-expanded::before {
+.history-item.history-item-undone-group.is-expanded::before,
+.history-item.history-item-imported-group.is-expanded::before {
   transform: translateY(0.42rem) rotate(45deg);
 }
 
@@ -1158,6 +1161,43 @@ button.button-release-bounce,
   padding-left: 0.1rem;
   margin-top: -0.2rem;
   animation: history-undone-group-expand 170ms ease;
+}
+
+.history-item.history-item-imported-group {
+  display: grid;
+  grid-template-columns: 0.75rem minmax(0, 1fr);
+  align-items: start;
+}
+
+.history-imported-toggle,
+.history-imported-status,
+.history-imported-content {
+  grid-column: 2;
+}
+
+.history-imported-content {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.history-imported-source {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 44px;
+  font-size: 0.875em;
+}
+
+.history-imported-source-segment {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.history-list.history-list-imported {
+  margin: 0 0 0 3px;
+  padding-left: 10px;
+  gap: 6px;
+  border-left: 2px solid currentColor;
 }
 
 .history-list.history-list-nested {
@@ -2418,4 +2458,5 @@ textarea:focus-visible {
   :is(.history-turn,.history-item-undone-group) .history-item:has(> .history-move-hit.button-release-bounce) {animation:none;}
 }
 
-.app-root :is(.history-turn,.history-item-undone-group) button.history-undone-toggle.secondary {position:relative;z-index:3;pointer-events:auto;min-height:44px;border:0;border-radius:0;padding:0;background:transparent;color:inherit;font:inherit;text-align:left;}
+.app-root :is(.history-turn,.history-item-undone-group) button.history-undone-toggle.secondary,
+.app-root .history-item-imported-group button.history-imported-toggle.secondary {position:relative;z-index:3;pointer-events:auto;min-height:44px;border:0;border-radius:0;padding:0;background:transparent;color:inherit;font:inherit;text-align:left;}

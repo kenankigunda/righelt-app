@@ -1,6 +1,7 @@
 import { COMPUTER_LIMITS } from '../../shared-types/src/computer-play';
 import { canonicalCommandJson, encodedSyncBytes } from '../../shared-types/src/sync-protocol';
-import type { LiveGame, MoveEntry } from './shell-live-core';
+import { clone, type LiveGame, type MoveEntry, type PreparedImportedHistory } from './shell-live-core';
+import { stateWriteLimits } from './storage-codec';
 import type { LiveGameEnv, D1Statement } from './shell-live-db';
 
 export type ArchivedDecision = { id: string; kind: 'decision' | 'restoration' | 'turn' | 'initial' | 'finalization'; revision: number; eventSeq: number; ordinal: number; at: string; move?: MoveEntry; finalizedMove?: MoveEntry; restoredIds?: string[]; targetDecisionId?: string; requesterIdentityId?: string; restorationVersion?: 1; state?: LiveGame['board']['state']; partial?: boolean };
@@ -134,6 +135,85 @@ export async function readAdditionalDecisionPage(env: LiveGameEnv, game: LiveGam
   });
   const items=entries.slice(0,COMPUTER_LIMITS.historyPage),last=items.at(-1);
   return {available:entries.length>0,items,nextCursor:entries.length>items.length&&last?{eventSeq:last.eventSeq,ordinal:last.ordinal}:null};
+}
+
+export async function prepareImportedHistory(
+  env: LiveGameEnv,
+  game: LiveGame,
+  selectedMove: MoveEntry | null,
+  targetGameId: string,
+): Promise<PreparedImportedHistory> {
+  const archived: Array<{ move: MoveEntry; historyStatus?: string }> = [];
+  const maximumBytes = stateWriteLimits(env, targetGameId).rawBytes;
+  let cursor: unknown = null;
+  for (let page = 0; page < 100; page += 1) {
+    const result = await readAdditionalDecisionPage(env, game, cursor, false);
+    archived.push(...result.items.flatMap(entry => entry.kind === 'decision' && entry.move?.moveId
+      ? [{ move: entry.move, historyStatus: (entry as {historyStatus?:string}).historyStatus }]
+      : []));
+    // The lineage is immutable only if the destination can persist it as one
+    // authoritative creation. Refuse an oversized prefix before forwarding it
+    // between rooms; never silently truncate it or claim partial ancestry is
+    // complete. Large-state canaries use their configured target-game bound.
+    if (encodedSyncBytes({ archived, live: game.moves }) > maximumBytes) throw new Error('branch_history_too_large');
+    cursor = result.nextCursor;
+    if (!cursor) break;
+    if (page === 99) throw new Error('branch_history_too_large');
+  }
+  const observedByDecision = new Map<string, { move: MoveEntry; status?: string }>();
+  for (const entry of [
+    ...archived.map(entry => ({ move: entry.move, status: entry.historyStatus })),
+    ...game.moves.map(move => ({ move, status: move.undone ? 'undone' : 'active' })),
+  ]) {
+    const origin = entry.move.importedFrom;
+    const key = origin ? `${origin.gameId}\u0000${origin.decisionId}` : `${game.id}\u0000${entry.move.moveId}`;
+    observedByDecision.set(key, entry);
+  }
+  const observed = [...observedByDecision.values()];
+  const candidates = [
+    ...archived.filter(entry => entry.historyStatus === 'active').map(entry => entry.move),
+    ...game.moves.filter(move => !move.undone),
+  ].sort((left, right) => left.displayMoveNumber - right.displayMoveNumber || left.turnIndex - right.turnIndex || left.turnMoveIndex - right.turnMoveIndex);
+  const deduped: MoveEntry[] = [];
+  const seen = new Set<string>();
+  for (const move of candidates) {
+    const origin = move.importedFrom ?? { gameId: game.id, decisionId: move.moveId, gameplayRevision: game.gameplayRevision };
+    const key = `${origin.gameId}\u0000${origin.decisionId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push({ ...clone(move), importedFrom: clone(origin), undone: false, undoneAt: null, undoneByIdentityId: null, undoEventSeq: undefined });
+  }
+  const moves = (selectedMove
+    ? deduped.filter(move => move.displayMoveNumber < selectedMove.displayMoveNumber)
+    : deduped
+  ).map((move, index) => ({ ...move, index }));
+  const sources: PreparedImportedHistory['sources'] = [];
+  for (const move of moves) {
+    const origin = move.importedFrom!;
+    const source = sources.find(entry => entry.gameId === origin.gameId && entry.gameplayRevision === origin.gameplayRevision);
+    if (source) source.moveCount += 1;
+    else sources.push({ gameId: origin.gameId, gameplayRevision: origin.gameplayRevision, moveCount: 1 });
+  }
+  const cutoff = selectedMove
+    ? selectedMove.displayMoveNumber - 1
+    : moves.reduce((maximum, move) => Math.max(maximum, move.displayMoveNumber), 0);
+  const observedThroughCutoff = observed.filter(entry => entry.move.displayMoveNumber <= cutoff);
+  const numberStatuses = new Map<number, { active: number; unknown: boolean }>();
+  for (const entry of observedThroughCutoff) {
+    if (Number.isSafeInteger(entry.move.displayMoveNumber) && entry.move.displayMoveNumber > 0) {
+      const status = numberStatuses.get(entry.move.displayMoveNumber) ?? { active: 0, unknown: false };
+      if (entry.status === 'active') status.active += 1;
+      if (entry.status === 'unknown') status.unknown = true;
+      numberStatuses.set(entry.move.displayMoveNumber, status);
+    }
+  }
+  const everyNumberAccountedFor = Number.isSafeInteger(cutoff) && cutoff >= 0
+    && numberStatuses.size === cutoff
+    && [...numberStatuses].every(([number, status]) => number >= 1 && number <= cutoff && status.active <= 1 && !status.unknown);
+  const complete = everyNumberAccountedFor;
+  const prepared = { version: 1 as const, complete, moveCount: moves.length, sources, moves };
+  if (encodedSyncBytes(prepared) > maximumBytes) throw new Error('branch_history_too_large');
+  return prepared;
 }
 export async function readDecisionNotes(env: LiveGameEnv, gameId: string, accountId: string) {
   const rows = await env.DB.prepare('SELECT decision_id, note_json FROM live_decision_notes WHERE game_id = ?1 AND account_id = ?2').bind(gameId, accountId).all<{ decision_id: string; note_json: string }>();

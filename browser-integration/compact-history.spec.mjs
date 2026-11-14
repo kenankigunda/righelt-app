@@ -41,3 +41,53 @@ test('native History hover stays a quiet owner wash rather than a generic paper 
  }
  await page.screenshot({path:info.outputPath('compact-native-hover.png'),fullPage:true});
 });
+
+for(const width of [390,1440])test(`imported lineage disclosure keeps native History ownership at ${width}px`,async({page},info)=>{
+ await page.addInitScript(scenario=>{window.compactScenario=scenario;},scenario);
+ await page.setViewportSize({width,height:1000});
+ await page.goto('/browser-integration/support/compact-history.html');
+ await page.waitForFunction(()=>window.fixtureReady);
+ await page.evaluate(()=>window.addImportedHistory(true));
+
+ const disclosure=page.getByRole('button',{name:'Imported from previous game · 4 moves',exact:true});
+ await expect(disclosure).toHaveAttribute('aria-expanded','false');
+ await disclosure.focus();await page.keyboard.press('Space');
+ await expect(disclosure).toBeFocused();await expect(disclosure).toHaveAttribute('aria-expanded','true');
+ const segments=page.locator('.history-imported-source-segment');await expect(segments).toHaveCount(2);
+ for(const source of ['source-alpha','source-beta']){
+  const link=page.locator(`a.history-imported-source[href="#/game/${source}"]`),segment=link.locator('..');
+  await expect(link).toHaveAttribute('href',`#/game/${source}`);
+  expect(await segment.evaluate((node,selector)=>node.firstElementChild?.matches(selector)===true&&node.children[1]?.matches('ol.history-list-imported')===true,`a[href="#/game/${source}"]`)).toBe(true);
+ }
+ await page.keyboard.press('Space');await expect(disclosure).toBeFocused();await expect(disclosure).toHaveAttribute('aria-expanded','false');
+ await expect(segments).toHaveCount(0);
+
+ await disclosure.click();
+ const imported=page.locator('[data-testid="history-move-item"][data-move-id="record-0"]');
+ await imported.locator('.history-move-hit').click();await expect(imported).toHaveClass(/is-selected/);
+ if(width===390){
+  await expect(imported.getByTestId('history-inline-preview')).toBeVisible();
+  await expect(imported.locator('.recorded-action-source-piece')).toHaveCount(1);
+ }
+ await expect(imported.getByRole('button',{name:'Undo before this move',exact:true})).toHaveCount(0);
+ const importedBranch=imported.getByRole('button',{name:'New game before this move',exact:true});
+ await expect(importedBranch).toBeVisible();await importedBranch.click();
+ expect(await page.evaluate(()=>window.historyBranchIntents)).toEqual([{gameId:'fixture',moveId:'record-0',moveIndex:0,decisionId:null}]);
+
+ const local=page.locator('[data-testid="history-move-item"][data-move-id="record-5"]');
+ await local.locator('.history-move-hit').click();await expect(local).toHaveClass(/is-selected/);
+ await expect(local.getByRole('button',{name:'Undo before this move',exact:true})).toBeVisible();
+ await expect(local.getByRole('button',{name:'New game before this move',exact:true})).toBeVisible();
+ expect(await page.evaluate(()=>window.historyActions)).toEqual(['toggle-imported-history','toggle-imported-history','toggle-imported-history','jump-history','launch-history-branch','jump-history']);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+ if(width===390){
+  for(const button of await page.locator('.history-imported-toggle,.history-imported-source,.history-move-hit,.history-item-actions button').all()){
+   if(await button.isVisible()){const rect=await button.boundingBox();expect(rect.height).toBeGreaterThanOrEqual(44);}
+  }
+ }
+ await page.screenshot({path:info.outputPath(`imported-lineage-${width}.png`),fullPage:true});
+
+ await page.evaluate(()=>window.addImportedHistory(false));
+ await expect(page.getByText('Imported history is incomplete.',{exact:true})).toBeVisible();
+ await expect(page.getByText(/Imported history is complete\./)).toHaveCount(0);
+});

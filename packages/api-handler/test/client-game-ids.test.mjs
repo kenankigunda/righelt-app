@@ -80,6 +80,7 @@ test("shell-live history branch honors a caller-provided game id", async () => {
         gameId: requestedBranchGameId,
         sourceGameId: createBody.game.id,
         sourceMoveIndex: 0,
+        sourceGameplayRevision: sourceBody.game.gameplayRevision,
         scenario: branchSeed.scenario,
         initialSelectionAction: branchSeed.initialSelectionAction,
       }),
