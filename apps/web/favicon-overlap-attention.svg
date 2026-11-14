@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Righelt — action awaiting">
+  <defs>
+    <mask id="rear-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+      <rect width="64" height="64" fill="white"/>
+      <g transform="translate(4 22) scale(1.38)" fill="black" stroke="black" stroke-width="1.5" stroke-linejoin="round">
+        <path d="M3 7L8 2H16L21 7V17L24 20V24H0V20L3 17Z"/>
+        <rect x="6" y="11" width="12" height="5" stroke="none"/>
+      </g>
+    </mask>
+  </defs>
+  <g transform="translate(27 21) scale(1.25)" fill="#245e9b" mask="url(#rear-gap)">
+    <path d="M9 0H15V6H19V12H24V24H16V16H8V24H0V12H5V6H9Z"/>
+  </g>
+  <g transform="translate(4 22) scale(1.38)" fill="#b42f36">
+    <path fill-rule="evenodd" d="M3 7L8 2H16L21 7V17L24 20V24H0V20L3 17Z M6 11H18V16H6Z"/>
+  </g>
+  <circle cx="51" cy="13" r="6" fill="#d47a16"/>
+</svg>

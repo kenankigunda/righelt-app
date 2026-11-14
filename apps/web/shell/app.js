@@ -3438,12 +3438,15 @@ const renderContent = ({ animatePanels, includeBoard }) => {
     if(storyDialog.gameId()===currentRoute.gameId && getGameResult(confirmed,transport.getIdentityId()))storyDialog.setMatchStatus('Game finished',true);
   }
   document.title = getDocumentTitle();
-  documentIcon.sync(actionAwaitsPlayer({
-    currentGame:currentGame?.id===currentRoute.gameId,
-    canControl:canControlLiveBoard(currentGame),
-    ownsActor:ownsBoardActor(currentGame,transport.getIdentityId()),
-    computerTurn:currentGame?.computerTurn,
-  }));
+  documentIcon.sync({
+    startedAt:currentGame?.id===currentRoute.gameId ? currentGame.createdAt : null,
+    attention:actionAwaitsPlayer({
+      currentGame:currentGame?.id===currentRoute.gameId,
+      canControl:canControlLiveBoard(currentGame),
+      ownsActor:ownsBoardActor(currentGame,transport.getIdentityId()),
+      computerTurn:currentGame?.computerTurn,
+    }),
+  });
   syncRouteTransitionForCurrentRoute();
   const routeKey = getRouteRenderKey();
   const baseRouteKey = getBaseRouteRenderKey();
