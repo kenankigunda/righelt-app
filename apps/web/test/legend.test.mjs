@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { getCommandLegendColor, getCommandLegendSwatchStyle, updateLegendVisibility, getInspectionLegendState, updateInspectionLegend } from "../legend.js";
+import { getCommandLegendColor, getCommandLegendSwatchStyle, updateLegendVisibility, getInspectionLegendState, updateInspectionLegend, getRenderedPreviousTurnLegendState, updatePreviousTurnLegend } from "../legend.js";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
 const shellAppSource = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
@@ -81,6 +81,16 @@ test("same legend visibility retains running animation; changed visibility resta
   updateLegendVisibility(legend, {command: true}, true);
   assert.equal(item.hidden, false);
   assert.equal(animations.length, 2);
+});
+
+test('previous-turn key follows only the rendered live cue and uses the prior player color',()=>{
+ const item={hidden:true,style:{setProperty:(name,value)=>{item[name]=value}}},painted={};
+ const board={context:'previous-turn',painted,getAttribute(name){return name==='data-presentation-context'?this.context:null;},querySelector(){return this.painted;}};
+ const legend={querySelector:selector=>selector==='[data-legend-entry="previousTurn"]'?item:null,getBoundingClientRect:()=>({height:20}),getAnimations:()=>[],get scrollHeight(){return item.hidden?20:40;},animate:()=>{}};
+ assert.deepEqual(getRenderedPreviousTurnLegendState(board,{sideToMove:'P2'}),{visible:true,owner:'P1'});
+ assert.deepEqual(updatePreviousTurnLegend(legend,board,{sideToMove:'P2'},true),{visible:true,owner:'P1'});assert.equal(item.hidden,false);assert.equal(item['--previous-turn-color'],'var(--player-p1)');
+ board.context='history';assert.deepEqual(updatePreviousTurnLegend(legend,board,{sideToMove:'P2'},true),{visible:false,owner:null});assert.equal(item.hidden,true);
+ board.context='previous-turn';board.painted=null;assert.deepEqual(updatePreviousTurnLegend(legend,board,{sideToMove:'P1'},true),{visible:false,owner:null});assert.equal(item.hidden,true);
 });
 
 

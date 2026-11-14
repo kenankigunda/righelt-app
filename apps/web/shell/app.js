@@ -143,7 +143,7 @@ import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
 import { createSyncStore } from "./sync-store.js";
 import { ensureHoverCapabilityController } from "../hover-capability.js";
-import { getCommandLegendSwatchStyle, updateLegendVisibility, updateInspectionLegend } from "../legend.js";
+import { getCommandLegendSwatchStyle, updateLegendVisibility, updateInspectionLegend, updatePreviousTurnLegend } from "../legend.js";
 import { loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted } from "./persistence.js";
 import {
   buildHistoryBranchSeedFromGame,
@@ -2342,6 +2342,7 @@ const renderBoardPanel = (game) => `
   <div class="overlay-key" aria-label="Board legend">
     <button type="button" class="legend-inspection" data-board-inspection="command" aria-pressed="false"><i class="swatch commander-key">${renderPieceSymbol('commander')}</i><span class="legend-inspection-label">Commander</span></button>
     <button type="button" class="legend-inspection" data-board-inspection="supply" aria-pressed="false"><i class="swatch supply-point" style="--supply-owner:var(--player-${game.currentSnapshot?.sideToMove === 'P2' ? 'p2' : 'p1'})">${renderPieceSymbol('supply')}</i><span class="legend-inspection-label">Supply point</span></button>
+    <span data-legend-entry="previousTurn" hidden><i class="previous-turn-key-swatch" aria-hidden="true"></i><span>Previous turn</span></span>
     <span data-legend-entry="group" hidden><i class="swatch group"></i>Group strength</span>
     <span data-legend-entry="command" hidden><i id="shell-command-legend-swatch" class="swatch command" style="${escapeHtml(
       getCommandLegendSwatchStyle(game.currentSnapshot ?? null),
@@ -3179,7 +3180,7 @@ const mountBoardForGame = (game) => {
         getAllowFreeSelection: () => Boolean(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id),
         getSupportsHover: () => hoverCapability.getSupportsHover(),
         getForceClickTargetSelection: () => Boolean(currentRoute.scenarios && scenarioCapture?.gameId === game.id),
-        onVisualsUpdated: visible => { updateLegendVisibility(document.querySelector('.overlay-key'), visible, prefersReducedMotion()); updateInspectionLegend(document.querySelector('.overlay-key'),boardRuntime?.getState(),{selectedPieceId:boardRuntime?.getSelection()?.selectedPieceId,...visible}); },
+        onVisualsUpdated: visible => { const legend=document.querySelector('.overlay-key'),state=boardRuntime?.getState();updateLegendVisibility(legend,visible,prefersReducedMotion());updatePreviousTurnLegend(legend,document.querySelector('#shell-board'),state,prefersReducedMotion());updateInspectionLegend(legend,state,{selectedPieceId:boardRuntime?.getSelection()?.selectedPieceId,...visible}); },
         onStateUpdated: ({ state, selectedPieceId, selectedSource, selectedTarget, overlay }) => {
           if (currentRoute.scenarios && scenarioCapture?.gameId === game.id && toStableKey(state) === toStableKey(capturePosition())) {
             scenarioCapture.selection = buildSavedSelectionFromRuntimeSelection({ source: selectedSource, target: selectedTarget }, state);

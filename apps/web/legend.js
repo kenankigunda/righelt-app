@@ -35,6 +35,22 @@ export function updateLegendVisibility(legend, visible, reducedMotion = false) {
   }
 }
 
+export function getRenderedPreviousTurnLegendState(board, snapshot) {
+  const visible = board?.getAttribute?.('data-presentation-context') === 'previous-turn'
+    && Boolean(board.querySelector?.('.cell.previous-turn-source,.cell.previous-turn-target,.cell.previous-turn-deletion'));
+  if (!visible) return {visible:false,owner:null};
+  return {visible:true,owner:snapshot?.sideToMove === 'P2' ? 'P1' : 'P2'};
+}
+
+/** The legend follows the cue that the adapter actually painted, not an available turn record. */
+export function updatePreviousTurnLegend(legend, board, snapshot, reducedMotion = false) {
+  const state = getRenderedPreviousTurnLegendState(board,snapshot);
+  const item = legend?.querySelector?.('[data-legend-entry="previousTurn"]');
+  if (item && state.owner) item.style.setProperty('--previous-turn-color',ownerColor(state.owner));
+  updateLegendVisibility(legend,{previousTurn:state.visible},reducedMotion);
+  return state;
+}
+
 
 const ownerColor = owner => owner === 'P2' ? 'var(--player-p2)' : 'var(--player-p1)';
 export function getInspectionLegendState(snapshot, {selectedPieceId=null,inspection=null,networkInspections={},networkOwners={}} = {}) {

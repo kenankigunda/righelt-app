@@ -484,7 +484,7 @@ This section is normative and applies to every new endpoint, page, and performan
 
 ### Independent board legend inspection
 
-Approved intended behavior, including the November 1 supply/commander follow-up. Provenance: [D02](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
+Approved intended behavior, including the November 1 supply/commander follow-up and November 13 previous-turn key. Provenance: [D02 and D19](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
 
 - Commander and Supply point retain independent inspection targets and affiliation contexts. Supply point selection never clears the selected commander. Clearing one explicit inspector leaves the other intact. Inspection never submits, queues a move or changes authority.
 - Supply paths use fixed green `#2f8e63`, round 3px strokes and `7 5` dashes. Command paths use owner colors, round 3px strokes and `2 6` dots. Shared segments use separate lanes at -2.5px supply and +2.5px command under canonical endpoint ordering. Define styles once for both adapter branches. Compact 16×3px legend samples use 5/4 supply and 2/4 command mark/gap patterns. Identity emblems, pieces, selected supply square and label underlines keep affiliation colors.
@@ -493,6 +493,7 @@ Approved intended behavior, including the November 1 supply/commander follow-up.
 - An explicit Supply point inspector exclusively chooses the affiliation whose supplies are drawn. Blue commander plus red Supply point draws blue commands and only red supplies. Clearing red supply does not silently restore blue personal supply. A deliberate commander-piece activation may re-enter the combined phase.
 - Use recorded paths, affiliation and endpoints. Do not invent substitute routes. Zero-length supply at its own source is not missing supply. Skip empty command stops. In read-only contexts, show useful connections or selected-piece information without a move-preview phase. Preserve independent explicit layers.
 - Commander and Supply point identity controls remain present. Line samples and group descriptions appear only when their overlays are actually drawn. A real board change drops vanished targets and routes while preserving unrelated valid inspectors.
+- While the live Board actually renders a previous-turn wash, the existing legend includes one passive generic square with the exact label “Previous turn.” The sample uses the previous player’s destination color at 17% and does not depict a piece, arrow, source, deletion or History treatment. Hide the key whenever no wash is rendered. It is explanatory only: it is not a button, focus target or inspector and never changes selection, replay, History, gameplay or authority.
 
 ### Stable board messages and inline actions
 

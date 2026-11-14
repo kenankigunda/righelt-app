@@ -92,6 +92,16 @@ body {display:flow-root;}
 [data-hover-capability="hover"] .legend-inspection:hover {background:var(--surface-hover-quiet);box-shadow:none;}
 /* Keep keyboard focus visible inside the animated legend clipping boundary. */
 .legend-inspection:focus-visible {outline:2px solid var(--ink);outline-offset:-2px;}
+.overlay-key:has([data-legend-entry="previousTurn"]:not([hidden])) {display:flex;flex-wrap:wrap;align-items:center;}
+.overlay-key:has([data-legend-entry="previousTurn"]:not([hidden])) > :not([hidden]) {flex:0 0 auto;white-space:nowrap;}
+.previous-turn-key-swatch {
+  --previous-turn-weight:17%;--cell-floor-color:var(--cell-fill,#f8fafa);--cell-floor-size:1024px 1024px;
+  display:inline-block;box-sizing:border-box;flex:0 0 20px;width:20px;height:20px;border:1px solid #c4cdcd;border-radius:1.5px;
+  background-color:var(--cell-floor-color);background-image:linear-gradient(color-mix(in srgb,var(--previous-turn-color) var(--previous-turn-weight),transparent),color-mix(in srgb,var(--previous-turn-color) var(--previous-turn-weight),transparent)),var(--marble-face,none);
+  background-size:var(--cell-floor-size);background-position:center;background-origin:border-box;
+  box-shadow:inset 1px 3px 3px rgb(44 57 66 / 26%),inset -1px -1px 0 rgb(255 255 255 / 94%);
+}
+@media(forced-colors:active){.previous-turn-key-swatch{background:Canvas;border:1px solid CanvasText;box-shadow:none;forced-color-adjust:auto;}}
 .history-inline-preview { width:min(100%, 360px); margin:8px auto; pointer-events:none; }
 .history-inline-preview .mini-board-preview-surface { width:100%; }
 .computer-recovery-area:empty { display:none; }
