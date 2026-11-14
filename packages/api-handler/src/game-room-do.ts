@@ -547,6 +547,9 @@ export class GameRoomDO {
       const targetGameId = asIdentity(body.targetGameId);
       const index = typeof body.sourceMoveIndex === "number" && Number.isInteger(body.sourceMoveIndex) ? body.sourceMoveIndex : null;
       if (!targetGameId) return json({ok:false,error:"invalid_branch_target"},400);
+      if (index !== null && (!Number.isSafeInteger(body.sourceGameplayRevision) || body.sourceGameplayRevision !== game.gameplayRevision)) {
+        return json({ok:false,error:"branch_source_changed"},409);
+      }
       const archived = decisionId ? await readDecision(this.env, game.id, decisionId) : null;
       const selected = archived?.move ?? (decisionId ? game.moves.find(move => move.moveId === decisionId) : index !== null ? game.moves[index] : null) ?? null;
       const live = body.sourceGameplayRevision === game.gameplayRevision && !decisionId && index === null;

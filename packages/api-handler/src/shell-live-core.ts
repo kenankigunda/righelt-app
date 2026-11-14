@@ -1337,7 +1337,10 @@ const applyServerActionInternal = (
   activeTurn.moveIndexes.push(move.index);
   activeTurn.lastMoveAt = move.at;
   game.pendingScenarioSelection = null;
-  if (game.moves.length > MAX_HISTORY) {
+  // Imported ancestry is the destination's immutable evidence, not a bounded
+  // live-history cache. Keep it intact; the existing atomic storage bound
+  // rejects an oversized write instead of silently rewriting the lineage.
+  if (game.moves.length > MAX_HISTORY && !game.importedHistory) {
     game.moves.shift();
     renumberHistory(game);
   }

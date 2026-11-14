@@ -86,13 +86,30 @@ const renderTurnHistory = (game) => {
   };
   const groups=renderNodes(splitNodes(false));
   const importedNodes=splitNodes(true);
+  const importedSegments=[];
+  for(const node of importedNodes){
+    const recordRuns=[];
+    for(const record of node.records){
+      const origin=record.move.importedFrom;
+      const key=`${origin.gameId}\u0000${origin.gameplayRevision}`;
+      const run=recordRuns.at(-1);
+      if(run?.key===key)run.records.push(record);
+      else recordRuns.push({key,origin,records:[record]});
+    }
+    for(const run of recordRuns){
+      const segment=importedSegments.at(-1);
+      const portion={...node,records:run.records};
+      if(segment?.key===run.key)segment.nodes.push(portion);
+      else importedSegments.push({key:run.key,origin:run.origin,nodes:[portion]});
+    }
+  }
   const importedCount=Number.isSafeInteger(game.importedHistory?.moveCount)?game.importedHistory.moveCount:timeline.records.filter(record=>record.move.importedFrom).length;
   const selectedImported=Boolean(game.inHistoryMode&&(game.inspectedDecision?.importedFrom
     || timeline.records.some(record=>record.move.importedFrom&&(game.inspectedDecision?.moveId===record.move.moveId||game.historyIndex===record.move.index))));
   const importedExpanded=Boolean(expandedImportedHistory?.has(game.id)||selectedImported);
-  const importedSources=(game.importedHistory?.sources??[]).map(source=>`<a class="history-imported-source" href="#/game/${encodeURIComponent(source.gameId)}">View source game · ${source.moveCount} ${source.moveCount===1?'move':'moves'}</a>`).join('');
+  const importedSources=importedSegments.map((segment,index)=>`<section class="history-imported-source-segment"><a class="history-imported-source" href="#/game/${encodeURIComponent(segment.origin.gameId)}" aria-label="Open source game for imported history segment ${index+1}">Open source game</a><ol class="history-list history-list-imported">${renderNodes(segment.nodes,`imported-history-turn:${index}`)}</ol></section>`).join('');
   const importedStatus=game.importedHistory?.complete===false?'<span class="small history-imported-status">Imported history is incomplete.</span>':'';
-  const imported=importedCount>0?`<li class="history-item history-item-imported-group${importedExpanded?' is-expanded':''}" data-testid="history-imported-group"><button type="button" class="history-imported-toggle secondary" data-action="toggle-imported-history" data-game-id="${escapeHtml(game.id)}" aria-expanded="${importedExpanded}">Imported from previous game · ${importedCount} ${importedCount===1?'move':'moves'}</button>${importedStatus}${importedExpanded?`<div class="history-imported-content">${importedSources}<ol class="history-list history-list-imported">${renderNodes(importedNodes,'imported-history-turn')}</ol></div>`:''}</li>`:'';
+  const imported=importedCount>0?`<li class="history-item history-item-imported-group${importedExpanded?' is-expanded':''}" data-testid="history-imported-group"><button type="button" class="history-imported-toggle secondary" data-action="toggle-imported-history" data-game-id="${escapeHtml(game.id)}" aria-expanded="${importedExpanded}">Imported from previous game · ${importedCount} ${importedCount===1?'move':'moves'}</button>${importedStatus}${importedExpanded?`<div class="history-imported-content">${importedSources}</div>`:''}</li>`:'';
   const emptyTurns=[...turns.values()].filter(turn=>(!timeline.records.some(record=>record.move.turnIndex===turn.index)
     || game.historyTurnIndex===turn.index&&!timeline.nodes.some(node=>node.type==='retained'&&node.turnIndex===turn.index))
     && (turn.index!==game.currentTurn?.index||Boolean(turn.endedAt)||Boolean(turn.moveIndexes?.length)));

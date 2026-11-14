@@ -570,6 +570,36 @@ const normalizeMoves = (value: unknown, mismatches: PersistedGameMismatch[]): Li
     });
 };
 
+const importedHistoryMatchesMoves = (
+  importedHistory: LiveGame["importedHistory"],
+  moves: LiveGame["moves"],
+) => {
+  const importedMoves = moves.filter(move => move.importedFrom !== undefined);
+  if (!importedHistory) return importedMoves.length === 0;
+  if (importedMoves.length !== importedHistory.moveCount) return false;
+  if (moves.slice(0, importedHistory.moveCount).some(move => !move.importedFrom || move.undone === true)) return false;
+  if (moves.slice(importedHistory.moveCount).some(move => move.importedFrom !== undefined)) return false;
+
+  const expectedCounts = new Map<string, number>();
+  for (const source of importedHistory.sources) {
+    const key = `${source.gameId}\u0000${source.gameplayRevision}`;
+    if (source.moveCount < 1 || expectedCounts.has(key)) return false;
+    expectedCounts.set(key, source.moveCount);
+  }
+  const actualCounts = new Map<string, number>();
+  const decisions = new Set<string>();
+  for (const move of importedMoves) {
+    const origin = move.importedFrom!;
+    const sourceKey = `${origin.gameId}\u0000${origin.gameplayRevision}`;
+    const decisionKey = `${origin.gameId}\u0000${origin.decisionId}`;
+    if (!expectedCounts.has(sourceKey) || decisions.has(decisionKey)) return false;
+    decisions.add(decisionKey);
+    actualCounts.set(sourceKey, (actualCounts.get(sourceKey) ?? 0) + 1);
+  }
+  if ([...expectedCounts].some(([key, count]) => actualCounts.get(key) !== count)) return false;
+  return [...expectedCounts.values()].reduce((total, count) => total + count, 0) === importedHistory.moveCount;
+};
+
 const normalizePersistedGame = (
   row: PersistedGameRow,
   context: PersistedGameLoadContext,
@@ -641,6 +671,20 @@ const normalizePersistedGame = (
       "defaulted_to_null",
     ), null);
   const importedHistory = normalizeImportedHistory(parsed.importedHistory, mismatches);
+  const malformedImportedOrigin = mismatches.some(mismatch => mismatch.repair === "dropped_invalid_imported_origin");
+  if (malformedImportedOrigin || (parsed.importedHistory !== undefined && !importedHistory) || !importedHistoryMatchesMoves(importedHistory, moves)) {
+    recordMismatch(
+      mismatches,
+      "importedHistory",
+      "metadata matching a contiguous read-only imported move prefix",
+      parsed.importedHistory,
+      "rejected_invalid_projection",
+    );
+    console.error(
+      JSON.stringify(buildShapeLogPayload({ event: "live_game_shape_invalid", gameId: row.game_id, context, mismatches })),
+    );
+    return { kind: "invalid", gameId: row.game_id, eventSeq: Number(row.event_seq || 0), mismatches };
+  }
   if (Array.isArray(parsed.notifications) && notifications.length !== parsed.notifications.length) {
     recordMismatch(mismatches, "notifications", "string[]", parsed.notifications, "dropped_non_string_entries");
   }

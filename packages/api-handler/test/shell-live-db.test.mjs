@@ -171,6 +171,36 @@ test("I-08: destroyedPieces survives full persist → normalize → serve round-
   assert.deepEqual(secondProjection.game.moves[0].destroyedPieces, destroyedPieces);
 });
 
+test("retained imported metadata with a malformed move origin is rejected fail-closed", async () => {
+  const env = makeEnv();
+  const game = makeGameWithMoves([{
+    ...legacyMove(),
+    importedFrom: { gameId: "source", decisionId: "move-legacy-001", gameplayRevision: 7 },
+  }]);
+  game.importedHistory = {
+    version: 1,
+    complete: true,
+    moveCount: 1,
+    sources: [{ gameId: "source", gameplayRevision: 7, moveCount: 1 }],
+  };
+  await persistGameState(env, game, 1);
+  assert.equal(env.DB.overwriteGameState(game.id, stored => ({
+    ...stored,
+    moves: stored.moves.map(move => ({
+      ...move,
+      importedFrom: { ...move.importedFrom, decisionId: "" },
+    })),
+  })), true);
+
+  const projection = await loadGameProjection(env, game.id);
+  assert.ok(projection);
+  assert.equal(projection.kind, "invalid");
+  assert.equal(
+    projection.mismatches.some(entry => entry.field === "importedHistory" && entry.repair === "rejected_invalid_projection"),
+    true,
+  );
+});
+
 // ---------------------------------------------------------------------------
 // I-19 — schema normalization mismatch logging: absence is logged but not fatal
 // ---------------------------------------------------------------------------

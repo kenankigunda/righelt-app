@@ -55,6 +55,31 @@ test('imported lineage is collapsed, source-linked, and branchable but never und
  assert.match(selected,/data-action="launch-history-branch"/);
  assert.doesNotMatch(selected,/data-action="revert-to-move"/);
 });
+test('imported lineage keeps contiguous source and revision boundaries beside their own links',()=>{
+ const origins=[
+  {gameId:'first-source',gameplayRevision:4},
+  {gameId:'first-source',gameplayRevision:12},
+  {gameId:'second-source',gameplayRevision:9},
+ ];
+ const imported=origins.map((origin,index)=>({
+  ...moves[index],
+  index,
+  displayMoveNumber:index+1,
+  importedFrom:{...origin,decisionId:moves[index].moveId},
+ }));
+ const branched={...game,moves:imported,importedHistory:{version:1,complete:true,moveCount:3,sources:origins.map(origin=>({...origin,moveCount:1}))}};
+ context.expandedImportedHistory.add(game.id);
+ const expanded=context.render(branched);
+ const segments=[...expanded.matchAll(/<section class="history-imported-source-segment"[\s\S]*?<\/section>/g)].map(match=>match[0]);
+ assert.equal(segments.length,3);
+ assert.match(segments[0],/href="#\/game\/second-source"[\s\S]*>Move 3: Move/);
+ assert.match(segments[1],/href="#\/game\/first-source"[\s\S]*>Move 2: Retreat/);
+ assert.match(segments[2],/href="#\/game\/first-source"[\s\S]*>Move 1: Push/);
+ assert.doesNotMatch(segments[0],/>Move (?:1|2):/);
+ assert.doesNotMatch(segments[1],/>Move (?:1|3):/);
+ assert.doesNotMatch(segments[2],/>Move (?:2|3):/);
+ assert.equal((expanded.match(/>Open source game</g)??[]).length,3);
+});
 test('selected turn is inert, has aggregate preview and exposes no undo or branch actions',()=>{
  const html=context.render({...game,inHistoryMode:true,historyTurnIndex:0,historyTurnMoves:moves.slice(0,2)});
  const heading=html.match(/<div class="history-turn-heading is-selected"[^>]*>/)[0];

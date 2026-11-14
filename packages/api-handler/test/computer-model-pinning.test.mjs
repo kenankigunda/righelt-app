@@ -94,3 +94,22 @@ test('prepared lineage rejects duplicate origins and dishonest source counts',as
  assert.equal(asPreparedImportedHistory({...prepared,sources:prepared.sources.map(entry=>({...entry,moveCount:entry.moveCount+1}))}),null);
  assert.equal(asPreparedImportedHistory({...prepared,moves:[...prepared.moves,structuredClone(prepared.moves[0])],moveCount:prepared.moveCount+1}),null);
 });
+
+test('lineage completeness distinguishes unexplained number gaps from known undone decisions',async()=>{
+ const {env}=fixture();
+ const source=createInitialGame({gameId:'lineage-gap-source',identityId:'owner',selfPlayMode:true});
+ for(let index=0;index<3;index+=1){
+  const action=listLegalActions(source.board.state).find(candidate=>candidate.from&&candidate.to);
+  assert.equal(applyServerAction(source,action).ok,true);
+ }
+ const [first,second,third]=source.moves;
+ const unexplained={...source,moves:[first,third]};
+ const unknownGap=await prepareImportedHistory(env,unexplained,null,'unknown-gap-target');
+ assert.deepEqual(unknownGap.moves.map(move=>move.displayMoveNumber),[1,3]);
+ assert.equal(unknownGap.complete,false);
+
+ const knownUndone={...source,moves:[first,{...second,undone:true},third]};
+ const accountedGap=await prepareImportedHistory(env,knownUndone,null,'known-gap-target');
+ assert.deepEqual(accountedGap.moves.map(move=>move.displayMoveNumber),[1,3]);
+ assert.equal(accountedGap.complete,true);
+});

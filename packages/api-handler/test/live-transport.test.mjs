@@ -908,6 +908,23 @@ test("live transport: history branch derives its position and next selection fro
   assert.equal(importedUndo.status, 409);
   assert.deepEqual(await importedUndo.json(), { ok: false, error: "imported_move_read_only" });
 
+  const staleBranchId = "game-stale-index-branch";
+  const staleIndexedBranch = await handleApiRequest(
+    req("/api/shell/history/branch", "POST", {
+      identityId: "id-viewer",
+      gameId: staleBranchId,
+      sourceGameId: gameId,
+      sourceMoveIndex: 0,
+      sourceGameplayRevision: secondMoveBody.game.gameplayRevision - 1,
+      creatorSide: "p2",
+    }),
+    env,
+  );
+  assert.equal(staleIndexedBranch.status, 409);
+  assert.deepEqual(await staleIndexedBranch.json(), { ok: false, error: "branch_source_changed" });
+  const absentDestination = await handleApiRequest(req(`/api/shell/games/${staleBranchId}?identityId=id-viewer`), env);
+  assert.equal(absentDestination.status, 404, "a stale source fence must not partially create the destination");
+
   await handleApiRequest(
     req(`/api/shell/games/${branchGameId}/play-as-both`, "POST", { identityId: "id-viewer" }),
     env,
@@ -2116,11 +2133,17 @@ test("live transport: trimmed history keeps absolute move numbers and consistent
     branchBody.game.moves.map(move => move.displayMoveNumber),
     Array.from({ length: totalMoves }, (_, index) => index + 1),
   );
+  await handleApiRequest(req(`/api/shell/games/${branchId}/play-as-both`, "POST", { identityId: "id-owner" }), env);
+  const continued = await handleApiRequest(req(`/api/shell/games/${branchId}/moves`, "POST", { identityId: "id-owner" }), env);
+  const continuedBody = await continued.json();
+  assert.equal(continued.status, 200, JSON.stringify(continuedBody));
+  assert.equal(continuedBody.game.moves.filter(move => move.importedFrom).length, totalMoves);
+  assert.equal(continuedBody.game.moves.length, totalMoves + 1);
   env.GAME_ROOMS.restart(branchId);
   const retained = await handleApiRequest(req(`/api/shell/games/${branchId}?identityId=id-owner`), env);
   const retainedBody = await retained.json();
   assert.equal(retained.status, 200);
   assert.equal(retainedBody.game.importedHistory.moveCount, totalMoves);
-  assert.equal(retainedBody.game.moves.length, totalMoves);
-  assert.equal(retainedBody.game.canUndoLastMove, false);
+  assert.equal(retainedBody.game.moves.length, totalMoves + 1);
+  assert.equal(retainedBody.game.canUndoLastMove, true);
 });

@@ -1185,6 +1185,11 @@ button.button-release-bounce,
   font-size: 0.875em;
 }
 
+.history-imported-source-segment {
+  display: grid;
+  gap: 0.35rem;
+}
+
 .history-list.history-list-imported {
   margin: 0 0 0 3px;
   padding-left: 10px;
