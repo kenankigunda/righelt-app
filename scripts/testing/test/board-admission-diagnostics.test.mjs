@@ -5,6 +5,7 @@ import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 import {EventEmitter} from 'node:events';
+import {transform as parseJavaScript} from 'esbuild';
 import {recoveryBindingHarness} from './support/recovery-binding-harness.mjs';
 import {installBoardAdmissionCollector,transformBoardAdmissionModule,installBoardAdmissionDiagnostics,cloneBoardSourceHandoff,createBoardSourceConsoleRetention,SOURCE_PRESS_PREFIX,SOURCE_PRESS_MAX_BYTES,COMPUTER_RECOVERY_CATEGORIES,createComputerRecoveryHandoff,createComputerRecoveryJSONRead,readComputerRecoverySnapshot,persistComputerRecoveryEvidence,runComputerRecoveryPersistence,COMPUTER_RECOVERY_FIXTURE_BUDGET_MS,COMPUTER_RECOVERY_CLEANUP_RESERVE_MS} from '../../../e2e/support/board-admission-diagnostics.mjs';
 
@@ -15,6 +16,7 @@ for(const [pathname,recipe] of Object.entries(recipes))test(`exact source and pr
  assert.ok(source.length>0);
  const transformed=transformBoardAdmissionModule(source,recipe);
  assert.ok(transformed.startsWith(recipe.prefix));
+ await parseJavaScript(transformed,{loader:'js',format:'esm',logLevel:'silent'});
  assert.throws(()=>transformBoardAdmissionModule(source+'\n',recipe),/source hash mismatch/);
  const broken={...recipe,operations:recipe.operations.map((op,i)=>i?op:{...op,anchorCount:2})};
  assert.throws(()=>transformBoardAdmissionModule(source,broken),/anchor count mismatch/);
@@ -316,7 +318,7 @@ test('error categories remain source-derived and changed output remains hash pro
  assert.throws(()=>transformBoardAdmissionModule(source,altered),/output hash mismatch/);
  const wrongOutput={...recipe,outputSha256:'0'.repeat(64)};assert.throws(()=>transformBoardAdmissionModule(source,wrongOutput),/output hash mismatch/);
  assert.equal(recipe.operations.filter(op=>op.after.includes('runtime-host-error')).length,1);assert.equal(recipe.operations.length,25);
- const unchanged={"/board-adapters/engine-board-adapter.js":"0831e62e47d677302feb73c01155e74ffaefd4895e96a45928aa7884aae6bf31","/shell/live-transport.js":"57c7540cd774b581f5c82cf00ec9e4a8bf80f7dd2bb0f90e24f7ed1c226940d7","/board/hosts/shell-host.js":"061bee0261f88f045c7223da84e5495b38be3e29aafddd00452853ed3154f751","/shell/app.js":"f227bcc2abb0804ae0de5776282173d82153121ef26a529c40c43853f3507d5c"};
+ const unchanged={"/board-adapters/engine-board-adapter.js":"0831e62e47d677302feb73c01155e74ffaefd4895e96a45928aa7884aae6bf31","/shell/live-transport.js":"e3309d8c5c07a9c1d826e5291ec7dde5853e58953dc8ee177585437e7e4cd9de","/board/hosts/shell-host.js":"061bee0261f88f045c7223da84e5495b38be3e29aafddd00452853ed3154f751","/shell/app.js":"f227bcc2abb0804ae0de5776282173d82153121ef26a529c40c43853f3507d5c"};
  for(const [key,expected] of Object.entries(unchanged)){assert.equal(createHash('sha256').update(JSON.stringify(recipes[key])).digest('hex'),expected);}
 });
 
