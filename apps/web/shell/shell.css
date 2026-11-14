@@ -2438,6 +2438,8 @@ textarea:focus-visible {
   pointer-events:auto;transform:none!important;animation:none!important;
 }
 .history-turn-hit {z-index:0;}
+/* Turn inspection owns the heading, never the nested move/action surface. */
+.app-root .history-turn > button.history-turn-hit.secondary {inset:0 0 auto;height:44px;}
 .history-move-hit {z-index:2;}
 :is(.history-turn,.history-item-undone-group) .history-item.is-selected {pointer-events:auto;z-index:2;cursor:default;}
 :is(.history-turn,.history-item-undone-group) .history-item-actions,:is(.history-turn,.history-item-undone-group) .history-inline-preview {position:relative;z-index:3;pointer-events:auto;}
@@ -2449,6 +2451,7 @@ textarea:focus-visible {
 .app-root[data-hover-capability="hover"] :is(.history-turn,.history-item-undone-group) button:is(.history-turn-hit,.history-move-hit).secondary:hover {background:color-mix(in srgb,currentColor 5%,transparent);border:0;box-shadow:none;}
 @media(min-width:933px) and (pointer:fine) {
   .history-turn-heading,:is(.history-turn,.history-item-undone-group) .history-move-line {min-height:1.5em;}
+  .app-root .history-turn > button.history-turn-hit.secondary {height:1.5em;}
 }
 @media(prefers-reduced-motion:reduce) {
   :is(.history-turn,.history-item-undone-group) {transition:none;}
