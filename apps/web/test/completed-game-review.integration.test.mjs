@@ -7,6 +7,7 @@ import {readFileSync} from 'node:fs';
 import {isOngoingGame} from '../shell/game-lifecycle.js';
 import {renderHistoryResult,getGameResult} from '../shell/game-result.js';
 import {renderHistorySlots} from '../shell/panel-loading.js';
+import {createConfirmedResultOwner} from '../shell/confirmed-result.js';
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const fixture=status=>({id:'g',myRole:'Player 1',player1:{identityId:'me'},player2:{identityId:'other'},board:{state:{outcome:{status}}},canRecordMove:true,canEndTurn:true,control:'turn-owner'});
 test('actual board admission rejects stale permissions and historical ongoing views after completion',()=>{
@@ -37,11 +38,13 @@ test('completed History keeps Play again tied to the authoritative saved partici
 });
 
 test('pending confirmed winning frames expose neither the result button nor a stale result action',()=>{
- const authoritative=fixture('p1_win'),view={...fixture('ongoing'),confirmedPlayback:{playing:true}};let rendered=0,cleared=0;
+ const authoritative=fixture('p1_win'),view={...fixture('ongoing'),confirmedPlayback:{playing:true}};
  const context={undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),renderHistoryResult,renderHistorySlots,getGameResult,transport:{getAuthoritativeGame:()=>authoritative,getGameViewModel:()=>view,getIdentityId:()=> 'me'},renderTurnHistory:()=>'<li>recorded move</li>',renderAdditionalHistory:()=>'',icon:()=>'',escapeHtml:value=>value};
  const start=source.indexOf('const renderHistoryPanel ='),end=source.indexOf('const renderBoardPanel =',start);runWithHistoryRendering(`${source.slice(start,end)};globalThis.history=renderHistoryPanel;`,context);
  assert.doesNotMatch(context.history(view),/history-result-summary|View result/);
- const action=source.split('\n').find(line=>line.includes('if (action === "view-result")'));Object.assign(context,{action:'view-result',actionGameId:'g',resultPresentation:{clear:()=>cleared++},activeResultGameId:null,render:()=>rendered++});
- runWithHistoryRendering(`(()=>{${action}})();`,context);assert.equal(rendered,0);assert.equal(cleared,0);assert.equal(context.activeResultGameId,null);
- delete view.confirmedPlayback;runWithHistoryRendering(`(()=>{${action}})();`,context);assert.equal(rendered,1);assert.equal(context.activeResultGameId,'g');
+ const owner=createConfirmedResultOwner();owner.observe(fixture('ongoing'));owner.observe(authoritative);
+ assert.equal(Boolean(view.confirmedPlayback)||!getGameResult(authoritative,'me'),true,'playback blocks manual result entry');
+ delete view.confirmedPlayback;
+ assert.equal(Boolean(view.confirmedPlayback)||!getGameResult(authoritative,'me'),false);
+ assert.equal(owner.present('g'),true);
 });

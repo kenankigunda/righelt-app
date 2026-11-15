@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {mountLoadingFeedback} from '../shell/loading.js';
 import {renderGameAlertCard} from '../shell/game-alert.js';
+import {createConfirmedResultOwner} from '../shell/confirmed-result.js';
 
 function harness({external=false,modal=false}={}) {
  let clock=0,scope='route-a',observer,timer=null;
@@ -60,7 +61,7 @@ test('externally managed sources stay suppressed and real modal context stays in
 const app=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const headerItemsSource=app.slice(app.indexOf('const getHeaderAlertItems ='),app.indexOf('const renderGameAlertsHtml ='));
 const escapeHtml=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
-const headerItems=({scope='route-a',contexts=[],startupError=null,gameItems=[],destinationBlocked=false}={})=>Function('loadingContextScope','slowLoadingContexts','accountStartupError','renderGameAlertCard','escapeHtml','getGameAlertItems','destinationLoadPresentation',`${headerItemsSource};return getHeaderAlertItems;`)(()=>scope,contexts,startupError,renderGameAlertCard,escapeHtml,()=>gameItems,{blocked:destinationBlocked});
+const headerItems=({scope='route-a',contexts=[],startupError=null,gameItems=[],destinationBlocked=false}={})=>Function('loadingContextScope','slowLoadingContexts','accountStartupError','renderGameAlertCard','escapeHtml','getGameAlertItems','destinationLoadPresentation','confirmedResultOwner',`${headerItemsSource};return getHeaderAlertItems;`)(()=>scope,contexts,startupError,renderGameAlertCard,escapeHtml,()=>gameItems,{blocked:destinationBlocked},createConfirmedResultOwner());
 test('actual header alert mapping uses the current scope, one escaped status and existing urgent items without republishing external metadata',()=>{
  const contexts=[{key:'loading:route-a:home',scope:'route-a',message:'<Games & waiting>'},{key:'old',scope:'previous-route',message:'Old context'}];
  const urgent={key:'real-error',priority:'urgent',html:'Actual recovery'};

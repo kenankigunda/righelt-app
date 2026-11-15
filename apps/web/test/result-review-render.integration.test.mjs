@@ -27,6 +27,7 @@ import { createLiveTransportStore } from '../shell/live-transport.js';
 import {activityStateActorSide} from '../shell/activity-affiliation.js';
 import {renderGameRoleLabel} from '../shell/game-role-presentation.js';
 import {syncIncomingNarrationRoot} from '../shell/incoming-narration.js';
+import {createConfirmedResultOwner} from '../shell/confirmed-result.js';
 
 const source = readFileSync(new URL("../shell/app.js", import.meta.url), "utf8");
 const extract = (start, end) => {
@@ -47,7 +48,7 @@ function harness({ resultMounted = true, activeResult = null } = {}) {
   const context = {undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,
     resultPresentation:createResultPresentation(),
     HTMLElement: Element, appEl, currentRoute: { name: "game", gameId: "g", panel: "board" },
-    activeResultGameId: activeResult, completedReviewEntryGeneration: 0,
+    activeResultGameId: activeResult, completedReviewEntryGeneration: 0,confirmedResultOwner:{review:()=>true},
     lastRenderedRouteKey: "g|board|debug:false", lastRenderedBaseRouteKey: "g", lastRenderedTransitionPhaseKey: "idle",
     getGamePanel: () => context.currentRoute.panel,
     getMountedGameShellRoot: () => ({querySelector:()=>({getAttribute:()=>mountedPanel})}),
@@ -110,31 +111,33 @@ test("only true flyout changes retain flyout-only patching; panel changes refres
 
 // An acknowledged undo can reopen a completed game while its result is visible.
 test("authoritative terminal rollback clears result state so the board can remount", () => {
-  const reconcile = extract("    if (activeResultGameId === currentRoute.gameId && confirmed?.board", "    if(resultTransitions.observe");
+  const owner=createConfirmedResultOwner();owner.observe({id:'g',gameplayRevision:1,board:{state:{outcome:{status:'ongoing'}}}});owner.observe({id:'g',gameplayRevision:2,board:{state:{outcome:{status:'p1_win'}}}});owner.evaluate('g',{current:true});
   for (const status of ["ongoing", "p1_win", "draw"]) {
-    const context = {undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,activeResultGameId:"g", currentRoute:{gameId:"g"}, confirmed:{board:{state:{outcome:{status}}}}, transport:{getIdentityId:()=>"me"},getGameResult:game=>game.board.state.outcome.status === "ongoing" ? null : {title:"Finished"}};
-    runWithHistoryRendering(reconcile, Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
-    assert.equal(context.activeResultGameId,status === "ongoing" ? null : "g");
+    const confirmed={id:'g',gameplayRevision:status==='ongoing'?3:2,board:{state:{outcome:{status}}}};
+    owner.observe(confirmed);
+    const activeResultGameId=getGameResult(confirmed,'me')?"g":null;
+    assert.equal(activeResultGameId,status === "ongoing" ? null : "g");
   }
 });
 
 test("optimistic terminal state cannot expose a result or open it before confirmation", () => {
   const optimistic = {id:"g",board:{state:{outcome:{status:"p1_win"}}},player1:{identityId:"me"}};
   let confirmed = {...optimistic,board:{state:{outcome:{status:"ongoing"}}}};
+  const resultOwner=createConfirmedResultOwner();resultOwner.observe(confirmed);
   const context = {undoHistory,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>null},expandedUndoneGroups:new Set(),selectedHistoryPresentation,recordedMoveNumber,visibleRecordedMoves,renderBoardMessageHtml,renderResultText,renderHistoryResult,canReadAdditionalHistory,account:{snapshot:()=>({enabled:false})},renderHistorySlots,renderResultMark,playerDisplayName,resultPresentation:createResultPresentation(),additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})}, getGameResult, transport:{getIdentityId:()=>"me",getAuthoritativeGame:()=>confirmed,getGameViewModel:()=>optimistic},escapeHtml:value=>String(value),formatDisplayGameId:value=>value,icon,renderTurnHistory:()=>"",participantName,participantDisplayName,render:()=>{},activeResultGameId:null};
   runWithHistoryRendering(`const renderResult=game=>renderResultPanel(game,{transport,escapeHtml,formatDisplayGameId});
     ${extract("const renderAdditionalHistory =", "const renderHistoryPanel =")}
     ${extract("const renderHistoryPanel =", "const renderBoardPanel =")}
-    globalThis.result = renderResult;globalThis.history = renderHistoryPanel;
-    globalThis.openResult = () => {const action="view-result", actionGameId="g";${extract('  if (action === "view-result")','  if (action === "analysis")')}};`,Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
+    globalThis.result = renderResult;globalThis.history = renderHistoryPanel;`,Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
   assert.equal(context.result(optimistic),"");
   assert.doesNotMatch(context.history(optimistic),/data-action="view-result"/);
-  context.openResult();assert.equal(context.activeResultGameId,null);
+  assert.equal(resultOwner.present('g'),false);
   confirmed=optimistic;
+  assert.equal(resultOwner.observe(confirmed).becameTerminal,true);
   assert.match(context.result(optimistic).replace(/<[^>]*>/g,''),/You won/);
   assert.match(context.result(optimistic),/<a[^>]+href="#\/">[\s\S]*?<svg[^>]+aria-hidden="true"[^>]+focusable="false"[\s\S]*?<\/svg>Home<\/a>/);
   assert.match(context.history(optimistic),/data-action="view-result"/);
-  context.openResult();assert.equal(context.activeResultGameId,"g");
+  assert.equal(resultOwner.present('g'),true);
 });
 
 test("computer seats have distinct human, watch, history and result labels despite shared authority", () => {

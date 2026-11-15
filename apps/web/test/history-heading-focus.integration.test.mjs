@@ -5,6 +5,7 @@ import {runInNewContext} from 'node:vm';
 import {createPendingInvitationFocus} from '../shell/pending-invitation-focus.js';
 import {createHistoryHeadingFocus} from '../shell/history-heading-focus.js';
 import {createRenderGestureGate,preserveBoardFocus} from '../shell/render-gesture.js';
+import {createConfirmedResultOwner} from '../shell/confirmed-result.js';
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const extract=(a,b)=>{const start=source.indexOf(a),end=source.indexOf(b,start);assert(start>=0&&end>start);return source.slice(start,end);};
 // Production wrapper, analysis branch, gesture gate and preservation owner.
@@ -23,6 +24,7 @@ function fixture(){
   resultPresentation:{clear(){}},boardContextPresentation:{restoreIncomingFocus(){}},buildGameHash:(_id,_move,state)=>state.panel,getCurrentGameHashState:panel=>({panel}),
   renderContent(){count++;if(replace){if(current){current.isConnected=false;if(doc.activeElement===current)doc.activeElement=doc.body;}current=element(true);}during?.();return true;},
  };
+ context.confirmedResultOwner=createConfirmedResultOwner();
  context.pendingInvitationFocus=createPendingInvitationFocus({document:doc,getScope:()=>({owner:context.currentRoute.gameId,generation:context.generation,visit:context.visit,route:context.currentRoute.name,panel:context.currentRoute.panel})});
  context.isButtonPending=()=>false;
  context.historyHeadingFocus=createHistoryHeadingFocus({doc,getScope:()=>JSON.stringify([context.generation,context.visit,context.currentRoute.gameId,context.currentRoute.panel])});

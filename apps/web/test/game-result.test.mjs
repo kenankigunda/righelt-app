@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getGameResult, getEligibleRematchResult, renderHistoryResult, createResultTransitions, createRematchDialog, RESULT_HEADING_CONTRACT, REMATCH_CHOICES_CONTRACT } from "../shell/game-result.js";
+import { getGameResult, getEligibleRematchResult, renderHistoryResult, createRematchDialog, RESULT_HEADING_CONTRACT, REMATCH_CHOICES_CONTRACT } from "../shell/game-result.js";
 const game = (status = "ongoing") => ({ id: "g", player1: { identityId: "red" }, player2: { identityId: "blue" }, board: { state: { outcome: { status, reason: "p2_commander_unsupplied" } } } });
 test("results use authoritative ownership and selected self-play start for the rematch", () => {
   assert.equal(RESULT_HEADING_CONTRACT, 'named-perspective-v3');
@@ -13,24 +13,6 @@ test("results use authoritative ownership and selected self-play start for the r
   assert.equal(getGameResult(self, "viewer").title, "Guest 1 won as Red");
   assert.equal(getGameResult(self, "viewer").side, null);
   assert.deepEqual(getGameResult(self, "red"), { title: "You won as Red", titleParts:[{text:"You won as Red",side:"p1",colorNamed:true}], side: "p2", winner: "p1", tone: "victory", controlsBothSides: true, reason: "Your Blue commander lost its supply.", reasonParts:[{text:"Your Blue commander",side:"p2",colorNamed:true},{text:" lost its supply."}], opponent: "self", rematchSide: "p1" });
-});
-test("result automatic entry happens once on an observed live finish, never hydration/history/hidden/story", () => {
-  const tracker = createResultTransitions();
-  assert.equal(tracker.observe(game("p1_win")), false);
-  tracker.clear(); assert.equal(tracker.observe(game()), false);
-  assert.equal(tracker.observe(game("p1_win")), true);
-  assert.equal(tracker.observe(game("p1_win")), false);
-  for (const option of ["inHistory", "hidden", "storyOpen"]) {
-    tracker.clear(); tracker.observe(game());
-    assert.equal(tracker.observe(game("draw"), { [option]: true }), false);
-    assert.equal(tracker.observe(game("draw")), false);
-  }
-});
-test("authoritative completion retires cosmetic playback before result entry",()=>{
-  const tracker=createResultTransitions(),calls=[],playback={reset(){calls.push('reset');}};
-  assert.equal(tracker.observe(game(),{},playback),false);
-  assert.equal(tracker.observe(game('p1_win'),{},playback),true);
-  assert.deepEqual(calls,['reset']);
 });
 test("History rematch eligibility follows saved human seats, not result visibility or temporary control", () => {
   const completed=game("p1_win");

@@ -65,24 +65,6 @@ export const renderHistoryResult = (game,identityId,{includeRematch=false}={}) =
   return `<div class="history-result-action-row">${summary}<button class="secondary" data-action="rematch" data-game-id="${escapeResult(game.id)}">${icon('rematch')}Play again</button></div>`;
 };
 
-// Only an observed live transition opens automatically. Initial hydration,
-// history, hidden tabs and a currently open story consume the transition silently.
-export const createResultTransitions = () => {
-  const statuses = new Map();
-  return {
-    clear() { statuses.clear(); },
-    observe(game, { inHistory = false, hidden = false, storyOpen = false } = {}, playback = null) {
-      if (!game?.id || !game.board?.state?.outcome) return false;
-      const next = game.board.state.outcome.status;
-      const previous = statuses.get(game.id);
-      statuses.set(game.id, next);
-      const terminal = isTerminalOutcome(next);
-      if (terminal && !isTerminalOutcome(previous)) playback?.reset();
-      return previous === "ongoing" && terminal && !inHistory && !hidden && !storyOpen;
-    },
-  };
-};
-
 export const createRematchDialog = ({ createModal, document = globalThis.document, onStart, title = "Play again", labelId = "rematch-title", getReadiness = () => ({ state: 'ready', message: '' }), onOpponentChange = () => {}, onRetry = () => {}, onClose = () => {} }) => {
   let session = 0, busy = false, startFailure = null;
   const modal = createModal({ document, labelId, className: "rematch-modal", onClose: () => { session++; busy = false; startFailure = null; onClose(); } });
