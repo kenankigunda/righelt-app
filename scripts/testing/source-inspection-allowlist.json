@@ -201,7 +201,6 @@
       "file": "apps/web/test/legend.test.mjs",
       "targets": [
         "e2e/workflows/ux-refresh-checkpoint.spec.mjs",
-        "unresolved:join(testDir, \"..\", \"shell\", \"app.js\")",
         "unresolved:join(testDir, \"..\", \"styles.css\")"
       ],
       "reason": "Preexisting reader at PR 193 head 64443d2; requires PPA audit classification and behavioral migration. Unresolved targets are candidates, not confirmed source reads."

@@ -87,14 +87,12 @@ body {display:flow-root;}
 .board-message-slot .board-preview-label .board-preview-inline-button {position:relative;z-index:1;overflow:visible;min-width:44px;display:inline-flex;align-items:baseline;justify-content:center;gap:3px;}
 .board-preview-label .board-preview-inline-button > .righelt-icon {width:12px;height:12px;vertical-align:top;align-self:center;}
 .board-preview-label .board-preview-inline-button::before {content:"";position:absolute;left:0;right:0;top:50%;height:max(44px,100%);transform:translateY(-50%);}
-.legend-inspection { display:inline-flex;align-items:center;gap:5px;min-height:44px;min-width:44px;padding:4px 8px;border:0;background:transparent;color:var(--ink);font:inherit; }
+.legend-inspection { min-height:44px;min-width:44px;border:0;background:transparent;color:var(--ink);font:inherit; }
 .legend-inspection[aria-pressed="true"] {background:transparent;box-shadow:none;}
 .legend-inspection[aria-pressed="true"] .legend-inspection-label {text-decoration-line:underline;text-decoration-color:var(--legend-owner-color);text-decoration-thickness:2px;text-underline-offset:5px;}
 [data-hover-capability="hover"] .legend-inspection:hover {background:var(--surface-hover-quiet);box-shadow:none;}
 /* Keep keyboard focus visible inside the animated legend clipping boundary. */
 .legend-inspection:focus-visible {outline:2px solid var(--ink);outline-offset:-2px;}
-.overlay-key:has([data-legend-entry="previousTurn"]:not([hidden])) {display:flex;flex-wrap:wrap;align-items:center;}
-.overlay-key:has([data-legend-entry="previousTurn"]:not([hidden])) > :not([hidden]) {flex:0 0 auto;white-space:nowrap;}
 .previous-turn-key-swatch {
   --previous-turn-weight:17%;--cell-floor-color:var(--cell-fill,#f8fafa);--cell-floor-size:1024px 1024px;
   display:inline-block;box-sizing:border-box;flex:0 0 20px;width:20px;height:20px;border:1px solid #c4cdcd;border-radius:1.5px;
@@ -151,12 +149,47 @@ body {display:flow-root;}
 
 .loading-board-silhouette.board {aspect-ratio:auto;border:0;border-radius:0;background:none;}
 
-.overlay-key {display:flex;flex-wrap:wrap;gap:10px 12px;}
-.overlay-key .legend-inspection {white-space:nowrap;}
+.overlay-key {
+ --board-legend-icon-track:24px;
+ --board-legend-column-gap:8px;
+ display:grid;
+ grid-template-columns:repeat(auto-fit,minmax(min(100%,8.75rem),1fr));
+ align-items:start;
+ gap:10px 12px;
+ min-width:0;
+}
+.legend-family {display:grid;align-content:start;min-width:0;}
+.legend-key-row {
+ display:grid;
+ grid-template-columns:var(--board-legend-icon-track) minmax(0,1fr);
+ column-gap:var(--board-legend-column-gap);
+ align-items:start;
+ min-width:0;
+ line-height:1.5;
+ text-align:left;
+ white-space:normal;
+}
+.overlay-key .legend-inspection.legend-key-row {width:100%;padding:4px 0;align-content:center;}
+.legend-key-label {min-width:0;overflow-wrap:anywhere;}
+.overlay-key .legend-key-icon {
+ --legend-key-icon-size:12px;
+ grid-column:1;
+ justify-self:center;
+ align-self:start;
+ margin:4px 0 0;
+}
+.overlay-key .commander-key {--legend-key-icon-size:16px;margin-block-start:2px;}
+.overlay-key .supply-point {--legend-key-icon-size:14px;margin-block-start:3px;}
+.overlay-key .swatch:is(.command,.supply) {--legend-key-icon-size:10px;margin-block-start:5px;}
+.overlay-key .previous-turn-key-swatch {--legend-key-icon-size:20px;margin-block-start:0;}
+.legend-family-child {padding-block:2px;}
+.legend-peer {padding-block:12px 8px;}
+.legend-context-row {grid-column:1 / -1;min-width:0;}
+.legend-context-row.legend-key-row {width:fit-content;max-width:100%;padding-block:2px;}
 
 /* Keep the approved taller actions and their hit clearance inside the existing
    desktop viewport budget. Reclaim board-only chrome, not usable cell size. */
-#app[data-shell-layout-mode="wide"] [data-shell-panel="board"] {padding-block:.5rem;}
+#app[data-shell-layout-mode="wide"] [data-shell-panel="board"] {padding-block-start:.5rem;padding-block-end:var(--board-legend-safe-bottom,12px);}
 #app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board-heading {margin-block-end:0;}
 #app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board-message-slot {margin-block-end:0;}
 /* Narrow cards share the fixed heading/prompt slots. Their default bottom
@@ -164,6 +197,16 @@ body {display:flow-root;}
    Reclaim only static spacing, preserving cell sizes and action hit clearance. */
 #app[data-shell-layout-mode="narrow"] [data-shell-panel="board"] .board-heading {margin-block-end:0;}
 #app[data-shell-layout-mode="narrow"] [data-shell-panel="board"] .board-message-slot {margin-block-end:0;}
+/* Keep the narrow Board at its established compact panel inset. The legend
+   alone adds the remaining clearance needed to stay outside both mineral
+   corner cuts, including when labels wrap at enlarged text sizes. */
+#app[data-shell-layout-mode="narrow"][data-shell-route="game"] [data-shell-panel="board"],
+#app[data-shell-layout-mode="narrow"][data-shell-route="invite"] [data-shell-panel="board"] {
+  --board-legend-inset-delta:max(0px,calc(var(--board-legend-inline-inset,20px) - .4rem));
+}
+#app[data-shell-layout-mode="narrow"] [data-shell-panel="board"] .overlay-key {
+  margin-inline:var(--board-legend-inset-delta,0px);
+}
 /* Desktop squares fit beneath stable chrome; short windows keep usable cells and scroll. */
 #app[data-shell-layout-mode="wide"] [data-shell-panel="board"] .board-wrap:not(.computer-replay-wrap) {
   width:min(100%,var(--desktop-board-side,max(396px,calc(100dvh - 25.5rem))));

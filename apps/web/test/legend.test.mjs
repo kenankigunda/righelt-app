@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getCommandLegendColor, getCommandLegendSwatchStyle, updateLegendVisibility, getInspectionLegendState, updateInspectionLegend, getRenderedPreviousTurnLegendState, updatePreviousTurnLegend } from "../legend.js";
+import {renderBoardLegend} from "../shell/board-legend.js";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
-const shellAppSource = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
 const stylesSource = readFileSync(join(testDir, "..", "styles.css"), "utf8");
 
 test("command legend uses current side-to-move color when no piece is selected", () => {
@@ -45,10 +45,26 @@ test("command legend swatch style exposes the CSS variable", () => {
   );
 });
 
-test("shell command legend swatch is state-driven", () => {
-  assert.match(shellAppSource, /id="shell-command-legend-swatch"/);
-  assert.match(shellAppSource, /getCommandLegendSwatchStyle\(game\.currentSnapshot \?\? null\)/);
-  assert.match(shellAppSource, /updateInspectionLegend\(document\.querySelector\('.overlay-key'\),state,\{selectedPieceId,\.\.\.overlay\}\);/);
+test("Board legend renders semantic families in family-major reading order", () => {
+  const html=renderBoardLegend({sideToMove:'P2',pieces:[]});
+  const commandFamily=html.indexOf('data-legend-family="command"');
+  const commandLine=html.indexOf('data-legend-entry="command"');
+  const supplyFamily=html.indexOf('data-legend-family="supply"');
+  const supplyLine=html.indexOf('data-legend-entry="supply"');
+  const strength=html.indexOf('data-legend-entry="group"');
+  const previous=html.indexOf('data-legend-entry="previousTurn"');
+  assert.ok(commandFamily>=0&&commandFamily<commandLine&&commandLine<supplyFamily);
+  assert.ok(supplyFamily<supplyLine&&supplyLine<strength&&strength<previous);
+  assert.match(html,/role="group" aria-label="Commander and command line"/);
+  assert.match(html,/role="group" aria-label="Supply point and supply line"/);
+  assert.match(html,/data-legend-entry="command" hidden/);
+  assert.match(html,/data-legend-entry="supply" hidden/);
+  assert.match(html,/data-legend-entry="group" hidden/);
+  assert.match(html,/class="legend-key-row legend-context-row" data-legend-entry="previousTurn" hidden/);
+  assert.doesNotMatch(html,/class="legend-context-row">/,'the hidden updater target is the grid row, so no empty wrapper reserves space');
+  assert.match(html,/--supply-owner:var\(--player-p2\)/);
+  assert.match(html,/id="shell-command-legend-swatch"[^>]+--swatch-command-color: var\(--player-p2\)/);
+  assert.equal((html.match(/<button\b/g)??[]).length,2,'only the two existing inspectors are interactive');
 });
 
 test("command and supply samples keep distinct role patterns and semantic supply color", () => {
