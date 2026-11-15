@@ -4,6 +4,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {verifyTurnCertificate} from '../ai-trainer/turn-certificate.mjs';
+import {adaptLegacyDevelopment} from './legacy-development.mjs';
 import {bindS05Certificate} from './s05-observations.mjs';
 import {diagnoseRetainedSearch} from './search-diagnosis.mjs';
 import { verifyWitness, verifyTurnDefense } from '../ai-trainer/tactical-evidence.mjs';
@@ -17,7 +18,7 @@ export async function prepareDevelopment(directory, {sourceRevision,milliseconds
   const actualRevision=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
   assert(sourceRevision===actualRevision,'verifier source revision mismatch');
   const sourceFiles=execFileSync('git',['ls-files','packages/game-engine/src','packages/shared-types/src','packages/computer-player/src'],{cwd:root,encoding:'utf8'}).trim().split('\n');
-  sourceFiles.push('tools/ai-trainer/tactical-evidence.mjs','tools/ai-trainer/turn-certificate.mjs','tools/hosted-compute/s05-observations.mjs','tools/hosted-compute/search-diagnosis.mjs','tools/hosted-compute/prepare-development.mjs','tools/hosted-compute/development-observations.mjs','tools/hosted-compute/data-contract.mjs');
+  sourceFiles.push('tools/ai-trainer/tactical-evidence.mjs','tools/ai-trainer/turn-certificate.mjs','tools/hosted-compute/s05-observations.mjs','tools/hosted-compute/search-diagnosis.mjs','tools/hosted-compute/prepare-development.mjs','tools/hosted-compute/legacy-development.mjs','tools/hosted-compute/development-observations.mjs','tools/hosted-compute/data-contract.mjs');
   const inventory={};for(const name of sourceFiles)inventory[name]=await sha256(readFileSync(path.join(root,name)));
   const contractBytes=readFileSync(path.join(root,'tools/ai-trainer/learning-evidence-contract.json'));
   const sourceInventorySha256=await sha256(encode(canonical(inventory)));
@@ -28,7 +29,8 @@ export async function prepareDevelopment(directory, {sourceRevision,milliseconds
   const boundFile=async name=>{const bytes=load(name),record=evidence.sanitizedFiles[name];assert(record&&record.bytes===bytes.length&&record.sha256===await sha256(bytes),'sanitized evidence file identity mismatch');usedFiles[name]=record;return bytes;};
   const modernInventory=evidence?.sourceFamily==='S12';
   const observations=modernInventory?null:evidence?await boundFile('development-cases.json'):optional('development-cases.json'),modern=observations?null:modernInventory?await boundFile('handoff-cases.json'):optional('handoff-cases.json');
-  const raw=observations??modern??load('curation-proposal.json'),packet=JSON.parse(raw);
+  const legacy=observations||modern?null:optional('cases.json');
+  const raw=observations??modern??legacy??load('curation-proposal.json'),packet=JSON.parse(raw);
   const verificationBytes=modernInventory?await boundFile('handoff-verification.json'):evidence?await boundFile('retained-verification.json'):load(modern?'handoff-verification.json':'verification.json'),verification=JSON.parse(verificationBytes);
   const s05=packet.sourceFamily==='S05';
   if(modernInventory){
@@ -44,10 +46,11 @@ export async function prepareDevelopment(directory, {sourceRevision,milliseconds
   }else if(evidence){
     assert(packet.sanitizationSchema===1&&packet.sourceRevision===evidence.sourceRevision&&packet.cases?.length===evidence.caseCount&&verification.developmentCaseCount===evidence.caseCount&&verification.sourceRevision===evidence.sourceRevision,'sanitized inventory source or case count mismatch');
     assert(await sha256(verificationBytes)===evidence.originalHashes['verification.json']&&verification.packetSha256===packet.sourcePacketSha256&&packet.sourcePacketSha256===evidence.originalHashes['development-cases.json']&&verification.replyCertificateSha256===evidence.originalHashes['G47-cut-2-certificate.json'],'original and sanitized evidence ancestry mismatch');
-  }else assert(await sha256(raw)===(observations?verification.packetSha256:modern?verification.casePacketSha256:verification.proposalSha256),'development packet checksum mismatch');
+  }else assert(await sha256(raw)===(observations||legacy?verification.packetSha256:modern?verification.casePacketSha256:verification.proposalSha256),'development packet checksum mismatch');
   const s12=modern&&(packet.kind==='scoped-tactical-handoff'||packet.sourceFamily==='S12'||verification.sourceFamily==='S12');
-  const inputCases=s12?validateScopedHandoff(packet,verification):observations?adaptDevelopmentObservations(packet,verification,{certificateNames:evidence?['one-opposing-turn-certificate.json']:['G47-cut-2-certificate.json']}):packet.cases;
-  const proofFiles=s05?Object.fromEntries(verification.proofs.map(p=>[p.file,p.sha256])):observations?Object.fromEntries([...new Set(inputCases.flatMap(c=>c.referenceCertificates.map(r=>r.name)))].map(name=>{
+  const adapted=!!observations||!!legacy;
+  const inputCases=legacy?adaptLegacyDevelopment(packet,verification):s12?validateScopedHandoff(packet,verification):observations?adaptDevelopmentObservations(packet,verification,{certificateNames:evidence?['one-opposing-turn-certificate.json']:['G47-cut-2-certificate.json']}):packet.cases;
+  const proofFiles=legacy?{}:s05?Object.fromEntries(verification.proofs.map(p=>[p.file,p.sha256])):observations?Object.fromEntries([...new Set(inputCases.flatMap(c=>c.referenceCertificates.map(r=>r.name)))].map(name=>{
     if(evidence){assert(name==='one-opposing-turn-certificate.json','unsupported sanitized certificate binding');return [name,evidence.sanitizedFiles[name].sha256];}
     assert(name==='G47-cut-2-certificate.json'&&/^[a-f0-9]{64}$/.test(verification.replyCertificateSha256),'unsupported observation certificate binding');return [name,verification.replyCertificateSha256];
   })):modern?verification.proofFiles:{'S10-defense-certificate.json':verification.certificateSha256};
@@ -65,7 +68,7 @@ export async function prepareDevelopment(directory, {sourceRevision,milliseconds
       requests.push({name,actions,expectedOutcome,...options});
       try {
         const proof=await verifyWitness({state:c.state,stateHash:c.stateHash,actions,expectedOutcome,maxActions,milliseconds,maxOperations,...options});
-        if((observations||s12)&&expectedOutcome!==null&&proof.disposition==='complete')assert(proof.expectedOutcomeMatched,'observation witness outcome mismatch');
+        if((adapted||s12)&&expectedOutcome!==null&&proof.disposition==='complete')assert(proof.expectedOutcomeMatched,'observation witness outcome mismatch');
         witnesses.push({name,...proof,...(c.terminalTargetsQuarantined?{terminalValueP1:null,terminalValueScope:'not-admitted-exposed-development',sourceHistoryFinalityVerified:false}:{})});
       }
       catch(error){witnesses.push({name,disposition:'quarantined',reason:error.message,winningContinuation:false,terminalValueP1:null});}
@@ -102,7 +105,7 @@ export async function prepareDevelopment(directory, {sourceRevision,milliseconds
       try{const bytes=load(c.defenseCertificate);const original=JSON.parse(bytes);certificateInput=Object.fromEntries(Object.entries(original).filter(([key])=>!['alias','display','verifiedNodes'].includes(key)));defense={...await verifyTurnDefense(JSON.parse(bytes),{milliseconds,maxNodes:maxOperations}),certificateSha256:await sha256(bytes)};}
       catch(error){defense={disposition:'quarantined',reason:error.message,globalSafetyProven:false,terminalValueP1:null};}
     }
-    if(observations||s12)assert(witnesses.some(w=>w.disposition==='complete')||referenceCertificates.some(p=>p.disposition==='complete'),'observation case has zero executable witness coverage');
+    if(adapted||s12)assert(witnesses.some(w=>w.disposition==='complete')||referenceCertificates.some(p=>p.disposition==='complete'),'observation case has zero executable witness coverage');
     let retreatInventory=null;
     if(s12&&c.completeRetreatAlternatives){
       const retreats=c.scopedRequests.map(r=>r.actions[1]);
@@ -110,8 +113,8 @@ export async function prepareDevelopment(directory, {sourceRevision,milliseconds
       const complete=witnesses.length===3&&witnesses.every(w=>w.disposition==='complete'&&w.steps[1].legalAlternatives===3&&w.steps[2].legalAlternatives===1&&w.outcome==='ongoing')&&new Set(witnesses.map(w=>w.steps[1].beforeHash)).size===1;
       retreatInventory={disposition:complete?'complete':'incomplete',rootHash:complete?witnesses[0].steps[1].beforeHash:null,controller:complete?witnesses[0].steps[1].controller:null,actions:retreats,globalSafetyProven:false,scope:'All legal retreats after the specified push survive its sole Follow completion only.'};
     }
-    const referenceOnly=s12?{referenceOnly:{...c.referenceOnly,disposition:'reference-only',verified:false},sourceHistoryFinalityVerified:false,retreatInventory}:observations?{referenceOnly:c.referenceOnly,alternativeClaims:c.scopedRequests.map(r=>({name:r.name,...r.referenceOnly})),referenceCertificates,sourceHistoryFinalityVerified:false}:{};
-    preparedCases.push({id:c.id,state:c.state,stateHash:c.stateHash,...qualification,requests,certificate:certificateInput,...referenceOnly});
+    const referenceOnly=s12?{referenceOnly:{...c.referenceOnly,disposition:'reference-only',verified:false},sourceHistoryFinalityVerified:false,retreatInventory}:adapted?{referenceOnly:c.referenceOnly,alternativeClaims:c.scopedRequests.map(r=>({name:r.name,...r.referenceOnly})),referenceCertificates,sourceHistoryFinalityVerified:false}:{};
+    preparedCases.push({id:c.id,...(c.sourceDisplay!==undefined?{sourceDisplay:c.sourceDisplay}:{}),state:c.state,stateHash:c.stateHash,...qualification,requests,certificate:certificateInput,...referenceOnly});
     cases.push({id:c.id,state:c.state,stateHash:c.stateHash,...qualification,witnesses,defense,
       originalScope:c.scope??c.defenseScope??c.classification??null,
       originalMinimality:c.minimalActionsWithinSpecifiedPushBranch?{actions:c.minimalActionsWithinSpecifiedPushBranch,scope:'specified-push-branch-only',reverified:false}:null,

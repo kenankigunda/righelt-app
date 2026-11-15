@@ -86,9 +86,10 @@ export function adaptDevelopmentObservations(packet,verification,{certificateNam
   assert(packet.sourceFamily==='S11'&&verification?.sourceFamily==='S11'&&packet.sourcePurpose==='exploratory','explicit exposed S11 exploratory family required');
   assert(/^[a-f0-9]{40}$/.test(packet.sourceRevision)&&verification.sourceRevision===packet.sourceRevision,'observation source revision mismatch');
   assert(Array.isArray(packet.cases)&&packet.cases.length>0&&packet.cases.length<=100&&verification.developmentCaseCount===packet.cases.length,'bounded observation case inventory required');
-  const ids=new Set();
+  const ids=new Set(),sourceIds=new Set();
   return packet.cases.map(c=>{
     assert(Number.isSafeInteger(c.display)&&c.display>0&&c.display<100000&&!ids.has(c.display),'unique development display required');ids.add(c.display);
+    const caseId=c.id;assert(typeof caseId==='string'&&caseId.length>0&&caseId.length<=128&&!sourceIds.has(caseId),'unique source case identity required');sourceIds.add(caseId);
     assert(c.rootState&&/^[a-f0-9]{64}$/.test(c.rootStateHash)&&['P1','P2'].includes(c.actor)&&c.rootState.sideToMove===c.actor,'observation root/controller identity required');
     assert(['computer','human','unknown'].includes(c.actorProvenance)&&c.purpose==='exposed-development-evidence'&&typeof c.scope==='string'&&c.scope.length>0&&c.scope.length<=2048&&(c.motif===undefined||typeof c.motif==='string'&&c.motif.length<=1024),'explicit observation actor and scope required');
     if(c.automaticEndingProof){
@@ -108,7 +109,7 @@ export function adaptDevelopmentObservations(packet,verification,{certificateNam
       return {name:`alternative-${i+1}-explicit-rules-line`,actions:a.line,expectedOutcome:outcome,
         referenceOnly:{disposition:'reference-only',verified:false,claims}};
     });
-    return {id:`S11-${c.display}`,state:c.rootState,stateHash:c.rootStateHash,scope:c.scope,
+    return {id:caseId,sourceDisplay:c.display,state:c.rootState,stateHash:c.rootStateHash,scope:c.scope,
       sourceFamily:'S11',sourcePurpose:'exploratory',actorProvenance:{kind:c.actorProvenance},
       scopedRequests:requests,referenceCertificates:references,referenceCaseId:c.id,
       referenceOnly:{disposition:'reference-only',verified:false,motif:c.motif??null,automaticEndingProof:c.automaticEndingProof??null},

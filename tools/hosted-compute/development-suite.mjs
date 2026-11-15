@@ -10,6 +10,16 @@ export async function readSuiteObject(binding,read){
  assert(await sha256(bytes)===binding.sha256,'suite object checksum mismatch');
  try{return JSON.parse(new TextDecoder().decode(bytes));}catch{throw new Error('invalid suite JSON');}
 }
+// Coverage binds an approved physical input. That input can itself already be
+// prepared: its retained source ancestry remains distinct from its byte identity.
+export function validatePreparedDevelopmentPair(binding,prepared,receipt){
+ const approvedInputSha256=binding.sourcePacketSha256,preparedArtifactSha256=binding.preparedSha256;
+ const sourceAncestrySha256=prepared?.sourcePacketSha256;
+ const retainedPrepared=preparedArtifactSha256===approvedInputSha256;
+ assert(hash(approvedInputSha256)&&hash(preparedArtifactSha256)&&hash(sourceAncestrySha256)&&prepared.schema===1&&prepared.kind==='prepared-development'&&
+   (retainedPrepared||sourceAncestrySha256===approvedInputSha256)&&receipt?.kind==='development-evidence'&&receipt.packetSha256===preparedArtifactSha256&&receipt.sourcePacketSha256===sourceAncestrySha256,'prepared packet/receipt ancestry differs');
+ return {approvedInputSha256,preparedArtifactSha256,sourceAncestrySha256,mode:retainedPrepared?'retained-prepared':'prepared-from-source'};
+}
 export async function validateDevelopmentSuite(index,{read,expectedCoverageSha256}={}){
  assert(index?.schema===1&&index.kind==='development-suite-index'&&hash(index.coverageSha256),'versioned suite inventory required');
  if(expectedCoverageSha256!==undefined)assert(index.coverageSha256===expectedCoverageSha256,'canonical amendment inventory differs');
@@ -21,11 +31,11 @@ export async function validateDevelopmentSuite(index,{read,expectedCoverageSha25
  const supplements=coverage.supplements??[];
  assert(Array.isArray(supplements)&&canonical(index.supplements??[])===canonical(supplements)&&new Set(supplements.map(s=>s.id)).size===supplements.length,'required guard supplements differ');
  for(const supplement of supplements){assert(typeof supplement.id==='string'&&supplement.kind==='guard-graph'&&hash(supplement.sha256),'reference-only guard supplement identity required');await readSuiteObject(supplement,read);}
- const cases=new Map();
+ const cases=new Map(),packetAncestry=new Map();
  for(const p of index.packets){
   assert(typeof p.id==='string'&&hash(p.sourcePacketSha256),'packet inventory identity required');
   const prepared=await readSuiteObject({sha256:p.preparedSha256},read),receipt=await readSuiteObject({sha256:p.preparationSha256},read);
-  assert(prepared.schema===1&&prepared.kind==='prepared-development'&&prepared.sourcePacketSha256===p.sourcePacketSha256&&receipt.kind==='development-evidence'&&receipt.packetSha256===p.preparedSha256&&receipt.sourcePacketSha256===p.sourcePacketSha256,'prepared packet/receipt ancestry differs');
+  packetAncestry.set(p.id,validatePreparedDevelopmentPair(p,prepared,receipt));
   const rows=index.cases.filter(c=>c.packetId===p.id);
   if(coverage.caseIds!==undefined)assert(Array.isArray(coverage.caseIds[p.id])&&canonical([...coverage.caseIds[p.id]].sort())===canonical(prepared.cases.map(c=>c.id).sort()),'canonical case roster differs');
   assert(rows.length===prepared.cases.length&&new Set(rows.map(c=>c.caseId)).size===rows.length,'case inventory omitted or duplicated');
@@ -49,7 +59,7 @@ export async function validateDevelopmentSuite(index,{read,expectedCoverageSha25
  assert(index.criteria?.schema===1&&Array.isArray(index.criteria.families)&&index.criteria.families.length>0,'frozen useful correction criteria required');
  const seen=new Set();for(const f of index.criteria.families){assert(typeof f.family==='string'&&!seen.has(f.family)&&index.cases.some(c=>c.family===f.family&&c.disposition==='admitted'),'selected correction family unavailable');seen.add(f.family);assert(Number.isSafeInteger(f.minimumCases)&&f.minimumCases>0&&Number.isFinite(f.minimumMassGain)&&f.minimumMassGain>=0&&f.minimumMassGain<=1&&Number.isFinite(f.minimumAfterMass)&&f.minimumAfterMass>=0&&f.minimumAfterMass<=1,'bounded preregistered correction criteria required');}
  if(coverage.caseIds!==undefined)assert(Object.keys(coverage.caseIds).length===index.packets.length,'unknown canonical case roster');
- return {cases,coverage};
+ return {cases,coverage,packetAncestry};
 }
 function assessment(a,identity,c){
  assert(a?.schema===1&&a.kind==='executed-development-assessment'&&a.caseKey===c.key&&a.rootSha256===c.rootSha256&&a.scopeSha256===c.scopeSha256&&a.family===c.family,'assessment case identity differs');
