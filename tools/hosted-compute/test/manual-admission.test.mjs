@@ -55,3 +55,9 @@ test('disabling or reducing authorization after prepare or attach immediately fe
   await assert.rejects(f.core.manualReady('ui',1));await assert.rejects(f.core.work('ui',1));await assert.rejects(f.core.heartbeat('ui',1));assert.equal(f.providers.creates,1);
  }
 });
+
+test('late UI attachment or image startup cannot grant work after the same five-minute admission bound',async()=>{
+ const pending=await setup();await pending.core.manualPrepare('ui',pending.intent);pending.addPod();pending.advance(300001);await assert.rejects(pending.attach(),/expired/);
+ const attached=await setup();await attached.core.manualPrepare('ui',attached.intent);attached.addPod();await attached.attach();attached.advance(300001);
+ assert.equal((await attached.core.manualReady('ui',1)).ready,false);await assert.rejects(attached.core.work('ui',1),/startup expired/);await assert.rejects(attached.core.heartbeat('ui',1),/startup expired/);
+});

@@ -109,6 +109,7 @@ export class Controller {
       this.now() < (a.leaseExpires ?? a.startedAt + POLICY.startupMs) && this.now() < c.manifest.deadline &&
       (!c.phaseDeadline || this.now() < c.phaseDeadline), 'worker fenced');
     assert(!c.manual||c.manual.attached&&this.now()<c.manual.campaignDeadline,'manual worker fenced');
+    assert(!c.manual||a.workStartedAt||this.now()<c.manual.intent.expiresAt,'manual startup expired');
     assert(!c.manual||this.config.enabled===true&&this.config.authorizedCents>=c.manual.requiredAuthorizationCents,'manual authorization revoked');
     assert(!a.cutoff || this.now() < a.cutoff, 'external funded cutoff reached');
   }
