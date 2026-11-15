@@ -10,7 +10,10 @@ const renderHistoryPreview = (game, preview, key) => {
   ? `<div class="history-inline-preview" data-testid="history-inline-preview"><p class="history-inline-narration">${renderBoardMessageHtml(selectedHistoryPresentation(game,{identityId:transport.getIdentityId()})?.message??{text:'Historical details unavailable'})}</p>${preview.snapshot ? renderMiniBoardPreviewRoot({previewId:key,...preview,previewKey:toStableKey(preview)}) : '<p role="status">Preview unavailable</p>'}</div>` : "";
 };
 const renderTurnHistory = (game) => {
-  const {renderIncomingHistory, getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, mobilePreviousTurnReplaySupplies=()=>false, undoHistory, expandedUndoneGroups, expandedImportedHistory, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView} = getDependencies();
+  const {renderIncomingHistory, getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, mobilePreviousTurnReplaySupplies=()=>false, historySelectionEpisode=()=>null, undoHistory, expandedUndoneGroups, expandedImportedHistory, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView} = getDependencies();
+  const selectionEpisode=historySelectionEpisode();
+  const episodeOwns=scope=>selectionEpisode?.scope===scope;
+  const pendingAttributes=(pending,episodePending)=>pending?` aria-busy="true"${episodePending?' data-history-selection-episode-pending="true"':''}`:'';
   const archiveState=additionalHistory?.snapshot?.(game.id);
   const timeline=buildHistoryTimeline(game.id,[...(game.moves??[]),...(game.pendingMoves??[])],game.historyUndoArchiveEntries??[],game.lastRestoration,{
     archiveComplete:Boolean(archiveState?.loaded&&!archiveState.cursor),
@@ -34,7 +37,9 @@ const renderTurnHistory = (game) => {
     const previewGame = archiveEntry ? { ...game, historyContextMoves: [...(game.historyUndoArchiveEntries ?? []).map(entry => entry.move), ...(game.historyContextMoves ?? [])] } : game;
     const selected = game.inHistoryMode && (game.inspectedDecision?.moveId ? game.inspectedDecision.moveId === move.moveId : game.historyIndex === move.index);
     const pending = (game.pendingMoves ?? []).includes(move);
-    const selectionPending = game.historyLoading && game.historyLoadTurnIndex == null && game.historyLoadIndex === move.index;
+    const transportSelectionPending = game.historyLoading && game.historyLoadTurnIndex == null && game.historyLoadIndex === move.index;
+    const episodePending=episodeOwns(`${game.id}:move:${move.moveId ?? move.index}`);
+    const selectionPending = transportSelectionPending || episodePending;
     const liveSelected = !game.inHistoryMode && move === moves.at(-1) && !game.currentSnapshot?.continuation && game.currentTurn?.moveIndexes?.length;
     const actor = historyActorLabel(game,move,{identityId:transport.getIdentityId()});
     // Unifying the display does not grant actions that archive rows did not own.
@@ -48,8 +53,8 @@ const renderTurnHistory = (game) => {
     const actions = revertButton || branchButton ? `<div class="history-item-actions">${revertButton}${branchButton}</div>` : '';
     const destroyedPieces = presentationDestroyedPiecesForMove(move,moves);
     const destroyed = destroyedPieces.map((record)=>`<li class="history-destruction-item ${playerToneClassForSide(record.ownerSeat === "p1" ? "P1" : record.ownerSeat === "p2" ? "P2" : "neutral")}" data-testid="history-destruction-item"><span class="history-destruction-label">DESTROYED (${record.position.row},${record.position.col})</span></li>`).join('');
-    return `<li class="history-item ${playerToneClassForSide(move.actorSide)}${selected?' is-selected':liveSelected?' is-live-selected':''}${move.undone?' is-undone':''}${pending?' history-item-pending':''}${actions?' history-item-has-actions':''}" data-key="${escapeHtml(archiveEntry ? `archive:${archiveEntry.id}` : move.moveId || move.clientCommandId || String(move.index))}" ${archiveEntry ? `data-archive-move-id="${escapeHtml(archiveEntry.id)}"` : `data-move-id="${escapeHtml(move.moveId || '')}"`} ${pending?'data-testid="history-pending-move-item"':'data-testid="history-move-item"'} aria-label="${escapeHtml(actor)} · ${move.undone ? `Turn ${move.turnIndex+1} · ` : ''}${moveLabel} ${escapeHtml(move.notation)}${availability}" ${selected?'aria-current="true"':''} ${pending?'aria-busy="true"':''}>
-      ${selected?'':`<button type="button" class="history-move-hit secondary${selectionPending?' history-selection-pending':''}" data-action="${archiveEntry ? 'inspect-history-archive' : 'jump-history'}" data-game-id="${escapeHtml(game.id)}" ${archiveEntry ? `data-decision-id="${escapeHtml(archiveEntry.id)}"` : `data-move-index="${move.index}"`} aria-label="${escapeHtml(actor)} · ${moveLabel} ${escapeHtml(move.notation)}${availability}"${selectionPending?' aria-busy="true"':''}></button>`}
+    return `<li class="history-item ${playerToneClassForSide(move.actorSide)}${selected?' is-selected':liveSelected?' is-live-selected':''}${move.undone?' is-undone':''}${pending?' history-item-pending':''}${actions?' history-item-has-actions':''}${selected&&selectionPending?' history-selection-pending':''}" data-key="${escapeHtml(archiveEntry ? `archive:${archiveEntry.id}` : move.moveId || move.clientCommandId || String(move.index))}" ${archiveEntry ? `data-archive-move-id="${escapeHtml(archiveEntry.id)}"` : `data-move-id="${escapeHtml(move.moveId || '')}"`} ${pending?'data-testid="history-pending-move-item"':'data-testid="history-move-item"'} aria-label="${escapeHtml(actor)} · ${move.undone ? `Turn ${move.turnIndex+1} · ` : ''}${moveLabel} ${escapeHtml(move.notation)}${availability}" ${selected?'aria-current="true"':''} ${pending?'aria-busy="true"':''}${selected?pendingAttributes(selectionPending,episodePending):''}>
+      ${selected?'':`<button type="button" class="history-move-hit secondary${selectionPending?' history-selection-pending':''}" data-action="${archiveEntry ? 'inspect-history-archive' : 'jump-history'}" data-game-id="${escapeHtml(game.id)}" ${archiveEntry ? `data-decision-id="${escapeHtml(archiveEntry.id)}"` : `data-move-index="${move.index}"`} aria-label="${escapeHtml(actor)} · ${moveLabel} ${escapeHtml(move.notation)}${availability}"${pendingAttributes(selectionPending,episodePending)}></button>`}
       <div class="history-item-info"><span class="history-move-line">${move.undone ? `Turn ${move.turnIndex+1} · ` : ''}${moveLabel} ${escapeHtml(move.notation)}${availability}${pending?' · Pending':''}</span>${destroyedPieces.length > 0 ? `<ul class="history-destruction-list">${destroyed}</ul>` : ""}<span class="history-move-at small">${escapeHtml(formatClientDateTime(move.at))}</span></div>
       ${selected ? renderHistoryPreview(previewGame,buildMovePreview(selectedHistoryPresentation(previewGame,{identityId:transport.getIdentityId()})?.record ?? move,{context:'history'}),`history:${game.id}:${move.moveId}`) : ''}${actions}</li>`;
   };
@@ -57,7 +62,9 @@ const renderTurnHistory = (game) => {
   const renderTurn=(turn,records,key)=>{
     const ordered=[...records].reverse().map(record=>record.move);
     const selected=game.inHistoryMode&&game.historyTurnIndex===turn.index&&!selectedTurns.has(turn.index);
-    const selectionPending=game.historyLoading&&game.historyLoadTurnIndex===turn.index;
+    const transportSelectionPending=game.historyLoading&&game.historyLoadTurnIndex===turn.index;
+    const episodePending=episodeOwns(`${game.id}:turn:${turn.index}`);
+    const selectionPending=transportSelectionPending||episodePending;
     if(selected)selectedTurns.add(turn.index);
     const first=ordered[0];
     const side=historyTurnSide(turn,ordered);
@@ -66,7 +73,7 @@ const renderTurnHistory = (game) => {
     const active=records.some(record=>record.entry?.historyStatus!=='unknown'&&!(game.pendingMoves??[]).includes(record.move));
     const selectable=!selected&&active&&!selectableTurns.has(turn.index);
     if(active)selectableTurns.add(turn.index);
-    return `<li class="history-turn ${playerToneClassForSide(side)}" data-key="${escapeHtml(key)}" data-testid="history-turn" aria-label="Turn ${turn.index+1} · ${escapeHtml(name)}">${selectable?`<button type="button" class="history-turn-hit secondary${selectionPending?' history-selection-pending':''}" data-action="jump-history-turn" data-game-id="${escapeHtml(game.id)}" data-turn-index="${turn.index}" aria-label="Inspect Turn ${turn.index+1} · ${escapeHtml(name)}"${selectionPending?' aria-busy="true"':''}></button>`:''}<div class="history-turn-heading${selected?' is-selected':''}" data-key="turn:${escapeHtml(game.id)}:${turn.index}:${escapeHtml(key)}" ${selected?'aria-current="true"':''}>Turn ${turn.index+1}</div>
+    return `<li class="history-turn ${playerToneClassForSide(side)}${selected&&selectionPending?' history-selection-pending':''}" data-key="${escapeHtml(key)}" data-testid="history-turn" aria-label="Turn ${turn.index+1} · ${escapeHtml(name)}"${selected?pendingAttributes(selectionPending,episodePending):''}>${selectable?`<button type="button" class="history-turn-hit secondary${selectionPending?' history-selection-pending':''}" data-action="jump-history-turn" data-game-id="${escapeHtml(game.id)}" data-turn-index="${turn.index}" aria-label="Inspect Turn ${turn.index+1} · ${escapeHtml(name)}"${pendingAttributes(selectionPending,episodePending)}></button>`:''}<div class="history-turn-heading${selected?' is-selected':''}" data-key="turn:${escapeHtml(game.id)}:${turn.index}:${escapeHtml(key)}" ${selected?'aria-current="true"':''}>Turn ${turn.index+1}</div>
       ${selected?renderHistoryPreview(game,buildTurnPreview(game.historyTurnMoves,{context:'history'}),`turn:${game.id}:${turn.index}`):''}
       <ol class="history-list history-list-nested">${records.map(record=>row(record.move,record.entry)).join('')}</ol></li>`;
   };
@@ -119,7 +126,8 @@ const renderTurnHistory = (game) => {
   const emptyRow=turn=>renderTurn(turn,[],`history-turn:${game.id}:${turn.index}`);
   const leadingEmpty=emptyTurns.filter(turn=>turn.index===game.currentTurn?.index).map(emptyRow).join('');
   const trailingEmpty=emptyTurns.filter(turn=>turn.index!==game.currentTurn?.index).reverse().map(emptyRow).join('');
-  const live = game.inHistoryMode && !isCompletedGame(game) ? `<li class="history-empty-line history-return-live"><button class="secondary" data-action="return-live" data-game-id="${escapeHtml(game.id)}" data-testid="history-return-live">${icon('board')}Return to live view</button></li>` : '';
+  const livePending=episodeOwns(`${game.id}:live`);
+  const live = game.inHistoryMode && !isCompletedGame(game) ? `<li class="history-empty-line history-return-live"><button class="secondary${livePending?' history-selection-pending':''}" data-action="return-live" data-game-id="${escapeHtml(game.id)}" data-testid="history-return-live"${pendingAttributes(livePending,livePending)}>${icon('board')}Return to live view</button></li>` : '';
   const state = game.currentSnapshot ?? game.board?.state;
   const current = !game.inHistoryMode && game.currentTurn;
   const waiting = current && (state?.continuation || !current.moveIndexes?.length) ? `<li class="history-item history-item-waiting ${playerToneClassForSeat(game.controlSeat ?? current.playerSeat)} is-live-selected" aria-disabled="true"><span class="history-move-line">${escapeHtml(liveHistoryLabel(game,state,{identityId:transport.getIdentityId()}))}</span></li>` : '';

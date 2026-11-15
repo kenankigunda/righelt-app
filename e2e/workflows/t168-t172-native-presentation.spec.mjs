@@ -74,13 +74,13 @@ test('reduced motion keeps the pending target and rail static',async({page})=>{
  expect(replay.animations).toEqual([]);
 });
 
-test('production selection owner keeps Live pending and perimeter-owned through geometry settlement',async({page})=>{
+test('production selection owner keeps replaced Move, Turn and Live controls pending through geometry settlement',async({page})=>{
  await page.setViewportSize({width:390,height:500});await mountFixture(page);
  const receipt=await page.evaluate(async()=>{
   const [{createHistorySelectionActions},{createHistorySelectionTransition},{historySelectionLoading},{updateComputerBoardLoading}]=await Promise.all([
    import('/shell/history-selection-actions.js'),import('/shell/history-selection-transition.js'),import('/shell/playback-presentation.js'),import('/shell/board-message-layout.js'),
   ]);
-  const trigger=document.createElement('button');trigger.textContent='Return to live view';document.body.append(trigger);
+  const panel=document.createElement('section');document.body.append(panel);
   const geometry=document.createElement('section');geometry.style.height='40px';document.body.append(geometry);
   const activity=document.querySelector('.board-message-activity');
   const events=[];
@@ -89,16 +89,31 @@ test('production selection owner keeps Live pending and perimeter-owned through 
    const loading=historySelectionLoading({id:'g'},episode);
    updateComputerBoardLoading(activity,{id:'g'},{},{loadingKey:loading.key,suppressLoadingCue:true});
    events.push(episode?'pending':'clear');
+   if(!episode)panel.querySelectorAll('[data-history-selection-episode-pending="true"]').forEach(element=>{
+    element.classList.remove('history-selection-pending');element.removeAttribute('aria-busy');element.removeAttribute('data-history-selection-episode-pending');
+   });
   }});
-  const selection=actions.run({scope:'g:live',trigger,select:()=>{
-   const captured=transition.capture(geometry);geometry.style.height='100px';transition.present(captured,guard=>events.push(guard()?'reveal':'stale-reveal'));return 'live';
-  }});
-  const whilePending={pulse:trigger.classList.contains('history-selection-pending'),busy:trigger.getAttribute('aria-busy'),loading:activity.dataset.loadingState,key:activity.dataset.loadingKey,suppressed:activity.dataset.loadingSuppressed};
-  await selection;
-  const settled={pulse:trigger.classList.contains('history-selection-pending'),busy:trigger.hasAttribute('aria-busy'),loading:activity.dataset.loadingState};
-  trigger.remove();geometry.remove();return{whilePending,settled,events};
+  const run=async(scope,replacement)=>{
+   panel.innerHTML='<button data-trigger>select</button>';const trigger=panel.querySelector('[data-trigger]');
+   const selection=actions.run({scope,trigger,select:()=>{
+    const captured=transition.capture(geometry);panel.innerHTML=replacement;geometry.style.height=geometry.style.height==='40px'?'100px':'40px';transition.present(captured,guard=>events.push(guard()?'reveal':'stale-reveal'));return scope;
+   }});
+   const current=panel.querySelector('[data-history-selection-episode-pending="true"]');
+   const whilePending={originalConnected:trigger.isConnected,pulse:current?.classList.contains('history-selection-pending'),busy:current?.getAttribute('aria-busy'),loading:activity.dataset.loadingState,key:activity.dataset.loadingKey,suppressed:activity.dataset.loadingSuppressed};
+   await selection;
+   return{whilePending,settled:{pulse:current?.classList.contains('history-selection-pending'),busy:current?.hasAttribute('aria-busy'),marker:current?.hasAttribute('data-history-selection-episode-pending'),loading:activity.dataset.loadingState}};
+  };
+  const move=await run('g:move:m1','<li class="history-item history-selection-pending" aria-busy="true" data-history-selection-episode-pending="true">Move 1</li>');
+  const turn=await run('g:turn:2','<li class="history-turn history-selection-pending" aria-busy="true" data-history-selection-episode-pending="true">Turn 2</li>');
+  const live=await run('g:live','<button class="history-selection-pending" aria-busy="true" data-history-selection-episode-pending="true">Return to live view</button>');
+  panel.remove();geometry.remove();return{move,turn,live,events};
  });
- expect(receipt.whilePending).toMatchObject({pulse:true,busy:'true',loading:'pending',key:'history-selection:1:g:live',suppressed:'true'});
- expect(receipt.settled).toEqual({pulse:false,busy:false,loading:'idle'});
- expect(receipt.events).toEqual(['pending','reveal','clear']);
+ for(const [name,result] of Object.entries({move:receipt.move,turn:receipt.turn,live:receipt.live})){
+  expect(result.whilePending,`${name} replacement retains pending`).toMatchObject({originalConnected:false,pulse:true,busy:'true',loading:'pending',suppressed:'true'});
+  expect(result.settled,`${name} replacement clears only at settlement`).toEqual({pulse:false,busy:false,marker:false,loading:'idle'});
+ }
+ expect(receipt.move.whilePending.key).toBe('history-selection:1:g:move:m1');
+ expect(receipt.turn.whilePending.key).toBe('history-selection:2:g:turn:2');
+ expect(receipt.live.whilePending.key).toBe('history-selection:3:g:live');
+ expect(receipt.events).toEqual(['pending','reveal','clear','pending','reveal','clear','pending','reveal','clear']);
 });

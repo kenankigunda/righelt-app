@@ -982,7 +982,15 @@ const historySelectionTransition = createHistorySelectionTransition({ reducedMot
 const historySelectionActions = createHistorySelectionActions({
   transition: historySelectionTransition,
   playSound: cue => gameSound.play(cue),
-  onPendingChange: () => boardRuntime?.refreshStatus(),
+  onPendingChange: episode => {
+    boardRuntime?.refreshStatus();
+    if (episode) return;
+    appEl?.querySelectorAll?.('[data-history-selection-episode-pending="true"]').forEach(element => {
+      element.classList.remove('history-selection-pending');
+      element.removeAttribute('aria-busy');
+      element.removeAttribute('data-history-selection-episode-pending');
+    });
+  },
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden) historySelectionTransition.cancel(); });
 window.addEventListener('hashchange', () => historySelectionTransition.cancel());
@@ -1542,7 +1550,7 @@ const cycleGameAlertStack = (gameId, actionEl = null) => {
 
 const renderGameAlertStackCard = options => renderAlertStackCard(options,escapeHtml);
 
-const historyRendering = createHistoryRendering(() => ({renderIncomingHistory:game=>renderIncomingNarrationHost(game,'wide'), getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, mobilePreviousTurnReplaySupplies:descriptor=>previousTurnKeyInteraction?.supplies(descriptor)===true, undoHistory, expandedUndoneGroups, expandedImportedHistory, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView}));
+const historyRendering = createHistoryRendering(() => ({renderIncomingHistory:game=>renderIncomingNarrationHost(game,'wide'), getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, mobilePreviousTurnReplaySupplies:descriptor=>previousTurnKeyInteraction?.supplies(descriptor)===true, historySelectionEpisode:()=>historySelectionActions.snapshot(), undoHistory, expandedUndoneGroups, expandedImportedHistory, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView}));
 const renderHistoryPreview = (game, preview, key) => historyRendering.renderHistoryPreview(game, preview, key);
 const renderTurnHistory = game => historyRendering.renderTurnHistory(game);
 const renderHeader = () => `
