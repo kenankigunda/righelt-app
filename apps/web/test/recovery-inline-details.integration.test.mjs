@@ -88,7 +88,9 @@ test('an incompatible client notice has details before publishing its failure',t
  transport.subscribe(event=>{if(event.type==='upgrade_required')published=transport.ensureRecoveryIncident('upgrade');});
  transport.markUpgradeRequired('upgrade');assert.ok(published);
  assert.equal(issueDiagnostics.get(published).initial.code,'upgrade_required');
- assert.match(renderGameAlertCard({incidentId:published}),/>Details<\/button>/);
+ const card=renderGameAlertCard({incidentId:published});
+ assert.match(card,/aria-label="Show diagnostic details"/);assert.match(card,/aria-expanded="false"/);
+ assert.doesNotMatch(card,/>Details<\/button>/);
 });
 
 test('resolved recovery stays in debug history without rendering a normal gameplay notice',t=>{

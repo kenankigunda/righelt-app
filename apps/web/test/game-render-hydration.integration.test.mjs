@@ -51,7 +51,7 @@ test('recovery action templates keep semantic navigation, visible labels and dec
  }
 });
 
-test('terminal connection failure keeps Retry primary and Reload, Home, and Details in stable hierarchy',()=>{
+test('terminal connection failure keeps Retry primary with Reload and Home while details remains a subtle accessible toggle',()=>{
  const game={id:'terminal-game',connectionFailed:true,recovering:true,recoveryIssue:'connection_failed'};
  assert.equal(needsRecoveryAction(game,0),true);
  assert.equal(recoveryMessage(game,0),'Connection failed. Retry to keep playing or view details.');
@@ -61,7 +61,8 @@ test('terminal connection failure keeps Retry primary and Reload, Home, and Deta
  assert.match(actions,/<a[^>]+href="#\/">[\s\S]*Home<\/a>$/);
  const card=renderGameAlertCard({layout:'terminal-recovery',body:recoveryMessage(game,0),action:actions,incidentId:'incident-terminal'});
  assert.match(card,/shell-game-alert is-terminal-recovery/);
- assert.ok(card.indexOf('shell-game-alert-actions')<card.indexOf('>Details<'),'Details follows the primary action group');
+ assert.match(card,/aria-label="Show diagnostic details"/);assert.match(card,/aria-expanded="false"/);
+ assert.doesNotMatch(card,/>Details<\/button>/);
  assert.match(source,/if \(action === "refresh-game"\) \{ window\.location\.reload\(\); return; \}/);
 });
 

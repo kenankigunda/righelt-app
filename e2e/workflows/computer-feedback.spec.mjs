@@ -53,7 +53,7 @@ test('computer save failures take priority while the delayed saving notice stays
     await expect(page.getByTestId('sync-recovery-banner').getByRole('button',{name:'Retry connection',exact:true})).toBeVisible();
     await expect(page.getByTestId('sync-recovery-banner').getByRole('link',{name:'Home',exact:true})).toBeVisible();
     await expect(page.getByTestId('sync-recovery-banner').getByRole('button',{name:'Reload game',exact:true})).toHaveCount(0);
-    await expect(page.getByTestId('sync-recovery-banner').getByRole('button',{name:'Details',exact:true})).toBeVisible();
+    await expect(page.getByTestId('sync-recovery-banner').getByRole('button',{name:'Show diagnostic details',exact:true})).toBeVisible();
     await expect(page.locator('[data-alert-stack-card][inert] .shell-game-alert-copy').first()).toBeHidden();
     await expect(page.locator('[data-alert-stack-card][inert] button').first()).toBeHidden();
     expect(await page.getByTestId('sync-recovery-banner').evaluate(el=>!el.closest('[hidden],[inert],[aria-hidden="true"]'))).toBe(true);
