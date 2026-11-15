@@ -1,5 +1,6 @@
 import {test,expect} from '@playwright/test';
-import {readFile} from 'node:fs/promises';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {isAbsolute,join} from 'node:path';
 import {importScenarioGame,submitPlayableAction,switchGamePanel} from '../support/app.mjs';
 import {installPassiveAudioObservations} from '../support/audio-observations.mjs';
 import {installRemovalOnsetTrace} from '../support/removal-onset-trace.mjs';
@@ -16,6 +17,12 @@ const cases=[
 ];
 
 const scenarioFor=value=>({formatVersion:2,id:value.id,title:`T-166 ${value.title}`,description:'Test-owned removal onset timing fixture',incorrect:false,initialState:value.fixture.initialState,moves:[],resultingState:value.fixture.initialState,expectedFinalStateHash:'',expectedOutcome:'ongoing'});
+const persistTrace=async(name,value)=>{
+ const directory=process.env.RIGHELT_REMOVAL_TRACE_OUT;
+ if(!directory)return;
+ if(!isAbsolute(directory))throw Error('RIGHELT_REMOVAL_TRACE_OUT must be absolute');
+ await mkdir(directory,{recursive:true});await writeFile(join(directory,name),JSON.stringify(value,null,2)+'\n');
+};
 
 function armNativeRemovalTrace(expectedCount){
  let first=null,painted=false,advanced=false,frameId=null;
@@ -66,6 +73,7 @@ for(const value of cases)test(`records one-clock confirmed removal onset for ${v
   await expect.poll(()=>page.evaluate(()=>globalThis.__righeltRemovalTraceSnapshot?.().records.some(row=>row.phase==='native-animation-advanced'))).toBe(true);
   const trace=await page.evaluate(()=>globalThis.__righeltRemovalTraceSnapshot?.());
   await info.attach(`T-166 ${value.count}-casualty one-clock trace`,{body:JSON.stringify(trace,null,2),contentType:'application/json'});
+  await persistTrace(`${value.count}-casualty-trace.json`,trace);
   const afterInput=trace.records.findIndex(row=>row.phase==='input-activated'),afterAuthoritative=trace.records.findIndex((row,index)=>index>afterInput&&row.phase==='authoritative-subscriber');
   expect(afterInput).toBeGreaterThanOrEqual(0);expect(afterAuthoritative).toBeGreaterThan(afterInput);
   const after=trace.records.slice(afterAuthoritative);
@@ -82,6 +90,7 @@ for(const value of cases)test(`records one-clock confirmed removal onset for ${v
   await page.evaluate(()=>globalThis.__righeltRemovalTraceMotionDispose?.()).catch(()=>{});
   receipt=await disposeTrace();
   await info.attach(`T-166 ${value.count}-casualty transform receipt`,{body:JSON.stringify(receipt,null,2),contentType:'application/json'});
+  await persistTrace(`${value.count}-casualty-transform-receipt.json`,receipt);
  }
  expect(receipt?.incomplete).toBe(false);
 });
