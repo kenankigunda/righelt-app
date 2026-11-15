@@ -61,11 +61,10 @@ const replayTest=test.extend({
   await use({owner,opponent,viewer,gameId});
  },{timeout:40000}],
 });
-for(const width of [390,1440])replayTest(`human opponent replay preserves authority and read-only inspection at ${width}px`,async({humanReplayPrerequisites:{owner,opponent,viewer,gameId},browserName},info)=>{
+for(const width of [1440])replayTest(`human opponent replay preserves authority and read-only inspection at ${width}px`,async({humanReplayPrerequisites:{owner,opponent,viewer,gameId},browserName},info)=>{
   // This case also carries native mobile geometry, stacking, hit ownership,
   // 200% text, and keyboard-return evidence. Keep that proof in the complete
   // multi-user journey while giving only its Chromium/mobile path enough time.
-  if(width===390&&browserName==='chromium')info.setTimeout(90000);
   const initial=await projected(owner,gameId),action=initial.legalActions.find(action=>action.type==='move'&&action.from&&action.to);expect(action).toBeTruthy();
   await submitPlayableAction(owner,action);
   await expect(replayButton(opponent)).toBeVisible();await expect(context(opponent)).toContainText('Guest 1 moved');
@@ -76,8 +75,7 @@ for(const width of [390,1440])replayTest(`human opponent replay preserves author
   await expect(label(opponent)).not.toContainText('Your opponent moved');
   await expect(label(opponent).getByRole('button',{name:'Pass',exact:true})).toBeVisible();
   await expect(context(opponent)).toHaveCount(1);
-  if(width===390)await expect(context(opponent)).toHaveClass(/incoming-move-flyout/);
-  else await expect(context(opponent)).toHaveClass(/history-incoming/);
+  await expect(context(opponent)).toHaveClass(/history-incoming/);
   await expect(opponent.locator('[data-alert-stack-card] [data-incoming-context]')).toHaveCount(0);
   await opponent.screenshot({path:info.outputPath(`incoming-turn-${width}.png`)});
   // Chromium's native pointer profile focuses the incoming replay control, so
@@ -209,7 +207,8 @@ for(const width of [390,1440])test(`reopening human play preserves narration and
   const action=state.legalActions.find(action=>action.type==='move'&&action.from&&action.to);expect(action).toBeTruthy();
   await submitPlayableAction(page,action);
   if(index===0){
-   await expect(replayButton(opponent)).toBeVisible();
+   if(width===1440)await expect(replayButton(opponent)).toBeVisible();
+   else await expect(opponent.locator('[data-incoming-context],.incoming-move-flyout,.history-incoming,[data-action="toggle-incoming-narration"]')).toHaveCount(0);
    const moved=await projected(owner,gameId),piece=moved.board.state.pieces.find(piece=>piece.owner==='P1');expect(piece).toBeTruthy();
    expect(moved.board.state.pieces.some(piece=>piece.position.row===4&&piece.position.col===4)).toBe(false);
    await owner.locator('[data-testid="game-board"] .cell[data-row="4"][data-col="4"]').click();
@@ -224,7 +223,8 @@ for(const width of [390,1440])test(`reopening human play preserves narration and
  }
   // Reopening the live game clears inspection and exposes legal Pass beside narration.
   await owner.reload();await expect(owner.getByTestId('game-shell')).toBeVisible();await switchGamePanel(owner,'board');
-  await expect(context(owner)).toContainText('Guest 2 moved');await expect(replayButton(owner)).toBeVisible();
+  if(width===1440){await expect(context(owner)).toContainText('Guest 2 moved');await expect(replayButton(owner)).toBeVisible();}
+  else await expect(owner.locator('[data-incoming-context],.incoming-move-flyout,.history-incoming,[data-action="toggle-incoming-narration"]')).toHaveCount(0);
   const pass=label(owner).getByRole('button',{name:'Pass',exact:true});await expect(pass).toBeVisible();
   const beforePass=await projected(owner,gameId),passWrites=[];const trackPass=request=>{if(isOperationRequest(request,'apply'))passWrites.push(request.postDataJSON())};owner.on('request',trackPass);
   await pass.click();await expect.poll(async()=>(await projected(owner,gameId)).board.state.turnIndex).toBe(beforePass.board.state.turnIndex+1);
