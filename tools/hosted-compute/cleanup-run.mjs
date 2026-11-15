@@ -28,7 +28,7 @@ export async function cleanupFromEnvironment(env=process.env,{fetcher,clock}={})
 export function cleanupProcessResult(result) {
   if(result.kind==='dual-cleanup-result'){
     const children=result.results.map(cleanupProcessResult);
-    return {status:{state:'dual-cleanup',armed:true,cleanupObservedAbsent:children.every(c=>c.status.cleanupObservedAbsent),usageReviewRequired:children.some(c=>c.status.usageReviewRequired),ownershipSets:result.results.map(r=>({prearmSha256:r.prearmSha256,state:r.state??'terminal',failures:r.failures?.length??0,cleanupObservedAbsent:r.cleanupObservedAbsent??false,durableReceiptConfirmed:r.durableReceiptConfirmed??false}))},exitCode:children.some(c=>c.exitCode)?1:0};
+    return {status:{state:'dual-cleanup',armed:true,cleanupObservedAbsent:children.every(c=>c.status.cleanupObservedAbsent),usageReviewRequired:children.some(c=>c.status.usageReviewRequired),ownershipSets:result.results.map(r=>({prearmSha256:r.prearmSha256,state:r.state??'terminal',failures:r.failures?.length??0,usageReviewRequired:r.usageReviewRequired===true,cleanupObservedAbsent:r.cleanupObservedAbsent??false,durableReceiptConfirmed:r.durableReceiptConfirmed??false}))},exitCode:children.some(c=>c.exitCode)?1:0};
   }
   return {status:{state:result.state??'terminal',cleanupObservedAbsent:result.cleanupObservedAbsent??false,armed:result.armed,usageReviewRequired:result.usageReviewRequired===true},
     exitCode:result.failures?.length || result.remaining?.length || result.usageReviewRequired ? 1 : 0};

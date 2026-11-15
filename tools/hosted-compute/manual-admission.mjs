@@ -28,9 +28,13 @@ export async function manualAuthority(core,db,c,intent){
   assert(intent.liabilityUntil>=authority.cutoff,'cleanup and response liability horizon missing');
   const ready=await readOperatorReceipt(control.store,intent.cleanupReady);
   assert(ready.schema===1&&ready.kind==='dual-cleanup-readiness'&&sameReference(ready.registry,intent.registry)&&ready.runtimeRevision===registry.runtimeRevision&&/^[a-f0-9]{64}$/.test(ready.workflowSourceSha256)&&/^[a-f0-9]{40}$/.test(ready.workflowCommit),'cleanup readiness source differs');
-  assert(Number.isSafeInteger(ready.observedAt)&&ready.observedAt<=now&&now-ready.observedAt<=900000&&Number.isSafeInteger(ready.run?.id)&&ready.run.conclusion==='success'&&ready.run.headSha===ready.workflowCommit,'fresh actual dual runner proof required');
+  assert(Number.isSafeInteger(ready.observedAt)&&ready.observedAt<=now&&now-ready.observedAt<=900000&&Number.isSafeInteger(ready.run?.id)&&['success','failure'].includes(ready.run.conclusion)&&ready.run.headSha===ready.workflowCommit,'fresh actual dual runner proof required');
   assert(Array.isArray(ready.run.results)&&ready.run.results.length===2&&new Set(ready.run.results.map(r=>r.prearmSha256)).size===2,'dual runner evidence inventory differs');
   for(const ref of registry.references){const result=ready.run.results.find(r=>r.prearmSha256===ref.sha256);assert(result&&['waiting','terminal'].includes(result.state)&&result.failures===0&&(result.state!=='terminal'||result.cleanupObservedAbsent===true&&result.durableReceiptConfirmed===true),'dual cleanup proof incomplete');}
+  if(ready.run.conclusion==='failure'){
+    const oldResult=ready.run.results.find(r=>r.prearmSha256===prior.manifest.externalControl.sha256),newResult=ready.run.results.find(r=>r.prearmSha256===c.manifest.externalControl.sha256);
+    assert(ready.run.usageReviewRequired===true&&oldResult.state==='terminal'&&oldResult.usageReviewRequired===true&&newResult.usageReviewRequired===false,'cleanup failure is not solely the retained old usage warning');
+  }
   const funding=await readOperatorReceipt(control.store,intent.fundingReservation),oldFunding=funding.oldAttempt,next=funding.newIntent,total=funding.aggregate;
   assert(funding.schema===1&&funding.kind==='operator-additive-funding-freeze'&&oldFunding?.id===prior.manifest.id&&oldFunding.manifestSha256===prior.manifestSha256&&Date.parse(oldFunding.startedAt)===old.startedAt,'operator funding prior binding differs');
   assert(oldFunding.originalAllocationCents===prior.manifest.maxCents&&oldFunding.supplementalRiskHoldCents===intent.priorRiskReserveCents&&oldFunding.protectedShutdownReserveCents===reserveCents(prior.manifest.maxCents)&&oldFunding.hourlyCeilingCents===old.hourlyCents,'operator prior allocation differs');
@@ -69,6 +73,7 @@ export async function prepareManual(core,id,intent){
     return {intentSha256,generation:1,workerToken:await core.token(id,1)};
   }
   assert(c.status==='staged'&&core.config.enabled===true,'manual campaign unavailable');
+  assert(!db.manualFundingReservations?.[intent.fundingReservation?.sha256],'funding reservation already assigned');
   assert(!db.manualProgram||core.now()<db.manualProgram.deadline,'overall actual program ended');
   const {prior,authority}=await manualAuthority(core,db,c,intent),now=core.now();
   for(const other of Object.values(db.campaigns))assert(other===c||other===prior||TERMINAL.has(other.status)||other.status==='staged','another campaign owns compute');
@@ -85,6 +90,7 @@ export async function prepareManual(core,id,intent){
   requireHeadroom(core,db,prior,c,authority.cutoff);
   c.generation=1;c.status='manual-pending';c.cleanupVerified=false;
   db.manualRiskHolds??={};db.manualRiskHolds[prior.manifest.id]=intent.priorRiskReserveCents;
+  db.manualFundingReservations??={};db.manualFundingReservations[intent.fundingReservation.sha256]={campaignId:id,intentSha256};
   db.creditAllocatedCents+=c.manifest.maxCents+additionalRisk;db.pilotReservedCents+=c.manifest.maxCents+additionalRisk;db.cloudflareAllocatedCents+=cloudflareUsageCapCents;
   c.manual.requiredAuthorizationCents=db.pilotReservedCents;
   core.event(c,'manual-prepared',{intentSha256});await core.save(db);

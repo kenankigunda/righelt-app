@@ -61,3 +61,13 @@ test('late UI attachment or image startup cannot grant work after the same five-
  const attached=await setup();await attached.core.manualPrepare('ui',attached.intent);attached.addPod();await attached.attach();attached.advance(300001);
  assert.equal((await attached.core.manualReady('ui',1)).ready,false);await assert.rejects(attached.core.work('ui',1),/startup expired/);await assert.rejects(attached.core.heartbeat('ui',1),/startup expired/);
 });
+
+test('actual failed cleanup run qualifies only for the old usage warning with complete durable operational results and fresh funding',async()=>{
+ const f=await setup();f.ready.run.conclusion='failure';f.ready.run.usageReviewRequired=true;
+ f.ready.run.results[0]={...f.ready.run.results[0],state:'terminal',usageReviewRequired:true,cleanupObservedAbsent:true,durableReceiptConfirmed:true};
+ f.ready.run.results[1].usageReviewRequired=false;
+ f.intent.cleanupReady=await f.receipt(f.ready,'5');await f.core.manualPrepare('ui',f.intent);
+ const bad=await setup();bad.ready.run.conclusion='failure';bad.ready.run.usageReviewRequired=true;bad.ready.run.results[0]={...bad.ready.run.results[0],state:'terminal',usageReviewRequired:true,cleanupObservedAbsent:true,durableReceiptConfirmed:true,failures:1};bad.ready.run.results[1].usageReviewRequired=false;
+ bad.intent.cleanupReady=await bad.receipt(bad.ready,'5');await assert.rejects(bad.core.manualPrepare('ui',bad.intent),/incomplete/);
+ const timed=await setup();timed.ready.run.conclusion='cancelled';timed.intent.cleanupReady=await timed.receipt(timed.ready,'5');await assert.rejects(timed.core.manualPrepare('ui',timed.intent),/runner proof/);
+});
