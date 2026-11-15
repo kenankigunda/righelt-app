@@ -1145,18 +1145,28 @@ test("live transport store notifies subscribers for optimistic enqueue and autho
   const pending = await store.applyGameAction({ gameId: baseGame.id, state: baseGame.currentSnapshot, action: nextAction });
   assert.equal(changes.some((change) => change.type === "optimistic_enqueue" && change.gameId === baseGame.id), true);
 
+  const acknowledged = buildAcknowledgedGame(baseGame, nextAction);
   resolveApply?.(
     commandResponse({
       ok: true,
       accepted: true,
       clientCommandId: pending.clientCommandId,
       eventSeq: 2,
-      game: buildAcknowledgedGame(baseGame, nextAction),
+      game: acknowledged,
     }),
   );
   await tick();
 
-  assert.equal(changes.some((change) => change.type === "authoritative_update" && change.gameId === baseGame.id), true);
+  const authoritative = changes.filter((change) => change.type === "authoritative_update" && change.gameId === baseGame.id);
+  assert.equal(authoritative.length, 1, "one accepted snapshot publishes one authoritative subscriber frame");
+  assert.equal(authoritative[0].clientCommandId, pending.clientCommandId);
+  store.applyLiveGameUpdate({game: acknowledged, eventSeq: 2});
+  assert.equal(changes.filter((change) => change.type === "authoritative_update" && change.gameId === baseGame.id).length, 1,
+    "the matching socket frame cannot republish an already accepted HTTP authority frame");
+  store.applyLiveGameUpdate({game: acknowledged, eventSeq: 2, baseline: true});
+  const afterBaseline = changes.filter((change) => change.type === "authoritative_update" && change.gameId === baseGame.id);
+  assert.equal(afterBaseline.length, 2, "an explicit baseline keeps its reset publication even at the same revision");
+  assert.equal(afterBaseline.at(-1).baseline, true);
 });
 
 for(const computer of [false,true])for(const reason of ['computer_control_changed','stale_state','state_capacity_exceeded','unknown_rejection','invalid_attempt','storage_blocked'])test(`computer rollback notices remain quiet only for transient computer outcomes computer=${computer} reason=${reason}`,async t=>{

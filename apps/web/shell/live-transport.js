@@ -925,6 +925,10 @@ export const createLiveTransportStore = ({
       }
     }
     if (actionContractVersion !== undefined) serverActionContract = actionContractVersion;
+    const previousAuthoritative = game ? gameById.get(game.id) : null;
+    const duplicateCurrentFrame = game && eventSeq !== null
+      && lastEventSeqByGameId.get(game.id) === eventSeq
+      && previousAuthoritative?.gameplayRevision === game.gameplayRevision;
     const notifications = [];
     const receiptCommand = game && commandOutcome ? getOptimisticState(game.id).pendingCommands.find(command => command.clientCommandId === commandOutcome.clientCommandId) : null;
     const receiptOwner = receiptCommand?.sharedRecoveryEpoch === undefined ? null
@@ -949,7 +953,13 @@ export const createLiveTransportStore = ({
       }
     }
     for (const notification of notifications) emitChange(notification);
-    if (game) { emitChange({ type: "authoritative_update", gameId: game.id, baseline }); void sendNextPendingCommand(game.id); }
+    const acceptedCurrentFrame = notifications.some(notification => notification.type === "authoritative_update")
+      && commandOutcome?.eventSeq === eventSeq
+      && commandOutcome?.gameplayRevision === game?.gameplayRevision;
+    if (game) {
+      if (baseline || (!acceptedCurrentFrame && !duplicateCurrentFrame)) emitChange({ type: "authoritative_update", gameId: game.id, baseline });
+      void sendNextPendingCommand(game.id);
+    }
     return result;
   };
 
@@ -1023,7 +1033,10 @@ export const createLiveTransportStore = ({
     // Publish a settled receipt together with its owned recovery state. An
     // intermediate pending=0/recovering=true frame disables legal controls.
     for (const notification of notifications) emitChange(notification);
-    emitChange({ type: "authoritative_update", gameId });
+    const acceptedCurrentFrame = notifications.some(notification => notification.type === "authoritative_update")
+      && body.commandOutcomes.some(outcome => outcome.outcome === "accepted"
+        && outcome.eventSeq === body.eventSeq && outcome.gameplayRevision === body.gameplayRevision);
+    if (!acceptedCurrentFrame) emitChange({ type: "authoritative_update", gameId });
     void sendNextPendingCommand(gameId);
     return body;
   };
