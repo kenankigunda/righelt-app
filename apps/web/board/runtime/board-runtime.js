@@ -2,6 +2,7 @@ import {createInlineActionAvailability} from '../inline-action-availability.js';
 import {normalizeMutationSurface} from '../surface-pulse.js';
 import {createMutationActivationFence} from '../mutation-activation.js';
 import {getPushRetreatPrompt as renderPushRetreatPrompt,requiredRushContext as buildRequiredRushContext,opponentInspectionPrompt,buildHistoryRemovalEffects} from '../guidance-presentation.js';
+import {automaticFollowAction} from '../follow-continuation.js';
 import {createMessageHeightController} from '../message-height.js';
 import {BOARD_PROMPT,isMappedBoardPromptHtml} from '../prompt-models.js';
 import {BOARD_MESSAGE_STRENGTH,isBoardMessageResolution,isMeaningfulHistoryMessage,resolveBoardMessageOwner} from '../message-priority.js';
@@ -792,6 +793,14 @@ export function createBoardRuntime({
       const label=inspection.kind==='combined'?'Supply and command lines':inspection.kind==='command'?'Command lines':'Supply lines';
       if(inspection.kind==='combined'&&selectedSource){setBoardPreviewPromptHtml(`Supply and command lines for piece at ${renderBoardPreviewCoordinate(selectedSource)}`);return;}
       setBoardPreviewPrompt(paths.length?label:inspection.kind==='supply'?'No supply connection':inspection.kind==='command'?'No command connection':'No connection');return;
+    }
+
+    if (!selectedTarget && host.canPresentActions?.(state) !== false && state.continuation?.type === 'push') {
+      const pushRetreatPrompt = getPushRetreatPrompt(state, selectedPieceId);
+      const automaticFollow = automaticFollowAction(state,legalActions);
+      if (pushRetreatPrompt) setBoardPreviewPromptHtml(pushRetreatPrompt);
+      else if (state.continuation.phase === 'follow' && !automaticFollow) setPushFollowContinuationPrompt(state.sideToMove);
+      if (pushRetreatPrompt || state.continuation.phase === 'follow' && !automaticFollow) return;
     }
 
     if (explanation && !selectedTarget) {

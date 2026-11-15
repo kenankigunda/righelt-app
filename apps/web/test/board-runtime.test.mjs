@@ -34,6 +34,71 @@ test('piece explanations and blocked causes precede the unchanged coordinate chi
  }
 });
 
+test('required retreat guidance supersedes automatic selected-piece connectivity',async()=>{
+ const point={row:4,col:5},target={row:3,col:5};
+ let html='';const label={dataset:{},hidden:false,addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
+ const piece={id:'D1',owner:'P2',kind:'unit',position:point,supplied:false,commanded:true};
+ const retreat={type:'retreat',actorId:'D1',from:point,to:target};
+ const state={sideToMove:'P1',turnIndex:8,outcome:{status:'ongoing'},continuation:{type:'push',phase:'retreat',pushedPieceId:'D1',attackerOwner:'P1'},pieces:[piece]};
+ const runtime=createBoardRuntime({
+  boardAdapter:{mount:noop,render:noop,getPieceById:(snapshot,id)=>snapshot.pieces.find(value=>value.id===id),getSelectedPieceSummary:()=>({details:{owner:'P2',explanation:'No supply connection'}})},
+  host:{canInteract:()=>true,loadPieceMoves:async()=>({state,actions:[retreat],previewActions:[retreat]})},
+ });
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ await runtime.loadSnapshot(state,{legalActions:[retreat],selectionState:{selectedPieceId:'D1',source:point,target:null}});await new Promise(setImmediate);
+ assert.match(html,/Your piece at .*4, 5.* has been pushed\. Choose a square to retreat to\./);
+ assert.doesNotMatch(html,/No supply connection|Supply and command lines/);
+ destroyUninitializedNodeRuntime(runtime);
+});
+
+test('required follow guidance supersedes automatic selected-piece connectivity',async()=>{
+ const point={row:4,col:5},target={row:4,col:6};
+ let html='';const label={dataset:{},hidden:false,addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
+ const piece={id:'A1',owner:'P1',kind:'unit',position:point,supplied:false,commanded:true};
+ const follow={type:'follow',actorId:'A1',from:point,to:target},other={...follow,to:{row:5,col:5}};
+ const state={sideToMove:'P1',turnIndex:8,outcome:{status:'ongoing'},continuation:{type:'push',phase:'follow',attackerId:'A1'},pieces:[piece]};
+ const runtime=createBoardRuntime({
+  boardAdapter:{mount:noop,render:noop,getPieceById:(snapshot,id)=>snapshot.pieces.find(value=>value.id===id),getSelectedPieceSummary:()=>({details:{owner:'P1',explanation:'No supply connection'}})},
+  host:{canInteract:()=>true,loadPieceMoves:async()=>({state,actions:[follow,other],previewActions:[follow,other]})},
+ });
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ await runtime.loadSnapshot(state,{legalActions:[follow,other],selectionState:{selectedPieceId:'A1',source:point,target:null}});await new Promise(setImmediate);
+ assert.equal(html,'Select a follow');
+ destroyUninitializedNodeRuntime(runtime);
+});
+
+test('automatic follow never presents the manual follow instruction',async()=>{
+ const point={row:4,col:5},target={row:4,col:6};
+ let html='';const label={dataset:{},hidden:false,addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
+ const piece={id:'A1',owner:'P1',kind:'unit',position:point,supplied:true,commanded:true};
+ const follow={type:'follow',actorId:'A1',from:point,to:target};
+ const state={sideToMove:'P1',turnIndex:8,outcome:{status:'ongoing'},continuation:{type:'push',phase:'follow',attackerId:'A1'},pieces:[piece]};
+ const runtime=createBoardRuntime({
+  boardAdapter:{mount:noop,render:noop,getPieceById:(snapshot,id)=>snapshot.pieces.find(value=>value.id===id),getSelectedPieceSummary:()=>({details:{owner:'P1',explanation:'Supply and command lines'}})},
+  host:{canInteract:()=>false,canPresentActions:()=>true,loadPieceMoves:async()=>({state,actions:[follow],previewActions:[follow]})},
+ });
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ await runtime.loadSnapshot(state,{legalActions:[follow],selectionState:{selectedPieceId:'A1',source:point,target:null}});await new Promise(setImmediate);
+ assert.doesNotMatch(html,/Select a follow/);
+ destroyUninitializedNodeRuntime(runtime);
+});
+
+test('an incomplete sole follow does not claim the automatic presentation owner',async()=>{
+ const point={row:4,col:5};
+ let html='';const label={dataset:{},hidden:false,addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
+ const piece={id:'A1',owner:'P1',kind:'unit',position:point,supplied:true,commanded:true};
+ const incomplete={type:'follow',actorId:'A1'};
+ const state={sideToMove:'P1',turnIndex:8,outcome:{status:'ongoing'},continuation:{type:'push',phase:'follow',attackerId:'A1'},pieces:[piece]};
+ const runtime=createBoardRuntime({
+  boardAdapter:{mount:noop,render:noop,getPieceById:(snapshot,id)=>snapshot.pieces.find(value=>value.id===id),getSelectedPieceSummary:()=>({details:{owner:'P1',explanation:'Supply and command lines'}})},
+  host:{canInteract:()=>true,canPresentActions:()=>true,loadPieceMoves:async()=>({state,actions:[incomplete],previewActions:[incomplete]})},
+ });
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ await runtime.loadSnapshot(state,{legalActions:[incomplete],selectionState:{selectedPieceId:'A1',source:point,target:null}});await new Promise(setImmediate);
+ assert.equal(html,'Select a follow');
+ destroyUninitializedNodeRuntime(runtime);
+});
+
 test('Joined-stone detail survives quiet redraw and retires with the snapshot intent',async()=>{
  const point={row:4,col:2},target={row:4,col:3},piece={id:'A',owner:'P1',kind:'unit',position:point,supplied:true,commanded:true};
  const preview={type:'push',actorId:'A',from:point,to:target,legal:false,blockedReason:'PUSH_STRENGTH_TOO_WEAK'};
@@ -1197,7 +1262,8 @@ test("board runtime uses retreat chip styling for push retreat actor coordinate 
     { legalActions: [{ type: "retreat", actorId: "D1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } }] },
   );
 
-  assert.match(previewHtml, /^Select a retreat for piece at /);
+  assert.match(previewHtml, /^Your piece at /);
+  assert.match(previewHtml, / has been pushed\. Choose a square to retreat to\.$/);
   assert.match(previewHtml, /board-preview-coordinate-chip-retreat/);
   assert.match(previewHtml, />4, 2</);
   assert.equal(previewHtml.includes("board-preview-coordinate-chip-continuation-pending"), false);
