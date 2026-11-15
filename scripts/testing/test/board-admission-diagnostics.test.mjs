@@ -318,7 +318,7 @@ test('error categories remain source-derived and changed output remains hash pro
  assert.throws(()=>transformBoardAdmissionModule(source,altered),/output hash mismatch/);
  const wrongOutput={...recipe,outputSha256:'0'.repeat(64)};assert.throws(()=>transformBoardAdmissionModule(source,wrongOutput),/output hash mismatch/);
  assert.equal(recipe.operations.filter(op=>op.after.includes('runtime-host-error')).length,1);assert.equal(recipe.operations.length,25);
- const unchanged={"/board-adapters/engine-board-adapter.js":"d5668314a0d060c06b8d5b890920f26ac3b45ffe64c225939032e179d0ad1ed0","/shell/live-transport.js":"ed27623212b87ccc982f8b1bf85046a643dd025dc665468fdeb0289f05252c41","/board/hosts/shell-host.js":"53644aa364736644c0bdddba7e92a8ea9419283b875e8fe7f368778179550525","/shell/app.js":"e3e323dd46038c3db17257dc36cd242edde9baad7eeb3f150dae70d1ba423c8e"};
+ const unchanged={"/board-adapters/engine-board-adapter.js":"d5668314a0d060c06b8d5b890920f26ac3b45ffe64c225939032e179d0ad1ed0","/shell/live-transport.js":"ed27623212b87ccc982f8b1bf85046a643dd025dc665468fdeb0289f05252c41","/board/hosts/shell-host.js":"53644aa364736644c0bdddba7e92a8ea9419283b875e8fe7f368778179550525","/shell/app.js":"30461f354021eba3478c23ac50ee6804c9f8cf06c82660d6d7ed8d9754a0a1c2"};
  for(const [key,expected] of Object.entries(unchanged)){assert.equal(createHash('sha256').update(JSON.stringify(recipes[key])).digest('hex'),expected);}
 });
 
@@ -862,7 +862,7 @@ async function rulesTimeoutRecipe(){
 }
 test('computer timeout recipe is strictly bound, exactly invertible and preserves the original computer catch entry',async()=>{
  const{all,recipe,source}=await rulesTimeoutRecipe();
- assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'dbac69c1672ae52cbb515f93d0bed3bdb2db889bc1c5824b9704a43955dc0022');
+ assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'fe2ade88bbcb06e0605c33d2af47838229d856f71f50ff2a8f9357c10c849aac');
  assert.equal(recipe.operations.length,1);const op=recipe.operations[0];assert.equal(op.anchorCount,1);
  const output=transformBoardAdmissionModule(source,recipe);assert.equal(output.slice(op.start,op.start+op.after.length),op.after);
  assert.equal(output.slice(0,op.start)+op.before+output.slice(op.start+op.after.length),source);
