@@ -7,7 +7,8 @@ import { COMPUTER_CAPABILITIES, COMPUTER_TIMING, createComputerControl, changeCo
 import { createInitialState } from '../generated/packages/game-engine/src/state.js';
 
 function fixture({analysisRuntime, canAnalyze = true, timers = {setInterval(){return 1;},clearInterval(){}}, onChange = () => {}} = {}) {
-  let now = 100, visible = true, authenticated = true, unresolved = false, generation = 1, cancelCount = 0, submitted = 0, computed = 0, blocked = false, pending;
+  let now = 100, visible = true, authenticated = true, unresolved = false, generation = 1, submitted = 0, computed = 0, blocked = false, pending;
+  const cancelEvents=[];
   let progress;
   let game = { id: 'g', gameplayRevision: 0, computer: createComputerControl('owner', { p1: 'babs', p2: null }), board: { state: createInitialState() } };
   const saved = [], controls = []; let authContextId = 'session';
@@ -16,10 +17,46 @@ function fixture({analysisRuntime, canAnalyze = true, timers = {setInterval(){re
     decisionAttempt: async (_, value) => { saved.push(value); },
     applyGameAction: async () => { submitted++; return { committed: Promise.resolve() }; },
   };
-  const runtime = { compute: async (_, onProgress) => new Promise((resolve, reject) => { computed++; progress = onProgress; pending = { resolve, reject }; }), cancel: () => { cancelCount++; pending?.reject(Error('cancelled')); pending = null; } };
+  const runtime = { compute: async (_, onProgress) => new Promise((resolve, reject) => { computed++; progress = onProgress; pending = { resolve, reject }; }), cancel: (reason,options) => { cancelEvents.push({reason,options}); pending?.reject(Error('cancelled')); pending = null; } };
   const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: analysisRuntime ?? runtime, clock: () => now, timers, onChange, getContext: () => ({ game: unresolved ? null : game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
-  return { session, controls, relogin: () => {generation++;authContextId=`session-${generation}`;transport={...transport};}, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { unresolved=false; game = { ...game, id: 'other-game' }; }, unresolvedGame: () => { unresolved=true; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, show: () => {visible = true;}, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelCount };
+  return { session, controls, cancelEvents, relogin: () => {generation++;authContextId=`session-${generation}`;transport={...transport};}, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { unresolved=false; game = { ...game, id: 'other-game' }; }, advanceRevision:()=>{game={...game,gameplayRevision:game.gameplayRevision+1};}, unresolvedGame: () => { unresolved=true; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, show: () => {visible = true;}, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelEvents.length };
 }
+
+test('successful acquisition wakes once without an interval tick and concurrent gate observers cannot duplicate work',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());
+ await Promise.all([f.session.tick(),f.session.tick(),f.session.tick()]);
+ await Promise.resolve();await Promise.resolve();await Promise.resolve();
+ assert.equal(f.computations(),1);assert.equal(f.controls.filter(value=>value.action==='acquire').length,1);
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.submissions(),1);assert.equal(f.saved.length,1);
+});
+
+test('successful renewal wakes once without an interval tick after its authority gate settles',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());
+ const control=f.transport.computerControl;
+ f.transport.computerControl=async(...args)=>{await control(...args);return {ok:true};};
+ await f.session.tick();
+ // Let the acquisition-owned wake observe a temporary transport fence. The
+ // later renewal must own the next wake instead of relying on the 1s interval.
+ f.setBlocked(true);await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.computations(),0);
+ f.setTime(100+COMPUTER_TIMING.renewAfterMs+1);f.setBlocked(false);
+ await f.session.tick();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.controls.filter(value=>value.action==='renew').length,1);
+ assert.equal(f.computations(),1);
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.submissions(),1);assert.equal(f.saved.length,1);
+});
+
+test('ordinary same-scope revision invalidation preserves only an idle gameplay runtime',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();
+ const work=f.session.tick();f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;
+ f.advanceRevision();const next=f.session.tick();await Promise.resolve();
+ const cancellation=f.cancelEvents.findLast(event=>event.reason==='position-or-control-changed');
+ assert.deepEqual(cancellation?.options,{preserveIdle:true});
+ f.session.suspend();await next;
+});
 
 test('only repeated raw progress may defer presentation while phase and authority notifications remain immediate',async t=>{
  const events=[],f=fixture({onChange:event=>events.push(event)});t.after(()=>f.session.destroy());await f.session.tick();
@@ -430,13 +467,14 @@ for (const phase of ['recovery', 'slow']) for (const change of ['switchGame', 'c
       return originalControl(id, request);
     };
     const acquisition = f.session.tick(); await sent; clean();
-    release(); await acquisition; await previousWork; clean();
-    // A new owner scope may compute after acquisition, including a transport
-    // replacement whose game/revision key is identical to the old recovery key.
-    const nextWork = f.session.tick();
+    release(); await acquisition; await previousWork;
+    await Promise.resolve();await Promise.resolve();await Promise.resolve();
+    // A successful acquisition wakes the new owner scope without waiting for
+    // the fallback interval, including when its key resembles old feedback.
     assert.equal(f.session.snapshot().phase, 'preparing');
     assert.equal(f.session.snapshot().elapsedMs, 0);
-    f.session.suspend(); await nextWork; f.session.destroy();
+    const computations=f.computations();await f.session.tick();assert.equal(f.computations(),computations);
+    f.session.suspend();f.session.destroy();
   });
 }
 
