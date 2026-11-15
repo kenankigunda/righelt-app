@@ -268,7 +268,8 @@ for(const width of [390,1440])test(`live opponent overview preserves play and vi
  const {owner,opponent,gameId,board,cell}=await createOverviewFriendGame({ownedRoleContext,baseURL,width});
  await expect(board.locator('.cell.source,.cell.target,.axis-strong,.axis-medium')).toHaveCount(0);
  await expect(opponent.getByTestId('history-return-live')).toHaveCount(0);
- await expect(replayButton(opponent)).toBeVisible();
+ if(width===1440)await expect(replayButton(opponent)).toBeVisible();
+ else await expect(opponent.locator('[data-incoming-context],.incoming-move-flyout,.history-incoming,[data-action="toggle-incoming-narration"]')).toHaveCount(0);
  await opponent.screenshot({path:info.outputPath(`live-overview-${width}.png`),fullPage:true});
  const before=await projected(opponent,gameId),writes=[];
  const watch=request=>{if(isOperationRequest(request,'apply')||isOperationRequest(request,'end-turn'))writes.push(request.postDataJSON());};opponent.on('request',watch);
@@ -279,7 +280,9 @@ for(const width of [390,1440])test(`live opponent overview preserves play and vi
  await cell({row:0,col:9}).click();await expectLiveOverview(opponent,board,false);
  await expect(label(opponent)).not.toHaveAttribute('data-loading-state','pending');await cell(empty()).click();await expectLiveOverview(opponent,board,true);
  await cell(own.position).click();await expectLiveOverview(opponent,board,false);
- await expect(label(opponent)).not.toHaveAttribute('data-loading-state','pending');await cell(empty()).click();await expect(replayButton(opponent)).toBeVisible();
+ await expect(label(opponent)).not.toHaveAttribute('data-loading-state','pending');await cell(empty()).click();
+ if(width===1440)await expect(replayButton(opponent)).toBeVisible();
+ else await expect(opponent.locator('[data-incoming-context],.incoming-move-flyout,.history-incoming,[data-action="toggle-incoming-narration"]')).toHaveCount(0);
  await expectLiveOverview(opponent,board,true);
  assertUnchanged(before,await projected(opponent,gameId));expect(writes).toEqual([]);opponent.off('request',watch);
  await opponent.reload();await expect(opponent.getByTestId('game-shell')).toBeVisible();await switchGamePanel(opponent,'board');
