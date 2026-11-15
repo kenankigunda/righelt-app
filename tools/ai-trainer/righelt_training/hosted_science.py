@@ -158,9 +158,10 @@ def evaluate(plan,directory,execution,work_ids,*,seconds,player=None):
     from .evaluation import prospective_report
     from .export_runtime import ExportedModel
     component=plan.get('developmentAssessment');assessment=None;assessment_ids=[]
+    scope=execution.get('scientific',{}).get('evaluationScope')
+    if scope in ('validation','final'):context,read_object=execution_objects(execution)
     if component is not None:
         from .development_assessment import work_ids as development_work_ids
-        context,read_object=execution_objects(execution)
         index=json.loads(read_object(component['indexSha256']));assessment_ids=development_work_ids(index)
         if work_ids!=assessment_ids+[j['id'] for j in plan.get('schedule',[])]:raise ValueError('frozen validation assessment/game inventory differs')
     elif execution.get('scientific',{}).get('evaluationScope')=='validation':raise ValueError('actual candidate assessment required for validation')
@@ -171,14 +172,16 @@ def evaluate(plan,directory,execution,work_ids,*,seconds,player=None):
         models[role]=ExportedModel(plan['models'][role])
     if plan['models']['candidate']['sha256']!=plan['candidateSha256']:raise ValueError('evaluation candidate differs from lock')
     deadline=started+seconds;records=[];receipts=[];paths=[]
-    if component is not None:
-        from .development_assessment import produce_assessment
+    if scope in ('validation','final'):
         phase_end=context.get('phaseDeadline');phase_seconds=context.get('phaseSeconds')
         if (type(phase_end) not in (int,float) or not math.isfinite(phase_end) or type(phase_seconds) not in (int,float)
-                or not math.isfinite(phase_seconds) or not 0<component['seconds']<phase_seconds):raise ValueError('original bounded validation phase clock required')
+                or not math.isfinite(phase_seconds) or phase_seconds<=0):raise ValueError('original bounded evaluation phase clock required')
         # The controller keeps this origin unchanged through every replacement.
         wall_remaining=phase_end/1000-time.time()
         deadline=min(deadline,time.monotonic()+wall_remaining)
+    if component is not None:
+        from .development_assessment import produce_assessment
+        if not 0<component['seconds']<phase_seconds:raise ValueError('original bounded validation assessment required')
         assessment_deadline=min(deadline,time.monotonic()+wall_remaining-phase_seconds+component['seconds'])
         assessment=produce_assessment(component,execution,model=models['candidate'],model_sha256=plan['candidateSha256'],device=device,
             before_model=models['opponent'],before_model_sha256=plan['models']['opponent']['sha256'],purpose='candidate-regression',
