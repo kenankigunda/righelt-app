@@ -24,7 +24,7 @@ export class RunpodCleanup {
     while(path){
       assert(!seen.has(path)&&seen.size<100,'queued inventory pagination incomplete');seen.add(path);
       const data=await this.request(path);assert(Array.isArray(data?.queuedPods)&&typeof data.pagination?.hasNextPage==='boolean','queued inventory unavailable');
-      for(const r of data.queuedPods){assert(typeof r.id==='string'&&typeof r.name==='string'&&['QUEUED','DEPLOYED','FAILED','EXPIRED','CANCELLED'].includes(r.status)&&(r.podId===null||typeof r.podId==='string'),'queued identity unavailable');all.push(r);}
+      for(const r of data.queuedPods){assert(typeof r.id==='string'&&/^[A-Za-z0-9_-]+$/.test(r.id)&&typeof r.name==='string'&&['QUEUED','DEPLOYED','FAILED','EXPIRED','CANCELLED'].includes(r.status)&&(r.podId===null||typeof r.podId==='string'&&/^[A-Za-z0-9_-]+$/.test(r.podId))&&(r.status!=='DEPLOYED'||r.podId),'queued identity unavailable');all.push(r);}
       assert(!data.pagination.hasNextPage||typeof data.pagination.nextCursor==='string'&&data.pagination.nextCursor.length>0&&data.pagination.nextCursor.length<2048,'queued cursor missing');
       path=data.pagination.hasNextPage?`/queued-pods?limit=100&cursor=${encodeURIComponent(data.pagination.nextCursor).replace(/[!'()*]/g,c=>`%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`:null;
     }
@@ -36,7 +36,7 @@ export class RunpodCleanup {
     // DELETE cannot terminate a Pod already created by the scheduler. Always
     // reread its result and reconcile every known Pod ID through exact ownership.
     const after=await this.inspectQueued(id);
-    assert(after&&after.id===id&&after.name===name&&after.status!=='QUEUED','queued cancellation unresolved');
+    assert(after&&after.id===id&&after.name===name&&['DEPLOYED','FAILED','EXPIRED','CANCELLED'].includes(after.status)&&(after.podId===null||typeof after.podId==='string'&&/^[A-Za-z0-9_-]+$/.test(after.podId))&&(after.status!=='DEPLOYED'||after.podId),'queued cancellation unresolved');
     for(const podId of new Set([before.podId,after.podId].filter(Boolean)))await this.terminate(podId,name);
     return {id,name,status:after.status,podId:after.podId};
   }
