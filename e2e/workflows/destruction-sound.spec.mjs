@@ -113,7 +113,9 @@ test.describe('retained local destruction audio',()=>{
   await switchGamePanel(viewer,'history');await viewer.getByTestId('history-move-item').first().locator(':scope > .history-move-hit').click();await expect(viewer.locator('#shell-board .history-destruction-piece')).toHaveCount(2);expect(await crackStarts(viewer)).toHaveLength(0);
   await returnToLive(viewer);await switchGamePanel(viewer,'board');await viewer.emulateMedia({reducedMotion:'reduce'});
   await viewer.locator('#app [data-board-context]').getByRole('button',{name:'Show me again',exact:true}).click();await expect(viewer.locator('.computer-replay')).toBeVisible();
-  await viewer.locator('#shell-board-preview-label').getByRole('button',{name:'Stop replay',exact:true}).click();expect(await crackStarts(viewer)).toHaveLength(0);
+  const nextReplayStep=viewer.locator('#shell-board-preview-label').getByRole('button',{name:'Next',exact:true});
+  for(let step=0;step<20&&await viewer.locator('.computer-replay').count();step++){await expect(nextReplayStep).toBeVisible();await nextReplayStep.click();}
+  await expect(viewer.locator('.computer-replay')).toHaveCount(0);expect(await crackStarts(viewer)).toHaveLength(0);
   await retain('owner',owner,'before-mute');await retain('viewer',viewer,'history-and-replay');
   accepted=Object.freeze({gameId:first.gameId,identityId:await owner.evaluate(()=>localStorage.getItem('righelt.identity.id.v1')),gameplayRevision:(await projected(owner,first.gameId)).gameplayRevision,viewerInitiallyActive});
   const proof=JSON.stringify({browserName,phase:'unmuted',localCracks:1,initialViewerActive:viewerInitiallyActive,initialViewerCracks:viewerInitiallyActive?1:0,nativeBackgroundObserved:!viewerInitiallyActive,duplicateCracks:0,reloadHistoryReplayCracks:0,systemMute:'unchanged; no audible audition claimed'},null,2);

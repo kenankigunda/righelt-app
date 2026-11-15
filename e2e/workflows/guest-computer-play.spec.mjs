@@ -10,6 +10,22 @@ import {submitPlayableAction,selectPlayableAction,switchGamePanel,waitForLegacyI
 import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
 import {waitForPlayableBoard} from '../../scripts/validation/browser-navigation.mjs';
 const projected=(page,id)=>page.evaluate(readProjectedGame,{id,guest:true});
+const previousTurnControl=page=>page.locator('[data-previous-turn-key]');
+const replayTrigger=async(page,width)=>{
+  if(width>430)return page.getByRole('button',{name:'Show me again',exact:true});
+  const control=previousTurnControl(page);
+  await expect(control).toBeVisible();
+  await control.click();
+  await expect(control).toHaveAccessibleName('Replay previous opponent turn');
+  return control;
+};
+const finishManualReplay=async page=>{
+  const next=page.getByRole('button',{name:'Next',exact:true});
+  for(let step=0;step<20&&await page.locator('.computer-replay').count();step++){
+    await expect(next).toBeVisible();await next.click();
+  }
+  await expect(page.locator('.computer-replay')).toHaveCount(0);
+};
 
 const assertFullBoardGeometry = async (page, info, phase) => {
   await expect(page.locator('#shell-board .cell')).toHaveCount(100);
@@ -138,7 +154,8 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   await expect.poll(async () => (await projected(page, initial.id)).moves.length).toBeGreaterThan(0);
   if ((await projected(page, initial.id)).canEndTurn) await page.locator('[data-board-preview-action="end-turn"]').click();
   await waitForComputerDecision(page, initial.id, 'babs', {guest:true,modelId:initial.computer.modelId});
-  await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible({timeout:30000});
+  if(width>430)await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible({timeout:30000});
+  else await expect(previousTurnControl(page)).toBeVisible({timeout:30000});
   // Keep every native frame through the final narration height transition.
   // Semantic copy may grow; its board-to-message gap and full fit may not drift.
   await settledMessage(page);
@@ -179,19 +196,19 @@ for (const width of [320, 390, 430, 1440]) test.describe(`retained guest compute
   expect(beforeReplay.id).toBe(initial.id);
   expect(beforeReplay.moves.some(move=>move.computerProof?.modelId===initial.computer.modelId)).toBe(true);
   try {
-    await page.getByRole('button',{name:'Show me again',exact:true}).click();
+    await (await replayTrigger(page,width)).click();
     await expect(page.locator('.computer-replay')).toBeVisible();
-    await expect(page.getByRole('button',{name:'Stop replay',exact:true})).toBeVisible();
+    await expect(page.getByRole('button',{name:'Stop replay',exact:true})).toHaveCount(0);
     await page.screenshot({path:info.outputPath('computer-turn-replay.png')});
     // A short animated turn may finish during screenshot capture. Verify its
-    // natural completion; the manual replay below exercises explicit Stop.
+    // natural completion; the manual replay below exercises step completion.
     await expect(page.locator('.computer-replay')).toHaveCount(0);
-    await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
+    if(width>430)await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
+    else await expect(previousTurnControl(page)).toHaveAccessibleName('Changes by opponent. Activate to emphasize changed squares');
     await assertReplayIntegrity({writes,before:beforeReplay,after:await projected(page,initial.id)});
     await page.emulateMedia({reducedMotion:'reduce'});
-    await page.getByRole('button',{name:'Show me again',exact:true}).click();
-    await expect(page.getByRole('button',{name:'Next',exact:true})).toBeVisible();
-    await page.getByRole('button',{name:'Stop replay',exact:true}).click();
+    await (await replayTrigger(page,width)).click();
+    await finishManualReplay(page);
     await assertReplayIntegrity({writes,before:beforeReplay,after:await projected(page,initial.id)});
     await page.emulateMedia({reducedMotion:'no-preference'});
   } finally {page.off('request',observeReplay);observeReplay=null;}

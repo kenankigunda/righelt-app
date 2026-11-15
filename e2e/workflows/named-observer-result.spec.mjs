@@ -62,7 +62,10 @@ test('a guest observer sees named results while the two-sided owner retains winn
   await expect(observerResult.getByText('Guest 2’s commander lost its supply.',{exact:false})).toBeVisible();
   await expect(observerResult.getByRole('heading',{name:'You won as Red',exact:true})).toHaveCount(0);
   await expect(observerResult.locator('h1 bdi')).toHaveText('Guest 1 won as Red');
-  await expect(observerResult.locator('p').filter({hasText:'vs'})).toHaveText('Red: Guest 1 vs Blue: Guest 2');
+  const resultMatchup=observerResult.locator('.game-title-matchup');
+  await expect(resultMatchup.locator('.game-title-player bdi')).toHaveText('Guest 1');
+  await expect(resultMatchup.locator(':scope > span').last()).toHaveText('plays both sides');
+  await expect(resultMatchup.locator('.sr-only')).toHaveText('Red:');
   // Neutral observers retain the ink mark; victory color belongs to the owner.
   await viewer.screenshot({path:info.outputPath('guest-observer-result.png')});
   await observerResult.getByRole('button',{name:'Review game',exact:true}).click();await switchGamePanel(viewer,'history');

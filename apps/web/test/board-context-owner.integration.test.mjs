@@ -83,7 +83,7 @@ function fixture(t){
   while(queued.length)queued.shift()();await Promise.resolve();
   while(queued.length)queued.shift()();await Promise.resolve();
  };while(queued.length)queued.shift()();admissions.length=0;
- return {c,doc,win,context,board,button,dismiss,root,requests,plays,reveals,admissions,renders,meta,flush,notifyMutations:()=>{for(const observer of [...observers])observer.callback([]);},releaseArchive:()=>resolveArchive({items:[{id:context.view.moves[0].moveId,move:{...context.view.moves[0],index:0,turnMoveIndex:0,selectionSnapshot:{pieces:[],sideToMove:'P1'},snapshot:{pieces:[],sideToMove:'P2'}}}],nextCursor:null}),descriptor:()=>captureDisplayedReplay({game:context.view,owner:transport,scope:c.scope(),identityId:'me'})};
+ return {c,doc,win,context,board,button,dismiss,root,requests,plays,reveals,admissions,renders,meta,flush,observerCount:()=>observers.size,notifyMutations:()=>{for(const observer of [...observers])observer.callback([]);},releaseArchive:()=>resolveArchive({items:[{id:context.view.moves[0].moveId,move:{...context.view.moves[0],index:0,turnMoveIndex:0,selectionSnapshot:{pieces:[],sideToMove:'P1'},snapshot:{pieces:[],sideToMove:'P2'}}}],nextCursor:null}),descriptor:()=>captureDisplayedReplay({game:context.view,owner:transport,scope:c.scope(),identityId:'me'})};
 }
 
 test('actual queued context refresh invokes the real recovery helper before layout and coalesces changes',async t=>{
@@ -145,14 +145,23 @@ test('same-intent replay completion returns focus with explicit pointer-mode vis
  const f=fixture(t);f.button.focus();const pending=f.c.replay(f.descriptor(),f.button);f.releaseArchive();await pending;await f.flush();assert.equal(f.plays.length,1);assert.deepEqual(f.plays[0].frames.map(frame=>frame.decisionId),['move']);assert.deepEqual(f.plays[0].frames[0].after,{pieces:[],sideToMove:'P2'});assert.equal(f.doc.activeElement,f.button);assert.deepEqual(f.reveals,[f.button]);
 });
 
-test('incoming replay completion returns focus to its rerendered live action',async t=>{
- const f=fixture(t),descriptor=f.descriptor(),replacement={...f.button,isConnected:true,dataset:{action:'replay-board-context',boardContextKey:descriptor.key},focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
+test('incoming replay completion prefers its current keyed action over a stale connected trigger',async t=>{
+ const f=fixture(t),descriptor=f.descriptor(),replacement={...f.button,isConnected:true,dataset:{action:'replay-board-context',boardContextKey:descriptor.key},getClientRects:()=>[{}],focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
  f.button.dataset={...replacement.dataset};f.button.closest=selector=>selector.includes('[data-incoming-context]')?{}:null;f.button.focus();
- const querySelector=f.context.appEl.querySelector.bind(f.context.appEl);
- let replacementSelector=null;f.context.appEl.querySelector=selector=>{if(selector.includes(`[data-board-context-key="${descriptor.key}"]`)){replacementSelector=selector;return replacement;}return querySelector(selector);};
- f.context.beforeReplayFinish=()=>{f.button.isConnected=false;f.doc.activeElement=f.doc.body;};
+ const querySelectorAll=f.context.appEl.querySelectorAll.bind(f.context.appEl);
+ let replacementSelector=null;f.button.getClientRects=()=>[];f.context.appEl.querySelectorAll=selector=>{if(selector.includes(`[data-board-context-key="${descriptor.key}"]`)){replacementSelector=selector;return [f.button,replacement];}return querySelectorAll(selector);};
+ f.context.beforeReplayFinish=()=>{f.button.closest=selector=>selector.includes('[data-incoming-context]')||selector.includes('[inert]')?{}:null;f.doc.activeElement=f.doc.body;};
  const pending=f.c.replay(descriptor,f.button);f.releaseArchive();await pending;await f.flush();
  assert.equal(f.plays.length,1);assert.match(replacementSelector,/^\[data-incoming-context\]/);assert.equal(f.doc.activeElement,replacement);assert.deepEqual(f.reveals,[replacement]);
+});
+
+test('a newer replay retires an older deferred focus return before its mutation or timeout can steal focus',async t=>{
+ const f=fixture(t),descriptor=f.descriptor();f.button.dataset={action:'replay-board-context',boardContextKey:descriptor.key};f.button.closest=selector=>selector.includes('[data-incoming-context]')?{}:null;f.button.focus();
+ f.context.beforeReplayFinish=()=>{f.button.disabled=true;f.button.closest=selector=>selector.includes('[data-incoming-context]')||selector.includes('[inert]')?{}:null;f.doc.activeElement=f.doc.body;};
+ const first=f.c.replay(descriptor,f.button);f.releaseArchive();await first;assert.equal(f.observerCount(),1);assert(f.context.presentation.state.activeReplayFocusCleanup);
+ const next={isConnected:true,disabled:false,dataset:{...f.button.dataset},getClientRects:()=>[{}],closest:selector=>selector.includes('#shell-board-preview-label')?{}:null,focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
+ f.context.beforeReplayFinish=null;next.focus();await f.c.replay(descriptor,next);await f.flush();assert.equal(f.observerCount(),0);assert.equal(f.doc.activeElement,next);assert.equal(f.context.presentation.state.activeReplayFocusCleanup,null);
+ f.notifyMutations();assert.equal(f.doc.activeElement,next);
 });
 
 test('keyboard-owned Stop replay returns to the visible live incoming action after synchronous removal',async t=>{

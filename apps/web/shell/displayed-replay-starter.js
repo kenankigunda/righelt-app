@@ -16,8 +16,11 @@ export function createDisplayedReplayStarter(getDependencies,{createReplay=creat
   const context=p.currentReplayContext(),{gameId,owner,revision,lineageHead}=context;
   state.activeReplayFocusCleanup?.();
   const liveFocusTarget=displayedReplayFocusTarget(trigger);
-  const focusReturn=p.focus.begin(trigger,{allows:displayedReplayFocusTarget,allowRemoval:liveFocusTarget});
-  state.activeReplayFocusCleanup=focusReturn.release;state.activeDisplayedReplay=descriptor;
+  let focusObserver=null,focusTimer=null,focusReturn=null;
+  const cleanupFocusWait=()=>{focusObserver?.disconnect();focusObserver=null;if(focusTimer!==null)d.document.defaultView.clearTimeout(focusTimer);focusTimer=null;};
+  const releaseFocusReturn=()=>{cleanupFocusWait();focusReturn?.release();if(state.activeReplayFocusCleanup===releaseFocusReturn)state.activeReplayFocusCleanup=null;};
+  focusReturn=p.focus.begin(trigger,{allows:displayedReplayFocusTarget,allowRemoval:liveFocusTarget,allowDeferredRemoval:liveFocusTarget,onRetire:()=>{cleanupFocusWait();if(state.activeReplayFocusCleanup===releaseFocusReturn)state.activeReplayFocusCleanup=null;}});
+  state.activeReplayFocusCleanup=releaseFocusReturn;state.activeDisplayedReplay=descriptor;
   const intent=p.owner.capture(),token=d.replayRequests.begin(context);
   const stillCurrent=()=>p.owner.current(intent)&&d.replayRequests.current(token,p.currentReplayContext())&&p.canReplayDisplayed(descriptor);
   let moves=descriptor.moves;
@@ -26,30 +29,39 @@ export function createDisplayedReplayStarter(getDependencies,{createReplay=creat
   if(!payload){
    let entries=[],cursor=null;
    try{
-    do{const page=await owner.decisionHistory(gameId,cursor);if(!stillCurrent()){focusReturn.release();return;}entries.push(...page.items);cursor=page.nextCursor;}while(cursor);
+    do{const page=await owner.decisionHistory(gameId,cursor);if(!stillCurrent()){releaseFocusReturn();return;}entries.push(...page.items);cursor=page.nextCursor;}while(cursor);
     moves=activeDecisionLineage(entries);
-    if(!replayArchiveMatches(descriptor,moves)){d.replayRequests.fail(token,p.currentReplayContext());focusReturn.release();return;}
+    if(!replayArchiveMatches(descriptor,moves)){d.replayRequests.fail(token,p.currentReplayContext());releaseFocusReturn();return;}
     payload=buildPayload();
-   }catch{d.replayRequests.fail(token,p.currentReplayContext());focusReturn.release();return;}
+   }catch{d.replayRequests.fail(token,p.currentReplayContext());releaseFocusReturn();return;}
   }
-  if(!stillCurrent()){d.replayRequests.reconcile(p.currentReplayContext());focusReturn.release();return;}
-  if(!payload){d.replayRequests.fail(token,p.currentReplayContext());focusReturn.release();return;}
-  if(!d.replayRequests.ready(token,p.currentReplayContext())){focusReturn.release();return;}
+  if(!stillCurrent()){d.replayRequests.reconcile(p.currentReplayContext());releaseFocusReturn();return;}
+  if(!payload){d.replayRequests.fail(token,p.currentReplayContext());releaseFocusReturn();return;}
+  if(!d.replayRequests.ready(token,p.currentReplayContext())){releaseFocusReturn();return;}
   getDependencies().replayController?.destroy();
-  const rootEl=d.appEl.querySelector('[data-testid="game-board-wrap"]');if(!rootEl){focusReturn.release();return;}
+  const rootEl=d.appEl.querySelector('[data-testid="game-board-wrap"]');if(!rootEl){releaseFocusReturn();return;}
   const host=trigger?.closest('.history-live-replay')?'history':trigger?.closest('[data-incoming-context]')?'incoming':trigger?.closest('[data-board-context]')?'context':'board';
   const refresh=playing=>{const live=getDependencies();live.boardRuntime?.setInteractionBlocked(playing||live.forcedFollowWorking(gameId)||Boolean(live.confirmedPlayback?.snapshot().playing));live.boardRuntime?.refreshStatus();p.queue();};
+  const availableFocusTarget=()=>{
+   const selector=`[data-board-context-key="${d.CSS.escape(descriptor.key)}"]`;
+   const hostSelector=host==='incoming'?`[data-incoming-context] ${selector}`:host==='context'?`[data-board-context] ${selector}`:host==='history'?`.history-live-replay ${selector}`:null;
+   const available=target=>Boolean(target?.isConnected&&!target.disabled&&!target.closest('[inert],[hidden],[aria-hidden="true"]')&&(!target.getClientRects||target.getClientRects().length));
+   const current=hostSelector?[...(d.appEl.querySelectorAll?.(hostSelector)??[])].find(available):null;
+   return current??(available(trigger)?trigger:null);
+  };
   const finish=()=>{
    refresh(false);state.activeDisplayedReplay=null;
-   if(p.canReplayDisplayed(descriptor))focusReturn.restore(()=>{
-    const selector=`[data-board-context-key="${d.CSS.escape(descriptor.key)}"]`;
-    const target=trigger?.isConnected?trigger:host==='incoming'?d.appEl.querySelector(`[data-incoming-context] ${selector}`):host==='context'?d.appEl.querySelector(`[data-board-context] ${selector}`):host==='history'?d.appEl.querySelector(`.history-live-replay ${selector}`):null;
-    return target&&!target.closest('[inert]')?target:p.boardFocusTarget();
-   });else focusReturn.release();
-   if(state.activeReplayFocusCleanup===focusReturn.release)state.activeReplayFocusCleanup=null;
+   if(p.canReplayDisplayed(descriptor)){
+    const settle=()=>{if(!focusReturn.current()){releaseFocusReturn();return true;}const target=availableFocusTarget();if(!target)return false;cleanupFocusWait();focusReturn.restoreNow(()=>target);return true;};
+    if(!settle()){
+     const Observer=d.document.defaultView.MutationObserver;if(Observer){focusObserver=new Observer(settle);focusObserver.observe(d.appEl,{subtree:true,childList:true,attributes:true,attributeFilter:['disabled','inert','hidden','aria-hidden']});}
+     d.document.defaultView.queueMicrotask?.(settle);
+     focusTimer=d.document.defaultView.setTimeout(()=>{if(!settle()){cleanupFocusWait();focusReturn.restoreNow(p.boardFocusTarget);}},2000);
+    }
+   }else releaseFocusReturn();
   };
   const controller=createReplay({rootEl,createAdapter:()=>d.createEngineBoardAdapter(),reducedMotion:d.prefersReducedMotion,onChange:replay=>{
-   if(replay.playing)refresh(true);else focusReturn.renderOwnedRemoval(()=>refresh(false));
+   if(replay.playing)refresh(true);else{state.activeDisplayedReplay=null;focusReturn.renderOwnedRemoval(()=>refresh(false));}
   },onFinish:finish});
   d.setReplayController(controller);
   try{await controller.play(payload);}catch{controller.stop('error');d.replayRequests.fail(token,p.currentReplayContext());}
