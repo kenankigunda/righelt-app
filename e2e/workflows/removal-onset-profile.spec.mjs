@@ -25,25 +25,33 @@ const persistTrace=async(name,value)=>{
 };
 
 function armNativeRemovalTrace(expectedCount){
- let first=null,painted=false,advanced=false,frameId=null;
+ let initial=null,candidate=null,painted=false,advanced=false,frameId=null,replacementCount=0;
  const mark=(phase,fields={})=>{try{globalThis.__righeltRemovalTraceMark?.(phase,fields);}catch{}};
  const inspect=()=>{
   const nodes=[...document.querySelectorAll('#shell-board .removal-piece')];
   if(nodes.length!==expectedCount)return;
   const animations=nodes.map(node=>node.getAnimations()[0]),times=animations.map(animation=>animation?.currentTime);
-  if(!first&&animations.every(Boolean)&&times.every(time=>typeof time==='number')){
-   first={nodes,animations,times};
+  if(!initial&&animations.every(Boolean)){
+   initial={nodes,animations};
    mark('removal-dom-observed',{removalCount:nodes.length});
+  }
+  if(initial){
+   const nodesRetained=nodes.every((node,index)=>node===initial.nodes[index]),animationsRetained=animations.every((animation,index)=>animation===initial.animations[index]);
+   if((!nodesRetained||!animationsRetained)&&replacementCount===0){replacementCount=1;mark('effect-continuity',{removalCount:expectedCount,nodesRetained,animationsRetained,replacementCount});}
+  }
+  if(animations.every(Boolean)&&times.every(time=>typeof time==='number')){
+   const candidateChanged=candidate&&(!nodes.every((node,index)=>node===candidate.nodes[index])||!animations.every((animation,index)=>animation===candidate.animations[index]));
+   if(!candidate||candidateChanged)candidate={nodes,animations,times};
   }
  };
  const frame=()=>{
   frameId=null;inspect();
-  if(first&&!painted){painted=true;mark('paint-opportunity',{removalCount:expectedCount});}
-  if(first&&!advanced){
-   const current=first.nodes.map(node=>node.getAnimations()[0]);
+  if(candidate&&!painted){painted=true;mark('paint-opportunity',{removalCount:expectedCount});}
+  if(candidate&&!advanced){
+   const current=candidate.nodes.map(node=>node.getAnimations()[0]);
    const times=current.map(animation=>animation?.currentTime);
-   if(current.every((animation,index)=>animation===first.animations[index])&&times.every((time,index)=>typeof time==='number'&&typeof first.times[index]==='number'&&time>first.times[index])){
-    advanced=true;mark('native-animation-advanced',{removalCount:expectedCount});observer.disconnect();return;
+   if(current.every((animation,index)=>animation===candidate.animations[index])&&times.every((time,index)=>typeof time==='number'&&typeof candidate.times[index]==='number'&&time>candidate.times[index])){
+    advanced=true;mark('native-animation-advanced',{removalCount:expectedCount,nodesRetained:initial.nodes.every((node,index)=>node===candidate.nodes[index]),animationsRetained:initial.animations.every((animation,index)=>animation===candidate.animations[index]),replacementCount});observer.disconnect();return;
    }
   }
   frameId=requestAnimationFrame(frame);

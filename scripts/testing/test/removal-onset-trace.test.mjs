@@ -24,11 +24,13 @@ test('recorder is bounded, scalar-only and cannot escape through hostile fields'
  const context={performance:{now:()=>++now,timeOrigin:12},Element:class{},document:{addEventListener(type,handler){listeners[type]=handler;}},Set,Object,Number,Array};
  vm.createContext(context);vm.runInContext(`(${installRemovalOnsetRecorder.toString()})()`,context);
  assert.equal(context.__righeltRemovalTraceArm({expectedCount:5}),true);
+ assert.doesNotThrow(()=>context.__righeltRemovalTraceMark('authoritative-subscriber',{gameplayRevision:12,eventSeq:34}));
+ assert.doesNotThrow(()=>context.__righeltRemovalTraceMark('effect-continuity',{nodesRetained:false,animationsRetained:true,replacementCount:1}));
  assert.doesNotThrow(()=>context.__righeltRemovalTraceMark('board-commit-entry',{removalCount:5,actionable:false,secret:'discard'}));
  assert.doesNotThrow(()=>context.__righeltRemovalTraceMark('not-allowed',{get removalCount(){throw Error('sink');}}));
  for(let index=0;index<300;index++)context.__righeltRemovalTraceMark('paint-opportunity');
  const snapshot=context.__righeltRemovalTraceSnapshot();
- assert.equal(snapshot.records.length,256);assert.equal(snapshot.dropped,45);assert.equal(snapshot.incomplete,true);
+ assert.equal(snapshot.records.length,256);assert.equal(snapshot.dropped,47);assert.equal(snapshot.incomplete,true);
  assert.equal(JSON.stringify(snapshot).includes('secret'),false);assert.equal(snapshot.origin,12);
  assert.equal(context.__righeltRemovalTraceArm({expectedCount:8}),false);
 });

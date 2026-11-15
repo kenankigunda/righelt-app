@@ -3776,6 +3776,31 @@ test("enabling reduced motion settles the owned effect once and preserves pendin
   }
 });
 
+test("unchanged empty pending removals do not redraw the full Board", async () => {
+  const renders = [];
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      unmount: noop,
+      render: payload => renders.push(payload),
+      getSelectedPieceSummary: () => null,
+      getPieceById: () => null,
+      getPieceAt: () => null,
+    },
+    host: { canInteract: () => true },
+  });
+  runtime.bindElements({ boardEl: {}, overlayLinesEl: {}, boardPreviewLabelEl: null, boardTurnIndicatorEl: null });
+  await runtime.loadSnapshot(
+    { sideToMove: "P1", turnIndex: 1, continuation: null, outcome: null, pieces: [] },
+    { legalActions: [] },
+  );
+  const before = renders.length;
+  runtime.setPendingRemovalEffects([], null);
+  runtime.setPendingRemovalEffects([], null);
+  assert.equal(renders.length, before);
+  destroyUninitializedNodeRuntime(runtime);
+});
+
 test("board runtime refreshes a preserved branch selection from the new legal actions", async () => {
   const action = { type: "move", actorId: "A1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } };
   const snapshot = {

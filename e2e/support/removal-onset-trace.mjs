@@ -16,8 +16,8 @@ export function transformRemovalOnsetModule(source,recipe){
 }
 
 export function installRemovalOnsetRecorder(){
- const phases=new Set(['input-activated','authoritative-subscriber','board-commit-entry','board-commit-exit','visual-commit-entry','visual-commit-exit','cue-schedule-entry','cue-schedule-exit','audio-source-start','removal-dom-observed','paint-opportunity','native-animation-advanced']);
- const allowedFields=new Set(['removalCount','actionable','duration','expectedCount']);
+ const phases=new Set(['input-activated','authoritative-subscriber','board-commit-entry','board-commit-exit','visual-commit-entry','visual-commit-exit','cue-schedule-entry','cue-schedule-exit','audio-source-start','removal-dom-observed','effect-continuity','paint-opportunity','native-animation-advanced']);
+ const allowedFields=new Set(['removalCount','actionable','duration','expectedCount','gameplayRevision','eventSeq','nodesRetained','animationsRetained','replacementCount']);
  let records=[],armed=false,expectedCount=null,dropped=0,incomplete=false,sequence=0;
  const note=(phase,fields={})=>{
   try{

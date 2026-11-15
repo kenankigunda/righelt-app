@@ -1197,7 +1197,9 @@ export function createBoardRuntime({
   };
 
   const setPendingRemovalEffects = (effects, previousState = state) => {
-    pendingRemovalEffects = (effects ?? []).filter(effect => !effect.eventId || !playedRemovalEvents.has(effect.eventId)).map(effect => ({...effect,pending:true,piece:effect.piece ?? previousState?.pieces?.find(piece => piece.id === effect.pieceId) ?? null}));
+    const nextPendingRemovalEffects = (effects ?? []).filter(effect => !effect.eventId || !playedRemovalEvents.has(effect.eventId)).map(effect => ({...effect,pending:true,piece:effect.piece ?? previousState?.pieces?.find(piece => piece.id === effect.pieceId) ?? null}));
+    if (!pendingRemovalEffects.length && !nextPendingRemovalEffects.length) return;
+    pendingRemovalEffects = nextPendingRemovalEffects;
     renderBoard();
   };
 
