@@ -6,6 +6,7 @@ import { validateScientificAdmission } from './experiment.mjs';
 import { backupCollection,restoreBackup,collectAccepted } from './backup-client.mjs';
 import { operatorVault,operatorEncryption,operatorSecret } from './operator-credentials.mjs';
 import { Client } from './client.mjs';
+import {manualStartupArgv} from './manual-start.mjs';
 import { containedFile } from './worker.mjs';
 import { POLICY, assert, canonical, encode, safeName, sha256, validateManifest } from './policy.mjs';
 
@@ -64,7 +65,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, serv
     return { manifest, manifestSha256: await sha256(encode(canonical(manifest))), spendingAuthorized: false,
       runpodCashCeilingCents: POLICY.pilotCents, cloudflareCashCeilingCents: POLICY.cloudflareCents };
   }
-  const manifest = command === 'submit' ? validateManifest(JSON.parse(await fs.readFile(subject))) : null;
+  const manifest = ['submit','manual-stage'].includes(command) ? validateManifest(JSON.parse(await fs.readFile(subject))) : null;
   const id = manifest?.id ?? subject; assert(safeName(id), 'campaign ID required');
   if(['backup','restore','accepted','backup-status','backup-abort'].includes(command)){
     const vault=await (services.operatorVault??operatorVault)(env);
@@ -92,9 +93,23 @@ export async function main(argv = process.argv.slice(2), env = process.env, serv
   }
   const adminBytes=env.COMPUTE_ADMIN_TOKEN?null:await (services.operatorSecret??operatorSecret)('admin-token');
   let client;
-  try{client = new Client({ id, url: env.COMPUTE_URL, token: env.COMPUTE_ADMIN_TOKEN??adminBytes.toString() });}
+  try{client = new Client({ id, url: env.COMPUTE_URL, token: env.COMPUTE_ADMIN_TOKEN??adminBytes.toString(),...(services.fetcher?{fetcher:services.fetcher}:{}) });}
   finally{adminBytes?.fill(0);}
-  if (command === 'submit') {
+  if(command==='manual-prepare'){
+    assert(options['--intent']&&options['--bootstrap'],'private --intent and exclusive --bootstrap required');
+    const intent=await privateJson(path.resolve(options['--intent']));
+    const out=path.resolve(options['--bootstrap']);
+    const parent=await fs.lstat(path.dirname(out));assert(parent.isDirectory()&&!parent.isSymbolicLink()&&(parent.mode&0o077)===0,'private bootstrap directory required');
+    const result=await client.json('manual-prepare',intent);
+    assert(typeof result.workerToken==='string'&&/^[a-f0-9]{64}$/.test(result.workerToken),'manual bootstrap response invalid');
+    await durableWrite(out,encode(canonical({intentSha256:result.intentSha256,workdir:'/workspace/righelt',argv:manualStartupArgv(),env:{COMPUTE_URL:env.COMPUTE_URL,COMPUTE_ID:id,COMPUTE_GENERATION:String(result.generation),COMPUTE_WORKER_TOKEN:result.workerToken,COMPUTE_MANUAL_READY_UNTIL:String(Math.min(intent.createdAt+300000,intent.expiresAt))}})+'\n'));
+    await syncDirectory(path.dirname(out));
+    return {intentSha256:result.intentSha256,generation:result.generation,bootstrapFile:out};
+  }
+  if(command==='manual-attach'){
+    assert(options['--attachment'],'private --attachment required');return client.json('manual-attach',await privateJson(path.resolve(options['--attachment'])));
+  }
+  if (['submit','manual-stage'].includes(command)) {
     assert(options['--inputs'], '--inputs checkout directory required');
     const root = await fs.realpath(options['--inputs']);
     // Validate all local inputs before staging anything remotely.
@@ -105,7 +120,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, serv
     if(manifest.purpose==='scientific-comparison')await validateScientificAdmission(manifest,{read:async input=>fs.readFile(await containedFile(root,input.path))});
     await client.request('manifest', 'PUT', manifest);
     for (const a of manifest.inputs) await client.upload(await fs.readFile(await containedFile(root, a.path)));
-    return client.json('start', {});
+    return command==='manual-stage'?client.json('status'):client.json('start', {});
   }
   if (command === 'logs') {
     const status = await client.json('logs');
