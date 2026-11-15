@@ -239,6 +239,8 @@ export const createLiveTransportStore = ({
   const historyIntentByGameId = new Map();
   const historyCache = new Map();
   const historyRequests = new Map();
+  const historyReadQueue = [];
+  let activeHistoryReads = 0;
   const historyLoads = new Map();
   const sharedWaiters = new Map();
   const listeners = new Set();
@@ -2196,24 +2198,56 @@ export const createLiveTransportStore = ({
   };
 
   const historyKey = (gameId, revision, moveId) => `${gameId}:${revision}:${moveId}`;
-  const loadHistoricalMove = (gameId, revision, moveId) => {
+  const HISTORY_READ_CONCURRENCY = 4;
+  const historyReadError = code => Object.assign(new Error(code),{code});
+  const runHistoryReadQueue = () => {
+    while(active && activeHistoryReads<HISTORY_READ_CONCURRENCY && historyReadQueue.length){
+      const flight=historyReadQueue.shift();
+      if(flight.settled)continue;
+      if(!flight.consumers.size){flight.settled=true;historyRequests.delete(flight.key);flight.reject(historyReadError('history_superseded'));continue;}
+      flight.started=true;activeHistoryReads+=1;
+      boundedRequest(flight.url,flight.init,flight.controller,true).then(flight.transform).then(flight.resolve,flight.reject).finally(()=>{
+        flight.settled=true;activeHistoryReads-=1;if(historyRequests.get(flight.key)===flight)historyRequests.delete(flight.key);runHistoryReadQueue();
+      });
+    }
+  };
+  const optionalHistoryRead = ({key,url,init,consumer,transform=body=>body}) => {
+    const existing=historyRequests.get(key);
+    if(existing){existing.consumers.add(consumer);return existing.promise;}
+    const flight={key,url,init,transform,controller:new AbortController(),consumers:new Set([consumer]),started:false,settled:false,resolve:null,reject:null,promise:null};
+    flight.promise=new Promise((resolve,reject)=>{flight.resolve=resolve;flight.reject=reject;});
+    historyRequests.set(key,flight);historyReadQueue.push(flight);runHistoryReadQueue();return flight.promise;
+  };
+  const retireHistoryConsumer = (consumer,code='history_superseded') => {
+    if(!consumer)return;
+    for(const flight of historyRequests.values()){
+      if(!flight.consumers.delete(consumer)||flight.consumers.size||flight.settled)continue;
+      if(flight.started){historyRequests.delete(flight.key);flight.controller.abort();}
+      else {flight.settled=true;historyRequests.delete(flight.key);flight.reject(historyReadError(code));}
+    }
+    runHistoryReadQueue();
+  };
+  const retireHistoryLoad = gameId => {
+    const owner=historyLoads.get(gameId);
+    if(owner)retireHistoryConsumer(owner);
+    historyLoads.delete(gameId);
+  };
+  const loadHistoricalMove = (gameId, revision, moveId, consumer = {}) => {
     const key = historyKey(gameId, revision, moveId);
     if (historyCache.has(key)) return Promise.resolve(clone(historyCache.get(key)));
-    if (historyRequests.has(key)) return historyRequests.get(key);
-    const request = boundedRequest(`/api/shell/games/${encodeURIComponent(gameId)}/decision-snapshot`, {
+    return optionalHistoryRead({key:`snapshot:${key}`,consumer,url:`/api/shell/games/${encodeURIComponent(gameId)}/decision-snapshot`,init:{
       method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({identityId,decisionId:moveId,gameplayRevision:revision}),
-    }).then(body => {
+    },transform:body => {
       const move = body.move;
       if (body.gameId !== gameId || body.gameplayRevision !== revision || move?.moveId !== moveId || !move.snapshot || !Array.isArray(move.snapshot.pieces) || !["P1","P2"].includes(move.snapshot.sideToMove)) throw new Error("invalid_history_snapshot");
       historyCache.set(key,clone(move));
       while(historyCache.size > SYNC_LIMITS.historyCacheEntries) historyCache.delete(historyCache.keys().next().value);
       return move;
-    }).finally(() => historyRequests.delete(key));
-    historyRequests.set(key,request);return request;
+    }});
   };
   const applyHistorySelection = (gameId, game, moves, selected) => {
     historyIntentByGameId.set(gameId, { moveId: historyMoveKey(selected), clientCommandId: selected.clientCommandId, order: moves.map(historyMoveKey), position: moves.findIndex(move => historyMoveKey(move) === historyMoveKey(selected)), frozen: clone(selected), contextMoves: (game.historyTurnMoves ?? game.historyContextMoves)?.some(move=>move.moveId===selected.moveId) ? game.historyTurnMoves ?? game.historyContextMoves : null, revision: game.gameplayRevision });
-    historyLoads.delete(gameId);
+    retireHistoryLoad(gameId);
     recalculateOptimisticGame(gameId);
     emitChange({ type:"history_mode_changed",gameId });
   };
@@ -2226,15 +2260,16 @@ export const createLiveTransportStore = ({
     const selected = summary.snapshot ? summary : historyCache.get(historyKey(gameId,game.gameplayRevision,summary.moveId));
     if (selected) applyHistorySelection(gameId,frozen ? {...game,gameplayRevision:game.inspectedAtRevision} : game,moves,selected);
     else {
+      const previousOwner=historyLoads.get(gameId);
       const owner = {loading:true,index:moveIndex,error:null};historyLoads.set(gameId,owner);
       recalculateOptimisticGame(gameId);emitChange({type:"history_loading",gameId});
-      return loadHistoricalMove(gameId,game.gameplayRevision,summary.moveId).then(move=>{
+      const request=loadHistoricalMove(gameId,game.gameplayRevision,summary.moveId,owner);
+      retireHistoryConsumer(previousOwner);
+      return request.then(move=>{
         if (!active || historyLoads.get(gameId) !== owner) return getGameViewModel(gameId);
         const current = getGameViewModel(gameId);
         if (current.gameplayRevision !== game.gameplayRevision) throw new Error("history_changed");
         applyHistorySelection(gameId,current,[...current.moves,...(current.pendingMoves??[])],move);
-        // Prefetch only adjacent snapshots, with the same immutable revision key.
-        for(const adjacent of moves.filter(move=>Math.abs(move.index-moveIndex)===1 && !move.snapshot)) void loadHistoricalMove(gameId,game.gameplayRevision,adjacent.moveId).catch(()=>{});
         return getGameViewModel(gameId);
       }).catch(error=>{
         if (!active || historyLoads.get(gameId) !== owner) return getGameViewModel(gameId);
@@ -2248,34 +2283,40 @@ export const createLiveTransportStore = ({
 
   // Read-only presentation hydration. It never changes personal History intent,
   // live authority, or the command queue. Archive records are revision-fenced.
-  const loadTurnMoves = async ({gameId, turnIndex, revision = getGameViewModel(gameId)?.gameplayRevision, isCurrent = () => true}) => {
-    let summaries = (gameById.get(gameId)?.moves ?? getGameViewModel(gameId)?.moves ?? []).filter(move=>move.turnIndex===turnIndex && !move.undone);
-    let archived = false;
-    if (!summaries.length || summaries[0].turnMoveIndex > 0) {
-      archived = true;
-      let entries = [], cursor = null;
-      do {
-        const page = await decisionRequest(gameId,'decision-history',{cursor});
-        if (!active || !isCurrent()) throw new Error('history_superseded');
-        entries.push(...page.items);cursor=page.nextCursor;
-      } while(cursor);
-      summaries=activeDecisionLineage(entries).filter(move=>move.turnIndex===turnIndex);
-    }
-    if (!summaries.length) throw new Error('turn_not_found');
-    const moves=await Promise.all(summaries.map(move=>!archived && move.snapshot ? clone(move) : loadHistoricalMove(gameId,revision,move.moveId)));
-    if (!active || !isCurrent()) throw new Error('history_superseded');
-    if (getGameViewModel(gameId)?.gameplayRevision!==revision) throw new Error('history_changed');
-    return moves;
+  const loadTurnMoves = async ({gameId, turnIndex, revision = getGameViewModel(gameId)?.gameplayRevision, isCurrent = () => true, consumer = {}}) => {
+    try {
+      let summaries = (gameById.get(gameId)?.moves ?? getGameViewModel(gameId)?.moves ?? []).filter(move=>move.turnIndex===turnIndex && !move.undone);
+      let archived = false;
+      if (!summaries.length || summaries[0].turnMoveIndex > 0) {
+        archived = true;
+        let entries = [], cursor = null;
+        do {
+          const archiveKey=`archive:${gameId}:${revision}:${JSON.stringify(cursor)}`;
+          const page=await optionalHistoryRead({key:archiveKey,consumer,url:`/api/shell/games/${encodeURIComponent(gameId)}/decision-history`,init:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({identityId,cursor})}});
+          if (!active || !isCurrent()) throw new Error('history_superseded');
+          entries.push(...page.items);cursor=page.nextCursor;
+        } while(cursor);
+        summaries=activeDecisionLineage(entries).filter(move=>move.turnIndex===turnIndex);
+      }
+      if (!summaries.length) throw new Error('turn_not_found');
+      const moves=await Promise.all(summaries.map(move=>!archived && move.snapshot ? clone(move) : loadHistoricalMove(gameId,revision,move.moveId,consumer)));
+      if (!active || !isCurrent()) throw new Error('history_superseded');
+      if (getGameViewModel(gameId)?.gameplayRevision!==revision) throw new Error('history_changed');
+      return moves;
+    } finally { retireHistoryConsumer(consumer); }
   };
 
   const selectHistoryTurn = async ({gameId, turnIndex}) => {
     const game=getGameViewModel(gameId),revision=game.gameplayRevision;
     const first=game.moves?.find(move=>move.turnIndex===turnIndex && !move.undone);
+    const previousOwner=historyLoads.get(gameId);
     const owner={loading:true,index:first?.index ?? 0,error:null,turnIndex};
     historyLoads.set(gameId,owner);
     recalculateOptimisticGame(gameId);emitChange({type:'history_loading',gameId});
+    const load=loadTurnMoves({gameId,turnIndex,revision,consumer:owner,isCurrent:()=>historyLoads.get(gameId)===owner});
+    retireHistoryConsumer(previousOwner);
     try {
-      const moves=await loadTurnMoves({gameId,turnIndex,revision,isCurrent:()=>historyLoads.get(gameId)===owner});
+      const moves=await load;
       if (!active || historyLoads.get(gameId)!==owner) return;
       historyIntentByGameId.set(gameId,{turn:{index:turnIndex,moves},revision});
       historyLoads.delete(gameId);recalculateOptimisticGame(gameId);emitChange({type:'history_mode_changed',gameId});
@@ -2288,7 +2329,7 @@ export const createLiveTransportStore = ({
   };
 
   const returnToLive = ({ gameId }) => {
-    historyLoads.delete(gameId);
+    retireHistoryLoad(gameId);
     historyIntentByGameId.set(gameId, { moveId: null });
     recalculateOptimisticGame(gameId);
     emitChange({ type: "history_mode_changed", gameId });
@@ -2607,6 +2648,12 @@ export const createLiveTransportStore = ({
     unsubscribe,
     retire() {
       active = false;
+      for(const flight of historyRequests.values()){
+        if(flight.settled)continue;
+        if(flight.started)flight.controller.abort();
+        else {flight.settled=true;flight.reject(historyReadError('session_changed'));}
+      }
+      historyRequests.clear();historyReadQueue.length=0;
       for (const timer of recoveryDiagnosticTimers.values()) clearTimeout(timer);
       recoveryDiagnosticTimers.clear();
       activeHomeRead?.retire();
