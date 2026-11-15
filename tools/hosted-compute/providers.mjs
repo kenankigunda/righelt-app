@@ -1,5 +1,17 @@
 import { POLICY, assert } from './policy.mjs';
 
+// Only locally constructed diagnostics cross the controller boundary. Never
+// inspect arbitrary error messages, provider bodies, headers, request data or env.
+const failures=new WeakMap();
+const unknownDiagnostic=Object.freeze({schema:1,provider:'runpod',operation:'unknown',category:'unclassified',dispatch:'unknown',httpStatus:null});
+function providerFailure(category,method,dispatch,httpStatus=null){
+  const operation=method==='POST'?'create-pod':method==='DELETE'?'delete-pod':'read';
+  const error=new Error(`provider ${method} failed${httpStatus===null?'':` (${httpStatus})`}`);
+  failures.set(error,Object.freeze({schema:1,provider:'runpod',operation,category,dispatch,httpStatus}));
+  return error;
+}
+export function providerFailureDiagnostic(error){return {...(failures.get(error)??unknownDiagnostic)};}
+
 // Never repeat a create request after an uncertain response. The controller
 // persists its launch name first and reconciles by that exact name instead.
 export class Providers {
@@ -7,16 +19,29 @@ export class Providers {
   async request(provider, path, method = 'GET', body) {
     assert(provider === 'runpod','only Runpod is supported');
     const base = 'https://api.runpod.io/v2', token = this.env.RUNPOD_API_KEY;
-    assert(token, 'provider credentials unavailable');
-    const response = await this.fetcher(`${base}${path}`, {
-      method, redirect:'manual', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(POLICY.requestMs),
-    });
-    if (response.status === 404 && method !== 'POST') return null;
-    // Provider error bodies may contain bootstrap credentials. Never surface them.
-    assert(response.ok, `provider ${method} failed (${response.status})`);
-    if (response.status === 204) return {};
-    return response.json();
+    assert(['GET','POST','DELETE'].includes(method),'unsupported provider operation');
+    if(!token)throw providerFailure('credentials-unavailable',method,'not-dispatched');
+    let options;
+    try{options={method,redirect:'manual',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
+      body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(POLICY.requestMs)};}
+    catch{throw providerFailure('request-preparation',method,'not-dispatched');}
+    let response;
+    try{response=await this.fetcher(`${base}${path}`,options);}
+    catch{throw providerFailure('transport',method,'possibly-dispatched');}
+    let status,ok;
+    try{status=response.status;ok=response.ok;}
+    catch{throw providerFailure('response-status',method,'response-received');}
+    if(!Number.isInteger(status)||status<100||status>599||typeof ok!=='boolean')throw providerFailure('response-status',method,'response-received');
+    if(status===404&&method!=='POST')return null;
+    // Do not consume error bodies or copy response headers into diagnostics.
+    if(!ok)throw providerFailure('http',method,'response-received',status);
+    // A queued-create record is not a Pod. Queued placement is not requested
+    // or supported here; an unexpected accepted response stays uncertain.
+    const expected=method==='POST'?201:method==='DELETE'?204:200;
+    if(status!==expected)throw providerFailure('unexpected-status',method,'response-received',status);
+    if(status===204)return {};
+    try{return await response.json();}
+    catch{throw providerFailure('response-json',method,'response-received',status);}
   }
   async list(provider) {
     assert(provider==='runpod','only Runpod is supported');
@@ -36,11 +61,13 @@ export class Providers {
   async find(provider, name) { return (await this.list(provider)).filter(r => r.name === name); }
   async create(host, name, workerEnv) {
     assert(host.provider==='runpod','only Runpod is supported');
-    return this.request('runpod', '/pods', 'POST', {
+    const resource=await this.request('runpod', '/pods', 'POST', {
       name, image:host.image, gpu:{id:host.gpu,count:1,minRamPerGpu:host.minRamGb,minVcpuCountPerGpu:host.minVcpu,minCudaVersion:host.minCudaVersion},
       dataCenterIds:[host.dataCenterId], disk:host.diskGb, cloud:'SECURE', env:workerEnv,
       entrypoint:['node','tools/hosted-compute/worker.mjs'],cmd:[],ports:[],
     });
+    if(typeof resource?.id!=='string'||!resource.id||resource.name!==name)throw providerFailure('response-identity','POST','response-received',201);
+    return resource;
   }
   inspect(provider,id) {return this.request(provider,`/pods/${encodeURIComponent(id)}`);}
   qualify(record,host,name) {

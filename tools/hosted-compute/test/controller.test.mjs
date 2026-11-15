@@ -233,3 +233,49 @@ test('scientific stage cannot disguise training as final evaluation or bypass bo
  const unchecked=structuredClone(m);delete unchecked.phases[0].expect.proof.allWorkComplete;assert.throws(()=>validateManifest(unchecked),/all work complete/);
  const guarded=structuredClone(m);guarded.scientific.stage='training';guarded.inputs[0].role='protected-final';assert.throws(()=>validateManifest(guarded),/raw final material/);
 });
+
+test('create failure status survives restart but never clears uncertainty, billing, original clocks or create ownership',async()=>{
+ const {Providers}=await import('../providers.mjs');
+ for(const status of [400,401,403,422,500,202]){
+  const f=await fixture();let creates=0,bodyReads=0;const real=new Providers({RUNPOD_API_KEY:'provider-secret'},async()=>{creates++;return {status,ok:status===202,json(){bodyReads++;throw Error('body-secret');}};});
+  f.providers.create=(...args)=>real.create(...args);
+  await f.stage();await f.core.start('pilot');const deadline=f.manifest.deadline;
+  await f.core.reconcile();const initial=await f.state();assert.equal(initial.attempts[0].uncertain,true);
+  assert.equal(initial.attempts[0].createFailure.httpStatus,status);assert.equal(initial.attempts[0].createFailure.dispatch,'response-received');
+  const restarted=f.controller();f.advance(60000);await restarted.reconcile();await restarted.reconcile();
+  const state=await f.state();assert.equal(state.status,'cleanup-uncertain');assert.equal(state.cleanupVerified,false);assert.equal(state.attempts[0].endedAt,undefined);assert.equal(state.manifest.deadline,deadline);assert.equal(state.generation,1);assert.equal(creates,1);assert.equal(bodyReads,0);
+  const visible=restarted.status(state);assert(visible.estimatedCents>0);assert.equal(visible.events.find(e=>e.type==='create-failed').diagnostic.httpStatus,status);assert(!JSON.stringify(visible).includes('secret'));
+ }
+});
+
+test('bootstrap and unknown local failure diagnostics never expose messages or infer no-create resolution',async()=>{
+ const f=await fixture();f.core.token=async()=>{throw Error('private-signing-key-value');};await f.stage();await f.core.start('pilot');await f.core.reconcile();await f.core.reconcile();
+ const state=await f.state();assert.equal(f.providers.creates,0);assert.equal(state.status,'cleanup-uncertain');assert.equal(state.attempts[0].createFailure.category,'worker-token');assert.equal(state.attempts[0].createFailure.dispatch,'not-dispatched');assert.equal(state.cleanupVerified,false);assert(!JSON.stringify(f.core.status(state)).includes('private-signing'));
+ const g=await fixture();g.providers.create=async()=>{const e=new Error('private-env-value');e.diagnostic={httpStatus:403,body:'private'};throw e;};await g.stage();await g.core.start('pilot');await g.core.reconcile();await g.core.reconcile();
+ const unknown=await g.state();assert.equal(unknown.attempts[0].createFailure.category,'unclassified');assert.equal(unknown.attempts[0].createFailure.httpStatus,null);assert.equal(unknown.status,'cleanup-uncertain');assert(!JSON.stringify(g.core.status(unknown)).includes('private'));
+});
+
+test('late create discovered after a diagnostic failure is still fenced, deleted and verified without another POST',async()=>{
+ const f=await fixture();f.providers.uncertainCreate=true;await f.stage();await f.core.start('pilot');await f.core.reconcile();
+ const name=(await f.state()).attempts[0].name;assert.equal(f.providers.creates,1);assert.equal((await f.state()).attempts[0].uncertain,true);
+ // The original lost-response resource becomes observable. Only that exact
+ // saved launch identity can settle uncertainty and pass cleanup.
+ assert.equal([...f.providers.resources.values()][0].name,name);
+ const restarted=f.controller();await restarted.reconcile();await restarted.reconcile();
+ const state=await f.state();assert.equal(state.status,'failed');assert.equal(state.cleanupVerified,true);assert.equal(f.providers.creates,1);assert.equal(f.providers.resources.size,0);assert.equal(state.attempts[0].uncertain,false);
+});
+
+test('post-create persistence failure retains the known resource for cleanup and reports the local stage safely',async()=>{
+ const f=await fixture();await f.stage();await f.core.start('pilot');
+ const put=f.storage.put.bind(f.storage);let failed=false;
+ f.storage.put=async(key,value)=>{
+  if(!failed&&value.campaigns?.pilot.status==='provisioning'&&value.campaigns.pilot.attempts[0]?.resourceId){failed=true;throw Error('private-storage-details');}
+  return put(key,value);
+ };
+ await f.core.reconcile();const initial=await f.state();assert.equal(failed,true);assert.equal(initial.status,'stopping');assert.equal(initial.attempts[0].resourceId,'1');assert.equal(initial.cleanupVerified,false);
+ assert.deepEqual(initial.attempts[0].createFailure,{schema:1,provider:'runpod',operation:'create-pod',category:'launch-persistence',dispatch:'response-received',httpStatus:null});
+ assert(!JSON.stringify(f.core.status(initial)).includes('private-storage'));
+ f.providers.failDelete=true;const restarted=f.controller();await restarted.reconcile();assert.equal((await f.state()).cleanupVerified,false);assert.equal(f.providers.resources.size,1);
+ f.providers.failDelete=false;await restarted.reconcile();await restarted.reconcile();
+ const final=await f.state();assert.equal(final.status,'failed');assert.equal(final.cleanupVerified,true);assert.equal(f.providers.creates,1);assert.equal(f.providers.resources.size,0);assert.equal(final.manifest.deadline,f.manifest.deadline);
+});
