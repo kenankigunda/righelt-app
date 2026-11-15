@@ -590,7 +590,9 @@ test('explicit checkpoint keeps immutable source epoch without relying on pagehi
 test('closed computer recovery descriptors, retention and original catch semantics',async()=>{
  const recipe=JSON.parse(await readFile(new URL('../../../e2e/support/computer-session-recovery-transformation.json',import.meta.url),'utf8'))['/shell/computer-session.js'];
  const source=await readFile(new URL('../../../apps/web/shell/computer-session.js',import.meta.url),'utf8');
- transformBoardAdmissionModule(source,recipe);
+ assert.equal(recipe.operations.length,1);const operation=recipe.operations[0],transformed=transformBoardAdmissionModule(source,recipe);
+ assert.equal(transformed.slice(operation.start,operation.start+operation.after.length),operation.after);
+ assert.equal(transformed.slice(0,operation.start)+operation.before+transformed.slice(operation.start+operation.after.length),source);
  assert.throws(()=>transformBoardAdmissionModule(source+' ',recipe),/source hash/);
  assert.throws(()=>transformBoardAdmissionModule(source,{...recipe,outputSha256:'0'.repeat(64)}),/output hash/);
  const bad=structuredClone(recipe);bad.operations[0].start++;assert.throws(()=>transformBoardAdmissionModule(source,bad),/range/);
@@ -603,7 +605,7 @@ test('closed computer recovery descriptors, retention and original catch semanti
  }
  assert.equal(getters,0);
  const injected=collector({recoveryCategories:COMPUTER_RECOVERY_CATEGORIES});injected.sandbox.__boardAdmissionRecord('computer-session-recovery-error',{errorCategory:'PRIVATE',message:'PRIVATE',identityId:'PRIVATE'});assert(!JSON.stringify(injected.sandbox.__boardAdmissionObservation).includes('PRIVATE'));
- const op=recipe.operations[0];
+ const op=operation;
  for(const sinkThrows of [false,true]){
   const original=Error('stale_state'),seen=[];const env={run:1,epoch:1,error:original,context:{key:'k'},recovery:null,publish:value=>seen.push(value),__boardAdmissionRecovery(){if(sinkThrows)throw Error('sink');}};env.globalThis=env;
   vm.runInNewContext(op.after,env);assert.equal(env.error,original);assert.equal(env.recovery,'k');assert.equal(seen.length,1);assert.equal(seen[0].message,original.message);
@@ -862,7 +864,7 @@ async function rulesTimeoutRecipe(){
 }
 test('computer timeout recipe is strictly bound, exactly invertible and preserves the original computer catch entry',async()=>{
  const{all,recipe,source}=await rulesTimeoutRecipe();
- assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'fe2ade88bbcb06e0605c33d2af47838229d856f71f50ff2a8f9357c10c849aac');
+ assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'1d0c41f4aa7f783aab7440754d0cee88cf1c60762f41e5fb855a2ab6f66ea627');
  assert.equal(recipe.operations.length,1);const op=recipe.operations[0];assert.equal(op.anchorCount,1);
  const output=transformBoardAdmissionModule(source,recipe);assert.equal(output.slice(op.start,op.start+op.after.length),op.after);
  assert.equal(output.slice(0,op.start)+op.before+output.slice(op.start+op.after.length),source);
