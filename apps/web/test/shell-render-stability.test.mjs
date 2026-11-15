@@ -503,9 +503,12 @@ test('startup progress and bootstrap retry stay in the out-of-flow header status
 });
 
 test('home loading metadata matches the consolidated identity title without an obsolete presence row',()=>{
- const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');const skeleton=source.slice(source.indexOf('const renderHomeCardSkeleton ='),source.indexOf('const renderHomeSectionSkeleton ='));
- assert.match(skeleton,/mini-board-card-meta mini-board-card-meta-primary/);assert.doesNotMatch(skeleton,/mini-board-card-connection-line/);
- assert.match(skeleton,/length:100/);assert.match(skeleton,/mini-board-preview-status/);
+ const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');const cardSkeleton=source.slice(source.indexOf('const renderHomeCardSkeleton ='),source.indexOf('const renderHomeSectionSkeleton ='));
+ const sectionSkeleton=source.slice(source.indexOf('const renderHomeSectionSkeleton ='),source.indexOf('const renderBoardLoadingPreview ='));
+ assert.match(cardSkeleton,/mini-board-card-meta mini-board-card-meta-primary/);assert.doesNotMatch(cardSkeleton,/mini-board-card-connection-line/);
+ assert.match(cardSkeleton,/length:100/);assert.match(cardSkeleton,/mini-board-preview-status/);
+ assert.match(sectionSkeleton,/loading-region/);assert.match(sectionSkeleton,/loadingAttributes\(`home:/);
+ assert.doesNotMatch(sectionSkeleton,/<p class="small">Games<\/p>/);
 });
 
 

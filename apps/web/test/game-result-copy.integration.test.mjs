@@ -45,6 +45,14 @@ test('actual result HTML isolates and escapes observer names without changing pl
  assert.equal(getGameResult(game,'observer').title,'<img src=x> שלום won');
 });
 
+test('actual result HTML omits filler when terminal provenance is unknown',()=>{
+ const game=finished();game.board.state.outcome.reason='legacy_unknown';
+ const context={transport:{getIdentityId:()=> 'red',getAuthoritativeGame:()=>game},escapeHtml:String};
+ const html=renderResultPanel(game,context);
+ assert.match(html,/>You<\/bdi><\/span> won/);
+ assert.doesNotMatch(html,/The game has finished\./);
+});
+
 test('rematch keeps semantic selected side and opponent values with concise color labels',()=>{
  assert.equal(REMATCH_CHOICES_CONTRACT,'colors-v1');
  for(const side of ['p1','p2']) {
