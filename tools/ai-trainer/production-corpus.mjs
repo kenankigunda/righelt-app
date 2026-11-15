@@ -8,6 +8,8 @@ import {transitionArchivedAction} from './archived-action.mjs';
 import {archivedRetreatSemantics} from '../../packages/shared-types/src/retreat-rules.ts';
 import {legacyCommanderReplayState} from './decision-replay.mjs';
 import {createEngineOperationBudget} from './engine-operation-budget.mjs';
+import {proveRelevantContinuation} from '../../packages/game-engine/src/early-ending-proof.ts';
+import {probeTerminalSettlement} from '../../packages/game-engine/src/terminal-settlement.ts';
 
 export const HELD_OUT_GAMES = Object.freeze([
   'game-13279b470a8f68382082d12268fcdb585a90',
@@ -41,6 +43,25 @@ export function exactRetainedState(actual,expected,bounded=operation=>operation(
   return retained;
 }
 
+// Replay-only recognition of a recorded automatic rush ending. No synthetic
+// End Turn is inserted. Both complete continuation proof and the exact retained
+// physical board are required, and unknown proofs retain the quarantine.
+export function replayProductionDecision(before,action,expected,bounded=operation=>operation(),retreatSemantics,options={}) {
+  const next=transitionArchivedAction(before,action,bounded,retreatSemantics);
+  try{return {state:exactRetainedState(next,expected,bounded),automaticEnding:null};}
+  catch(error){
+    if(next.outcome.status!=='ongoing'||expected.outcome.status==='ongoing'||next.continuation?.type!=='rush')throw error;
+    const {expectedCause,...proofOptions}=options;
+    const proof=bounded(()=>proveRelevantContinuation(next,next.continuation.owner,proofOptions));
+    if(proof.kind!=='proven-terminal'||proof.complete!==true||proof.candidateOutcome.status!==expected.outcome.status)throw Error('Unverified production automatic ending');
+    if(expectedCause?.kind!=='relevant-continuation-finality'||expectedCause.endpointCount!==proof.endpointCount||expectedCause.optionalEndpointCount!==proof.optionalEndpointCount)throw Error('Unverified production automatic ending cause');
+    const settled=bounded(()=>probeTerminalSettlement(next,undefined,{artifactMode:expected.artifacts?.mode??'full'}));
+    if(settled.kind!=='settled'||!settled.persistable)throw Error('Unverified production automatic settlement');
+    const state=exactRetainedState(settled.frame.occupancy,expected,bounded);
+    return {state,automaticEnding:{kind:proof.kind,visitedNodes:proof.visitedNodes,endpointCount:proof.endpointCount,exactStateHash:deterministicStateHash(state),causeVerified:true}};
+  }
+}
+
 export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds=60}={}) {
   const deadline=performance.now()+seconds*1000;
   const check=()=>{if(performance.now()>=deadline)throw Error('Production replay deadline');};
@@ -48,25 +69,35 @@ export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds
   const starts=[],reports=[];
   for(const game of games) {
     check();
+    const retainedGame=JSON.parse(game.state_json);
     const rows=decisions.filter(d=>d.game_id===game.game_id)
       .sort((a,b)=>a.event_seq-b.event_seq || a.event_ordinal-b.event_ordinal);
     const partition=heldOut.includes(game.game_id)?'validation':'train';
     let current=null,verified=0;
-    const known=new Map(),moves=new Map(),candidates=[];
+    const known=new Map(),knownPaths=new Map(),moves=new Map(),candidates=[];
+    let activePath=[];
+    const remember=()=>{
+      const hash=deterministicStateHash(current);known.set(hash,current);
+      const previous=knownPaths.get(hash);
+      knownPaths.set(hash,knownPaths.has(hash)&&JSON.stringify(previous)!==JSON.stringify(activePath)?null:activePath?.slice()??null);
+    };
     const report={gameId:game.game_id,partition,verifiedDecisions:0,restorations:0,turns:0,excluded:[]};
     for(const row of rows) {
       check();const record=JSON.parse(row.payload_json);
       try {
         if(record.kind==='initial') {
           if(record.partial)throw Error('Partial production root');
-          current=record.state;known.set(deterministicStateHash(current),current);
+          current=record.state;activePath=[];remember();
         } else if(record.kind==='decision') {
           const move=record.move;
           if(!current)throw Error('Unverified production lineage');
           exactRetainedState(current,move.selectionSnapshot,bounded);
           const before=current;
-          current=exactRetainedState(transitionArchivedAction(before,move.action,bounded,move.retreatSemantics),move.snapshot,bounded);
-          known.set(deterministicStateHash(current),current);moves.set(record.id,move);verified++;
+          const replayed=replayProductionDecision(before,move.action,move.snapshot,bounded,move.retreatSemantics,{expectedCause:retainedGame.terminalOutcome?.decisive?.decisionId===record.id?retainedGame.terminalOutcome.cause:undefined});
+          current=replayed.state;
+          if(replayed.automaticEnding){report.automaticEndings??=[];report.automaticEndings.push({recordId:record.id,...replayed.automaticEnding});}
+          activePath=activePath?[...activePath,record.id]:null;
+          remember();moves.set(record.id,move);verified++;
           if(before.outcome.status==='ongoing')candidates.push({
             gameId:game.game_id,decisionId:record.id,revision:record.revision,
             state:structuredClone(before),stateHash:deterministicStateHash(before),partition,
@@ -77,7 +108,7 @@ export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds
         } else if(record.kind==='turn') {
           if(!current)throw Error('Unverified turn lineage');
           current=exactRetainedState(transitionArchivedAction(current,{type:'end_turn'},bounded),record.state,bounded);
-          known.set(deterministicStateHash(current),current);report.turns++;
+          remember();report.turns++;
         } else if(record.kind==='finalization') {
           const move=moves.get(record.targetDecisionId);
           if(!move)throw Error('Finalization target absent');
@@ -87,6 +118,7 @@ export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds
         } else if(record.kind==='restoration') {
           const restored=known.get(deterministicStateHash(record.state));
           if(!restored)throw Error('Restoration target not independently replayed');
+          activePath=knownPaths.get(deterministicStateHash(record.state))?.slice()??null;
           current=restored;report.restorations++;
         } else throw Error('Unsupported production event '+record.kind);
       } catch(error) {
@@ -94,20 +126,23 @@ export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds
         // Never restart trust from a later self-reported selection snapshot.
         // A restoration to an independently verified position can recover it.
         current=null;
+        if(record.kind==='restoration')activePath=null;
       }
     }
     report.verifiedDecisions=verified;
-    const live=JSON.parse(game.state_json).board.state;
+    const live=retainedGame.board.state;
     report.currentStateVerified=!!current && deterministicStateHash(current)===deterministicStateHash(live);
     report.recordedOutcome=live.outcome;
     report.finalHash=current?deterministicStateHash(current):null;
-    reports.push(report);starts.push(...candidates);
+    report.activeLineVerified=activePath!==null;
+    const activeIds=new Set(activePath??[]);
+    reports.push(report);starts.push(...candidates.map(p=>({...p,historyStatus:activePath===null?'unknown':activeIds.has(p.decisionId)?'active':'undone'})));
   }
   // Shared opening prefixes and identical positions cannot leak into training
   // from a second game. All withheld-position hashes take precedence.
   const withheld=new Set(starts.filter(x=>x.partition!=='train').map(x=>x.stateHash));
   const protectedEncodings=new Set(starts.filter(x=>x.partition!=='train'&&!x.sharedOpening).map(x=>x.encodingHash));
-  const seen=new Set();const positions=starts.filter(x=>{
+  const seen=new Set();const positions=starts.sort((a,b)=>(a.historyStatus==='active'?0:1)-(b.historyStatus==='active'?0:1)).filter(x=>{
     if(x.partition==='train' && (withheld.has(x.stateHash)||protectedEncodings.has(x.encodingHash)))return false;
     const key=x.partition+':'+x.stateHash;if(seen.has(key))return false;
     seen.add(key);return true;

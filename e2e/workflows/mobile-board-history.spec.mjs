@@ -179,7 +179,7 @@ test.describe('narrow board and history',()=>{
   test('an accepted self-play undo returns its unchanged requester to live Board',async({page})=>{
     const {gameId}=await selfPlay(page);await makeAnyLegalMove(page);
     const game=await readGame(page,gameId),first=game.moves[0];
-    await switchPanel(page,'history');await page.locator(`[data-move-id="${first.moveId}"][data-testid="history-move-item"]`).click();
+    await switchPanel(page,'history');const selectedMove=page.locator(`[data-move-id="${first.moveId}"][data-testid="history-move-item"]`);await selectedMove.locator(':scope > .history-move-hit').click();await expect(selectedMove).toHaveAttribute('aria-current','true');
     await expect(page.getByTestId('history-inline-preview')).toBeVisible();
     const request=page.waitForRequest(r=>isOperationRequest(r,'revert-request'));
     await page.getByRole('button',{name:'Undo before this move',exact:true}).tap();
@@ -313,7 +313,7 @@ test.describe('narrow board and history',()=>{
 test('wide history retains its main-board snapshot without duplicate top actions',async({page})=>{
   await page.setViewportSize({width:1440,height:1100});const {gameId}=await selfPlay(page);
   await makeAnyLegalMove(page);const game=await readGame(page,gameId),first=game.moves[0];
-  await page.locator(`[data-testid="history-move-item"][data-move-id="${first.moveId}"]`).click();
+  const selectedMove=page.locator(`[data-testid="history-move-item"][data-move-id="${first.moveId}"]`);await selectedMove.locator(':scope > .history-move-hit').click();await expect(selectedMove).toHaveAttribute('aria-current','true');
   await expect(page.getByTestId('history-inline-preview')).toHaveCount(0);
   await expect.poll(()=>renderedPieces(board(page))).toEqual(expectedPieces(first.snapshot));
   await expect(page.locator('[data-game-panel="history"] [data-action="revert-to-move"]')).toHaveCount(1);
@@ -326,7 +326,7 @@ test.describe('short landscape history',()=>{
  test('selected move and turn fit their heading and full mini-board above navigation',async({page},info)=>{
   await selfPlay(page);await makeAnyLegalMove(page);await switchPanel(page,'history');
   await page.evaluate(()=>document.documentElement.style.fontSize='200%');
-  const move=page.getByTestId('history-move-item').first();await move.click();
+  const move=page.getByTestId('history-move-item').first();await move.locator(':scope > .history-move-hit').click();
   await expect(move).toHaveAttribute('aria-current','true');
   await expect(move.getByTestId('history-inline-preview').locator('.cell')).toHaveCount(100);
   await expect.poll(()=>move.locator('.history-move-at').evaluate(el=>el.clientHeight>=el.scrollHeight-1)).toBe(true);

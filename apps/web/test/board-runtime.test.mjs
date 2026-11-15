@@ -9,7 +9,7 @@ test('piece explanations and blocked causes precede the unchanged coordinate chi
  const point={row:4,col:2};
  const variants=[...SELECTED_PIECE_EXPLANATIONS.map(explanation=>({explanation,expected:explanation})),
   {owner:'P2',expected:'Opponent’s supply and command lines'}, {expected:'No moves'},
-  ...[['SUPPLY_DESTINATION_UNSUPPLIED','Destination would have no supply'],['PUSH_STRENGTH_TOO_WEAK','Group too weak to push'],['UNKNOWN_PRIVATE_RULE','Move unavailable']].map(([reason,expected])=>({reason,expected}))];
+  ...[['SUPPLY_DESTINATION_UNSUPPLIED','Destination would have no supply'],['PUSH_STRENGTH_TOO_WEAK','Your group isn’t strong enough to push here.'],['UNKNOWN_PRIVATE_RULE','Move unavailable']].map(([reason,expected])=>({reason,expected}))];
  for(const variant of variants){
   let html='',context=null;const label={dataset:{},hidden:false,addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
   const piece={id:'A',owner:variant.owner??'P1',kind:'unit',position:point,supplied:true,commanded:true};
@@ -19,12 +19,103 @@ test('piece explanations and blocked causes precede the unchanged coordinate chi
   runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
   await runtime.loadSnapshot(state,{legalActions:[],selectionState:{selectedPieceId:'A',source:point,target:preview?.to??null}});
   await new Promise(setImmediate);
-  assert.ok(context||variant.owner==='P2',JSON.stringify(variant));
+  assert.ok(context||html,JSON.stringify(variant));
   const contextHtml=context?renderBoardMessageHtml(context.message):html,text=contextHtml.replace(/<[^>]+>/g,'');
-  assert.equal(text,`${variant.expected} for piece at 4, 2`,JSON.stringify(variant));
-  assert.match(contextHtml,/board-preview-coordinate-chip/);if(context){assert.ok(!html.includes(variant.expected),'explanation stays outside the finite primary');assert.equal(label.hidden,true,'semantic context owns the Board message without a generic prompt');}
+  if(variant.reason==='PUSH_STRENGTH_TOO_WEAK'){
+    assert.match(text,/Your group isn’t strong enough to push here\. Why\?/);
+    assert.match(contextHtml,/Your group must be stronger than the defending group/);
+  }else{
+    assert.equal(text,`${variant.expected} for piece at 4, 2`,JSON.stringify(variant));
+    assert.match(contextHtml,/board-preview-coordinate-chip/);
+  }
+  if(context){assert.ok(!html.includes(variant.expected),'read-only context stays outside the primary');assert.equal(label.hidden,true,'semantic context owns the Board message without a generic prompt');}
+  else if(variant.owner!=='P2')assert.doesNotMatch(html,/Select a piece|Select a rush|End turn/,'specific selected guidance is the sole primary message');
   assert.doesNotMatch(contextHtml,/data-board-preview-action/);destroyUninitializedNodeRuntime(runtime);
  }
+});
+
+test('required retreat guidance supersedes automatic selected-piece connectivity',async()=>{
+ const point={row:4,col:5},target={row:3,col:5};
+ let html='';const label={dataset:{},hidden:false,addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
+ const piece={id:'D1',owner:'P2',kind:'unit',position:point,supplied:false,commanded:true};
+ const retreat={type:'retreat',actorId:'D1',from:point,to:target};
+ const state={sideToMove:'P1',turnIndex:8,outcome:{status:'ongoing'},continuation:{type:'push',phase:'retreat',pushedPieceId:'D1',attackerOwner:'P1'},pieces:[piece]};
+ const runtime=createBoardRuntime({
+  boardAdapter:{mount:noop,render:noop,getPieceById:(snapshot,id)=>snapshot.pieces.find(value=>value.id===id),getSelectedPieceSummary:()=>({details:{owner:'P2',explanation:'No supply connection'}})},
+  host:{canInteract:()=>true,loadPieceMoves:async()=>({state,actions:[retreat],previewActions:[retreat]})},
+ });
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ await runtime.loadSnapshot(state,{legalActions:[retreat],selectionState:{selectedPieceId:'D1',source:point,target:null}});await new Promise(setImmediate);
+ assert.match(html,/Your piece at .*4, 5.* has been pushed\. Choose a square to retreat to\./);
+ assert.doesNotMatch(html,/No supply connection|Supply and command lines/);
+ destroyUninitializedNodeRuntime(runtime);
+});
+
+test('required follow guidance supersedes automatic selected-piece connectivity',async()=>{
+ const point={row:4,col:5},target={row:4,col:6};
+ let html='';const label={dataset:{},hidden:false,addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
+ const piece={id:'A1',owner:'P1',kind:'unit',position:point,supplied:false,commanded:true};
+ const follow={type:'follow',actorId:'A1',from:point,to:target},other={...follow,to:{row:5,col:5}};
+ const state={sideToMove:'P1',turnIndex:8,outcome:{status:'ongoing'},continuation:{type:'push',phase:'follow',attackerId:'A1'},pieces:[piece]};
+ const runtime=createBoardRuntime({
+  boardAdapter:{mount:noop,render:noop,getPieceById:(snapshot,id)=>snapshot.pieces.find(value=>value.id===id),getSelectedPieceSummary:()=>({details:{owner:'P1',explanation:'No supply connection'}})},
+  host:{canInteract:()=>true,loadPieceMoves:async()=>({state,actions:[follow,other],previewActions:[follow,other]})},
+ });
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ await runtime.loadSnapshot(state,{legalActions:[follow,other],selectionState:{selectedPieceId:'A1',source:point,target:null}});await new Promise(setImmediate);
+ assert.equal(html,'Select a follow');
+ destroyUninitializedNodeRuntime(runtime);
+});
+
+test('automatic follow never presents the manual follow instruction',async()=>{
+ const point={row:4,col:5},target={row:4,col:6};
+ let html='';const label={dataset:{},hidden:false,addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
+ const piece={id:'A1',owner:'P1',kind:'unit',position:point,supplied:true,commanded:true};
+ const follow={type:'follow',actorId:'A1',from:point,to:target};
+ const state={sideToMove:'P1',turnIndex:8,outcome:{status:'ongoing'},continuation:{type:'push',phase:'follow',attackerId:'A1'},pieces:[piece]};
+ const runtime=createBoardRuntime({
+  boardAdapter:{mount:noop,render:noop,getPieceById:(snapshot,id)=>snapshot.pieces.find(value=>value.id===id),getSelectedPieceSummary:()=>({details:{owner:'P1',explanation:'Supply and command lines'}})},
+  host:{canInteract:()=>false,canPresentActions:()=>true,loadPieceMoves:async()=>({state,actions:[follow],previewActions:[follow]})},
+ });
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ await runtime.loadSnapshot(state,{legalActions:[follow],selectionState:{selectedPieceId:'A1',source:point,target:null}});await new Promise(setImmediate);
+ assert.doesNotMatch(html,/Select a follow/);
+ destroyUninitializedNodeRuntime(runtime);
+});
+
+test('an incomplete sole follow does not claim the automatic presentation owner',async()=>{
+ const point={row:4,col:5};
+ let html='';const label={dataset:{},hidden:false,addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
+ const piece={id:'A1',owner:'P1',kind:'unit',position:point,supplied:true,commanded:true};
+ const incomplete={type:'follow',actorId:'A1'};
+ const state={sideToMove:'P1',turnIndex:8,outcome:{status:'ongoing'},continuation:{type:'push',phase:'follow',attackerId:'A1'},pieces:[piece]};
+ const runtime=createBoardRuntime({
+  boardAdapter:{mount:noop,render:noop,getPieceById:(snapshot,id)=>snapshot.pieces.find(value=>value.id===id),getSelectedPieceSummary:()=>({details:{owner:'P1',explanation:'Supply and command lines'}})},
+  host:{canInteract:()=>true,canPresentActions:()=>true,loadPieceMoves:async()=>({state,actions:[incomplete],previewActions:[incomplete]})},
+ });
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ await runtime.loadSnapshot(state,{legalActions:[incomplete],selectionState:{selectedPieceId:'A1',source:point,target:null}});await new Promise(setImmediate);
+ assert.equal(html,'Select a follow');
+ destroyUninitializedNodeRuntime(runtime);
+});
+
+test('Joined-stone detail survives quiet redraw and retires with the snapshot intent',async()=>{
+ const point={row:4,col:2},target={row:4,col:3},piece={id:'A',owner:'P1',kind:'unit',position:point,supplied:true,commanded:true};
+ const preview={type:'push',actorId:'A',from:point,to:target,legal:false,blockedReason:'PUSH_STRENGTH_TOO_WEAK'};
+ let html='',clickHandler;
+ const label={dataset:{},hidden:false,addEventListener:(type,handler)=>{if(type==='click')clickHandler=handler;},removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getPieceById:(snapshot,id)=>snapshot.pieces.find(value=>value.id===id),getSelectedPieceSummary:()=>({details:{owner:'P1'}})},host:{canInteract:()=>true,loadPieceMoves:async()=>({actions:[],previewActions:[preview]})}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ const snapshot={sideToMove:'P1',turnIndex:0,continuation:null,pieces:[piece]};
+ await runtime.loadSnapshot(snapshot,{legalActions:[],selectionState:{selectedPieceId:'A',source:point,target}});await new Promise(setImmediate);
+ assert.match(html,/aria-expanded="false"[^>]*>Why\?/);assert.match(html,/board-guidance-detail" hidden/);
+ const button={getAttribute:()=> 'toggle-board-explanation'};
+ clickHandler({target:{closest:selector=>selector==='[data-board-message-action]'?button:null}});
+ assert.match(html,/aria-expanded="true"[^>]*>Less/);assert.doesNotMatch(html,/board-guidance-detail" hidden/);
+ runtime.refreshStatus();assert.match(html,/aria-expanded="true"[^>]*>Less/,'quiet redraw preserves the exact disclosure intent');
+ await runtime.loadSnapshot({...snapshot,turnIndex:1},{legalActions:[],selectionState:{selectedPieceId:'A',source:point,target}});await new Promise(setImmediate);
+ assert.match(html,/aria-expanded="false"[^>]*>Why\?/,'a new snapshot retires the old disclosure intent');
+ destroyUninitializedNodeRuntime(runtime);
 });
 const noop = () => {};
 
@@ -624,10 +715,8 @@ test("board runtime omits end-turn CTA when the rush chain is not yet closable",
 
   assert.doesNotMatch(previewHtml, /data-board-(?:preview|message)-action="end-turn"/);
   assert.match(previewHtml,/Select a rush to restore supply/);assert.match(previewHtml,/Obligatory/);
-  assert.equal(context.mandatory,true);
-  const contextHtml=renderBoardMessageHtml(context.message);
-  assert.match(contextHtml,/restore supply for piece at/);
-  assert.match(contextHtml,/board-preview-coordinate-chip-rush-blocker/);assert.match(contextHtml,/>4, 3</);
+  assert.equal(context,null,'the primary message owns required guidance');
+  assert.match(previewHtml,/board-preview-coordinate-chip-rush-blocker/);assert.match(previewHtml,/>4, 3</);
 });
 
 test("board runtime rush blocker prompt prefers the most recently rushed unsupplied piece", async () => {
@@ -706,9 +795,9 @@ test("board runtime rush blocker prompt prefers the most recently rushed unsuppl
   );
 
   assert.match(previewHtml,/Select a rush to restore supply/);assert.match(previewHtml,/Obligatory/);
-  assert.equal(context.mandatory,true);
-  assert.match(renderBoardMessageHtml(context.message),/board-preview-coordinate-chip-rush-blocker/);
-  assert.match(renderBoardMessageHtml(context.message),/>5, 1</);
+  assert.equal(context,null,'the primary message owns required guidance');
+  assert.match(previewHtml,/board-preview-coordinate-chip-rush-blocker/);
+  assert.match(previewHtml,/>5, 1</);
 });
 
 test("board runtime falls back to generic rush prompt when blocker lookup yields no piece", async () => {
@@ -1173,7 +1262,8 @@ test("board runtime uses retreat chip styling for push retreat actor coordinate 
     { legalActions: [{ type: "retreat", actorId: "D1", from: { row: 4, col: 2 }, to: { row: 4, col: 3 } }] },
   );
 
-  assert.match(previewHtml, /^Select a retreat for piece at /);
+  assert.match(previewHtml, /^Your piece at /);
+  assert.match(previewHtml, / has been pushed\. Choose a square to retreat to\.$/);
   assert.match(previewHtml, /board-preview-coordinate-chip-retreat/);
   assert.match(previewHtml, />4, 2</);
   assert.equal(previewHtml.includes("board-preview-coordinate-chip-continuation-pending"), false);
@@ -3432,6 +3522,108 @@ test("U-11: history destruction transition settles into overlay state and clears
   }
 });
 
+test("deliberate completed-turn selection animates every settlement casualty together and settles them static", async () => {
+  const renderCalls = [];
+  const scheduledTimers = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalDateNow = Date.now;
+  let now = 7000;
+  globalThis.setTimeout = (fn, delay) => { const handle = { fn, delay }; scheduledTimers.push(handle); return handle; };
+  globalThis.clearTimeout = () => {};
+  Date.now = () => now;
+  try {
+    const runtime = createBoardRuntime({
+      boardAdapter: { mount: noop, render: payload => renderCalls.push(payload), getSelectedPieceSummary: () => null, getPieceById: () => null, getPieceAt: () => null,
+        nextSelectionForCell: () => ({selection:{selectedPieceId:null,source:null,target:null},nextActionType:'pass'}) },
+      host: { applyAction: async () => ({accepted:false}), loadInitialState: async () => ({state:null,legalActions:[]}), loadLegalActions: async () => ({state:null,legalActions:[]}), loadPieceMoves: async () => ({state:null,actions:[],previewActions:[]}) },
+    });
+    runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null,boardTurnIndicatorEl:null});
+    const records = Array.from({length:9},(_,index)=>({row:index,col:7,ownerSeat:'p2',kind:'unit',piece:{id:`lost-${index+1}`,owner:'P2',kind:'unit',position:{row:index,col:7}}}));
+    await runtime.loadSnapshot({sideToMove:'P2',turnIndex:64,continuation:null,outcome:{status:'p1_win'},pieces:[]},{
+      legalActions:[],overlayMode:'recorded-turn',destroyedPieces:records,animatedDestroyedPieces:records,staticDestroyedPieces:[],animateHistoryDestruction:true,
+    });
+    const animated = renderCalls.find(payload=>payload.removalEffects?.length===9);
+    assert.ok(animated);
+    assert.deepEqual(animated.removalEffects.map(effect=>effect.piece.id),records.map(record=>record.piece.id));
+    assert.deepEqual(new Set(animated.removalEffects.map(effect=>effect.startedAt)),new Set([7000]));
+    assert.deepEqual(animated.overlay.destroyedPieces,[]);
+    assert.equal(scheduledTimers.length,1);
+    now += scheduledTimers[0].delay;
+    scheduledTimers[0].fn();
+    assert.deepEqual(runtime.getOverlay().destroyedPieces,records);
+    assert.deepEqual(renderCalls.at(-1).removalEffects,[]);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    Date.now = originalDateNow;
+  }
+});
+
+test("quiet completed-turn refresh stays static and does not replay destruction", async () => {
+  const renderCalls = [];
+  const scheduledTimers = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalDateNow = Date.now;
+  let now = 8000;
+  globalThis.setTimeout = (fn, delay) => { const handle={fn,delay}; scheduledTimers.push(handle); return handle; };
+  globalThis.clearTimeout = () => {};
+  Date.now = () => now;
+  try {
+    const runtime = createBoardRuntime({boardAdapter:{mount:noop,render:payload=>renderCalls.push(payload),getSelectedPieceSummary:()=>null,getPieceById:()=>null,getPieceAt:()=>null,
+      nextSelectionForCell:()=>({selection:{selectedPieceId:null,source:null,target:null},nextActionType:'pass'})},host:{canInteract:()=>false}});
+    runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null,boardTurnIndicatorEl:null});
+    const record={row:5,col:5,ownerSeat:'p2',kind:'unit',piece:{id:'lost',owner:'P2',kind:'unit',position:{row:5,col:5}}};
+    const snapshot={sideToMove:'P2',turnIndex:64,continuation:null,outcome:{status:'p1_win'},pieces:[]};
+    await runtime.loadSnapshot(snapshot,{legalActions:[],overlayMode:'recorded-turn',destroyedPieces:[record],animatedDestroyedPieces:[record],staticDestroyedPieces:[],animateHistoryDestruction:true});
+    assert.equal(scheduledTimers.length,1);
+    now+=scheduledTimers[0].delay;
+    scheduledTimers[0].fn();
+    const animatedRenderCount=renderCalls.filter(payload=>payload.removalEffects?.length).length;
+    await runtime.loadSnapshot(snapshot,{legalActions:[],overlayMode:'recorded-turn',destroyedPieces:[record],animatedDestroyedPieces:[record],staticDestroyedPieces:[],animateHistoryDestruction:false});
+    assert.equal(scheduledTimers.length,1);
+    assert.equal(renderCalls.filter(payload=>payload.removalEffects?.length).length,animatedRenderCount);
+    assert.deepEqual(renderCalls.at(-1).removalEffects,[]);
+    assert.deepEqual(runtime.getOverlay().destroyedPieces,[record]);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    Date.now = originalDateNow;
+  }
+});
+
+test("move selection animates immediate removal while settlement casualties remain static", async () => {
+  const renderCalls=[];
+  const scheduledTimers=[];
+  const originalSetTimeout=globalThis.setTimeout;
+  const originalClearTimeout=globalThis.clearTimeout;
+  const originalDateNow=Date.now;
+  let now=9000;
+  globalThis.setTimeout=(fn,delay)=>{const handle={fn,delay};scheduledTimers.push(handle);return handle;};
+  globalThis.clearTimeout=()=>{};
+  Date.now=()=>now;
+  try{
+    const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:payload=>renderCalls.push(payload),getSelectedPieceSummary:()=>null,getPieceById:()=>null,getPieceAt:()=>null,
+      nextSelectionForCell:()=>({selection:{selectedPieceId:null,source:null,target:null},nextActionType:'pass'})},host:{canInteract:()=>false}});
+    runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null,boardTurnIndicatorEl:null});
+    const immediate={row:3,col:3,ownerSeat:'p2',piece:{id:'immediate',owner:'P2',kind:'unit',position:{row:3,col:3}}};
+    const settlement={row:4,col:4,ownerSeat:'p2',piece:{id:'settlement',owner:'P2',kind:'unit',position:{row:4,col:4}}};
+    await runtime.loadSnapshot({sideToMove:'P1',turnIndex:2,continuation:null,outcome:null,pieces:[]},{legalActions:[],overlayMode:'recorded-action',
+      destroyedPieces:[immediate,settlement],animatedDestroyedPieces:[immediate],staticDestroyedPieces:[settlement],animateHistoryDestruction:true});
+    const animated=renderCalls.find(payload=>payload.removalEffects?.length===1);
+    assert.equal(animated.removalEffects[0].piece.id,'immediate');
+    assert.deepEqual(animated.overlay.destroyedPieces,[settlement]);
+    now+=scheduledTimers[0].delay;
+    scheduledTimers[0].fn();
+    assert.deepEqual(runtime.getOverlay().destroyedPieces,[immediate,settlement]);
+  }finally{
+    globalThis.setTimeout=originalSetTimeout;
+    globalThis.clearTimeout=originalClearTimeout;
+    Date.now=originalDateNow;
+  }
+});
+
 test("reduced motion settles history destruction immediately without a transient effect", async () => {
   const renderCalls = [];
   const scheduledTimers = [];
@@ -3582,6 +3774,31 @@ test("enabling reduced motion settles the owned effect once and preserves pendin
     if (originalDocument) Object.defineProperty(globalThis, "document", originalDocument);
     else delete globalThis.document;
   }
+});
+
+test("unchanged empty pending removals do not redraw the full Board", async () => {
+  const renders = [];
+  const runtime = createBoardRuntime({
+    boardAdapter: {
+      mount: noop,
+      unmount: noop,
+      render: payload => renders.push(payload),
+      getSelectedPieceSummary: () => null,
+      getPieceById: () => null,
+      getPieceAt: () => null,
+    },
+    host: { canInteract: () => true },
+  });
+  runtime.bindElements({ boardEl: {}, overlayLinesEl: {}, boardPreviewLabelEl: null, boardTurnIndicatorEl: null });
+  await runtime.loadSnapshot(
+    { sideToMove: "P1", turnIndex: 1, continuation: null, outcome: null, pieces: [] },
+    { legalActions: [] },
+  );
+  const before = renders.length;
+  runtime.setPendingRemovalEffects([], null);
+  runtime.setPendingRemovalEffects([], null);
+  assert.equal(renders.length, before);
+  destroyUninitializedNodeRuntime(runtime);
 });
 
 test("board runtime refreshes a preserved branch selection from the new legal actions", async () => {

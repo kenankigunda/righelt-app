@@ -60,3 +60,15 @@ test('shared prefixes require exact canonical encodings, not matching commander 
   const shifted=structuredClone(initial);shifted.pieces[1].shifted=true;
   assert.equal(sharedOpening(shifted),false);
 });
+
+test('replayed takeback branches remain guards rather than active learning starts',()=>{
+ const f=fixture(),initial=createInitialState(),first=transition(initial,{type:'pass'}),second=transition(first,{type:'pass'});
+ const add=r=>f.decisions.push({game_id:f.games[0].game_id,event_seq:f.decisions.length,event_ordinal:0,payload_json:JSON.stringify(r)});
+ add({id:'discarded',kind:'decision',revision:2,move:{displayMoveNumber:2,selectionSnapshot:first,snapshot:second,action:{type:'pass'}}});
+ add({id:'restore',kind:'restoration',state:initial,restoredIds:['move1','discarded'],targetDecisionId:'move1'});
+ add({id:'active',kind:'decision',revision:4,move:{displayMoveNumber:1,selectionSnapshot:initial,snapshot:first,action:{type:'pass'}}});
+ const result=productionCorpus(f.games,f.decisions,{heldOut:[]});
+ assert.equal(result.reports[0].currentStateVerified,true);
+ assert.equal(result.positions.find(p=>p.stateHash===deterministicStateHash(first)).historyStatus,'undone');
+ assert.equal(result.positions.find(p=>p.stateHash===deterministicStateHash(initial)).decisionId,'active');
+});

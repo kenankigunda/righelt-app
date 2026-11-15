@@ -19,7 +19,7 @@ export function createMessageHeightController(label) {
  const slot=label?.closest?.('.board-message-slot'),doc=label?.ownerDocument,win=doc?.defaultView;
  if(!slot||!win?.ResizeObserver||!win?.MutationObserver)return {destroy(){}};
  const live=slot.querySelector('.board-message-live'),replicas=[...slot.querySelectorAll('.board-message-sizing')];
- let disposed=false,frame=null,animation=null,initial=true,metricChange=true,pointer=false,key=false,lastTarget=null,lastWidth=null,lastFont=null,pressedControl=null,pendingContent=null,publishingContent=false,contentHeightOwner=null,contentHeightFloor=0;
+ let disposed=false,frame=null,animation=null,initial=true,metricChange=true,pointer=false,key=false,lastTarget=null,lastWidth=null,lastFont=null,pressedControl=null,pendingContent=null,publishingContent=false,contentHeightOwner=null,contentHeightFloor=0,transitioningContent=false;
  const measure=(forceSnap=false)=>{
   if(forceSnap&&frame!==null)win.cancelAnimationFrame(frame);
   frame=null;if(disposed||!slot.isConnected)return;
@@ -59,10 +59,11 @@ export function createMessageHeightController(label) {
   const overflow=required>grammar+1;
   if(overflow)slot.dataset.promptOverflow='true';else delete slot.dataset.promptOverflow;
   const target=Math.max(grammar,overflow?required:0)+outerPadding;
-  if(target===lastTarget&&!metricChange&&!forceSnap)return;
+  if(target===lastTarget&&!metricChange&&!forceSnap){transitioningContent=false;return;}
   const from=slot.getBoundingClientRect().height;
-  const change=messageHeightTransition({from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key});
+  const change=messageHeightTransition({from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key,contentChange:contentHeightOwner?.startsWith('board-guidance:')===true||transitioningContent});
   if(change.kind==='defer')return;
+  transitioningContent=false;
   animation?.cancel();animation=null;slot.dataset.heightManaged='true';slot.style.height=`${target}px`;lastTarget=target;
   if(change.kind==='animate'&&slot.animate)animation=slot.animate([{height:`${from}px`},{height:`${target}px`}],{duration:change.duration,easing:change.easing});
   initial=false;metricChange=false;
@@ -70,7 +71,10 @@ export function createMessageHeightController(label) {
  const schedule=()=>{if(!disposed&&frame===null)frame=win.requestAnimationFrame(()=>measure());};
  const metrics=()=>{metricChange=true;schedule();};
  const resize=new win.ResizeObserver(schedule);for(const node of [live,...replicas])resize.observe(node);
- const mutations=new win.MutationObserver(schedule);mutations.observe(live,{subtree:true,childList:true,characterData:true,attributes:true});
+ const mutations=new win.MutationObserver((records=[])=>{
+  if(records.some(record=>record.target?.closest?.('[data-board-message-height-transition]')||[...(record.addedNodes??[])].some(node=>node.closest?.('[data-board-message-height-transition]')||node.querySelector?.('[data-board-message-height-transition]'))))transitioningContent=true;
+  schedule();
+ });mutations.observe(live,{subtree:true,childList:true,characterData:true,attributes:true});
  const starts=event=>{
   const button=event.target?.closest?.('button');
   const ownGuidance=button&&live.contains(button),ownPrompt=button&&label.contains(button),ownCell=button?.matches?.('.cell')&&label.closest('[data-shell-panel="board"]')?.contains(button);

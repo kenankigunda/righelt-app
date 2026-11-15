@@ -26,7 +26,6 @@ import { icon } from '../shell/ui.js';
 import { createLiveTransportStore } from '../shell/live-transport.js';
 import {activityStateActorSide} from '../shell/activity-affiliation.js';
 import {renderGameRoleLabel} from '../shell/game-role-presentation.js';
-import {syncIncomingNarrationRoot} from '../shell/incoming-narration.js';
 import {createConfirmedResultOwner} from '../shell/confirmed-result.js';
 
 const source = readFileSync(new URL("../shell/app.js", import.meta.url), "utf8");
@@ -135,6 +134,8 @@ test("optimistic terminal state cannot expose a result or open it before confirm
   confirmed=optimistic;
   assert.equal(resultOwner.observe(confirmed).becameTerminal,true);
   assert.match(context.result(optimistic).replace(/<[^>]*>/g,''),/You won/);
+  assert.doesNotMatch(context.result(optimistic).replace(/<[^>]*>/g,''),/Game finished/);
+  assert.match(context.result(optimistic),/aria-label="Game result"/);
   assert.match(context.result(optimistic),/<a[^>]+href="#\/">[\s\S]*?<svg[^>]+aria-hidden="true"[^>]+focusable="false"[\s\S]*?<\/svg>Home<\/a>/);
   assert.match(context.history(optimistic),/data-action="view-result"/);
   assert.equal(resultOwner.present('g'),true);
@@ -179,6 +180,7 @@ test('actual result renderer affiliates victory with the authoritative winning s
   runWithHistoryRendering(`const renderResult=game=>renderResultPanel(game,{transport,escapeHtml,formatDisplayGameId});;globalThis.output=renderResult(game);`,Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
   assert.match(context.output,new RegExp(`data-result-tone="victory" data-winner="${winner}"`));
   assert.match(context.output.replace(/<[^>]*>/g,''),/You won/);assert.match(context.output,new RegExp(`${playerDisplayName(game,winner==='p1'?'p2':'p1')}’s commander`));
+  assert.doesNotMatch(context.output.replace(/<[^>]*>/g,''),/Game finished/);assert.match(context.output,/aria-label="Game result"/);
   const actions=[...context.output.matchAll(/<button([^>]*)data-action="(analysis|rematch)"[^>]*>/g)];
   assert.equal(actions.length,2);for(const action of actions)assert.doesNotMatch(action[1],/secondary/);
   assert.equal(getGameResult(game,identity).rematchSide,winner==='p1'?'p2':'p1');
@@ -192,7 +194,7 @@ function historyRouteHarness(t) {
   tab.getAttribute=()=>mountedPanel;
   shell.getAttribute=()=> 'g';
   shell.querySelector=selector=>selector==='[data-game-panel="history"]'?history:selector.includes('aria-pressed="true"')?tab:null;
-  const appEl=new Element();appEl.querySelector=selector=>[':scope > [data-incoming-narration-root]','[data-incoming-narration-root]','[data-board-context-details]'].includes(selector)?null:main;
+  const appEl=new Element();appEl.querySelector=selector=>selector==='[data-board-context-details]'?null:main;
   const snapshot=index=>({pieces:[],sideToMove:'P1',turnIndex:index});
   const transport=createLiveTransportStore({storage:{getItem:()=> 'actor',setItem(){}},fetcher:()=>{throw Error('History is cached; no request is needed');}});
   transport.applyLiveGameUpdate({game:{id:'g',createdAt:'2026-01-01',updatedAt:'2026-01-01',gameplayRevision:1,
@@ -211,7 +213,7 @@ function historyRouteHarness(t) {
     document:{getElementById:()=>null,querySelector:()=>main},
     getCurrentFlyoutState:()=>({}),buildInviteHash:()=>'',
     icon,historyActorLabel,liveHistoryLabel,renderHistorySlots,canReadAdditionalHistory,activityStateActorSide,
-    incomingNarrationState:{observe:()=>({context:null,expanded:false})},incomingNarrationContext:()=>null,renderIncomingNarration:()=>'',syncIncomingNarrationRoot,contextReplayEnabled:()=>false,
+    incomingNarrationContext:()=>null,renderIncomingNarration:()=>'',contextReplayEnabled:()=>false,
     account:{snapshot:()=>({enabled:false})},additionalHistory:{snapshot:()=>({metadata:true,available:false,loaded:false,items:[]})},
     escapeHtml:String,formatClientDateTime:String,toStableKey:JSON.stringify,
     revealSelectedHistory:()=>{},buildMovePreview:move=>({snapshot:move.snapshot}),buildTurnPreview:()=>({}),getControlSeatForTurn:(_state,seat)=>seat,historyTurnSide,COMPUTER_PROFILES:{},playerDisplayName:()=>"You",playerToneClassForSide:()=>'',playerToneClassForSeat:()=>'',
@@ -225,7 +227,7 @@ function historyRouteHarness(t) {
     updateHeaderFields:noop,reconcileMiniBoardPreviews:noop,animateHomeSectionTransitions:noop,syncScenarioAuthoringControls:noop,
     createDesktopBoardFit:()=>({sync:options=>assert.equal(options.onlyNew,true)}),boardRuntime:null,
     scheduleGameShellStickyLayout:noop,syncShellLayoutMode:()=>'narrow',applySharedMutationGates:noop,mountBoardForGame:noop,
-    boardContextPresentation:{captureIncomingFocus:()=>null,restoreIncomingFocus(){}},syncIncomingNarrationHost:noop,syncBoardContextDetails:noop,
+    boardContextPresentation:{captureIncomingFocus:()=>null,restoreIncomingFocus(){}},syncBoardContextDetails:noop,
     syncRenderedMarkupSnapshot:()=>{context.lastRenderedRouteKey=context.getRouteRenderKey();},
     viewingIntent:{saveScroll:noop,cancelUndo:noop,scrollTop:()=>0},replayRequests:{cancel:noop},replayController:null,mobileNavigation:null,
   };

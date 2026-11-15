@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {celestialMarkMarkup} from '../shell/celestial-mark.js';
-import {gameDateInlayModel,renderGameDateInlay} from '../shell/game-date-inlay.js';
+import {createViewerTimeZoneRefresh,gameDateInlayModel,renderGameDateInlay} from '../shell/game-date-inlay.js';
 
 test('game start instant renders in the viewer locale and timezone',()=>{
  const instant='2026-11-13T23:30:00.000Z';
@@ -51,4 +51,13 @@ test('invalid or unavailable starts remain a bounded decorative loading slot',()
  assert.match(html,/game-date-inlay is-loading/);
  assert.match(html,/aria-hidden="true"/);
  assert.doesNotMatch(html,/role="img"/);
+});
+
+test('timezone refresh only republishes when the viewer timezone changes',()=>{
+ let zone='America/Los_Angeles',changes=[];
+ const owner=createViewerTimeZoneRefresh({readTimeZone:()=>zone,onChange:value=>changes.push(value)});
+ assert.equal(owner.current(),'America/Los_Angeles');
+ assert.equal(owner.reconcile(),false);assert.deepEqual(changes,[]);
+ zone='Asia/Tokyo';assert.equal(owner.reconcile(),true);assert.deepEqual(changes,['Asia/Tokyo']);
+ assert.equal(owner.reconcile(),false);assert.deepEqual(changes,['Asia/Tokyo']);
 });

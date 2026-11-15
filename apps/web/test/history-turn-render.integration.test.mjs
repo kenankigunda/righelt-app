@@ -17,7 +17,7 @@ const context={undoHistory,selectedHistoryPresentation,recordedMoveNumber,visibl
  transport:{getIdentityId:()=> 'me'},icon:()=>'',formatClientDateTime:String,expandedUndoneGroups:new Set(),expandedImportedHistory:new Set(),liveHistoryLabel:()=> 'Waiting'};
 const renderer=createHistoryRendering(()=>context);
 context.render=renderer.renderTurnHistory;
-test.beforeEach(()=>{context.expandedUndoneGroups=new Set();context.expandedImportedHistory=new Set();context.archiveState=undefined;});
+test.beforeEach(()=>{context.expandedUndoneGroups=new Set();context.expandedImportedHistory=new Set();context.archiveState=undefined;context.historySelectionEpisode=()=>null;});
 const moves=[{index:0,turnIndex:0,turnMoveIndex:0,moveId:'a',actorSide:'P1',notation:'Push',snapshot:{pieces:[]}},
  {index:1,turnIndex:0,turnMoveIndex:1,moveId:'b',actorSide:'P2',notation:'Retreat',snapshot:{pieces:[]}},
  {index:2,turnIndex:1,turnMoveIndex:0,moveId:'c',actorSide:'P2',notation:'Move',snapshot:{pieces:[]}}];
@@ -32,6 +32,16 @@ test('turn headings retain ownership while displayed moves run newest first',()=
  assert.doesNotMatch(html,/class="history-actor"/);
  assert.match(html,/data-testid="history-pending-move-item"[^>]*aria-busy="true"/);
 });
+test('mobile replay key suppresses only the duplicate fallback for its exact live opponent episode',()=>{
+ const replay={key:'replay-key'},acknowledged={key:'ack',gameId:'g',message:{text:'Opponent moved'},replay};
+ context.boardContexts.update('acknowledged',acknowledged);context.boardContexts.dismiss('ack');
+ context.canReplayDisplayed=()=>true;context.contextReplayEnabled=()=>true;
+ context.mobilePreviousTurnReplaySupplies=descriptor=>descriptor===replay;
+ assert.doesNotMatch(context.render(game),/Show me again/);
+ context.mobilePreviousTurnReplaySupplies=()=>false;
+ assert.match(context.render(game),/Show me again/);
+ context.boardContexts.clear();delete context.canReplayDisplayed;delete context.contextReplayEnabled;delete context.mobilePreviousTurnReplaySupplies;
+});
 test('selected move is inert while individual actions remain buttons and preview uses action overlay',()=>{
  const html=context.render({...game,inHistoryMode:true,historyIndex:1});
  const selected=html.match(/<li class="history-item[^>]*is-selected[^>]*>/)[0];
@@ -41,12 +51,27 @@ test('selected move is inert while individual actions remain buttons and preview
 });
 test('requested History targets pulse separately while the last accepted move and preview remain selected',()=>{
  const movePending=context.render({...game,inHistoryMode:true,historyIndex:0,historyLoading:true,historyLoadIndex:1});
- assert.match(movePending,/class="history-item player-tone-P2 history-selection-pending"[^>]*data-move-id="b"[^>]*aria-busy="true"/);
+ assert.match(movePending,/class="history-item player-tone-P2"[^>]*data-move-id="b"/);
+ assert.match(movePending,/class="history-move-hit secondary history-selection-pending"[^>]*data-move-index="1"[^>]*aria-busy="true"/);
  assert.match(movePending,/class="history-item player-tone-P1 is-selected[^"]*"[^>]*data-move-id="a"/);
  assert.match(movePending,/data-preview-mode="recorded-action"/);
  const turnPending=context.render({...game,inHistoryMode:true,historyIndex:0,historyLoading:true,historyLoadIndex:2,historyLoadTurnIndex:1});
- assert.match(turnPending,/class="history-turn player-tone-P2 history-selection-pending"[^>]*aria-busy="true"/);
+ assert.match(turnPending,/class="history-turn-hit secondary history-selection-pending"[^>]*data-turn-index="1"[^>]*aria-busy="true"/);
  assert.match(turnPending,/class="history-turn-heading"[^>]*>Turn 2/);
+});
+test('explicit selection episode survives replacement for cached Move, Turn and Return to live',()=>{
+ context.historySelectionEpisode=()=>({scope:'g:move:b'});
+ const move=context.render({...game,inHistoryMode:true,historyIndex:1});
+ assert.match(move,/class="history-item player-tone-P2 is-selected[^\"]*history-selection-pending"[^>]*data-move-id="b"[^>]*aria-busy="true"[^>]*data-history-selection-episode-pending="true"/);
+ context.historySelectionEpisode=()=>({scope:'g:turn:1'});
+ const turn=context.render({...game,inHistoryMode:true,historyTurnIndex:1,historyTurnMoves:[moves[2]]});
+ assert.match(turn,/class="history-turn player-tone-P2 history-selection-pending"[^>]*aria-busy="true"[^>]*data-history-selection-episode-pending="true"/);
+ context.historySelectionEpisode=()=>({scope:'g:live'});
+ const live=context.render({...game,inHistoryMode:false,currentTurn:{index:2,playerSeat:'Player 1',moveIndexes:[]},currentSnapshot:{pieces:[]}});
+ assert.match(live,/class="history-empty-line history-return-live is-transition-overlay"><button class="secondary history-selection-pending"[^>]*data-action="return-live"[^>]*disabled[^>]*aria-busy="true"[^>]*data-history-selection-episode-pending="true"/);
+ assert.match(live,/Waiting/);
+ context.historySelectionEpisode=()=>null;
+ assert.doesNotMatch(context.render({...game,inHistoryMode:true,historyIndex:1}),/data-history-selection-episode-pending/);
 });
 test('imported lineage is collapsed, source-linked, and branchable but never undoable',()=>{
  const imported=moves.slice(0,2).map((move,index)=>({...move,importedFrom:{gameId:'source-game',decisionId:move.moveId,gameplayRevision:7},displayMoveNumber:index+1}));

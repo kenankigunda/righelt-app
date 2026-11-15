@@ -25,6 +25,6 @@ export function renderGameSummaryPanel(game,{identityId,formatDateTime=value=>St
     turn:`Active turn: ${game.currentTurn
       ? `${escape(String(game.currentTurn.index+1))} · ${renderGameParticipantLabel(game.currentTurn.playerSeat,game,{identityId})} · ${escape(String(game.currentTurn.moveIndexes.length))} move(s)`
       : 'n/a'}`,
-    latest:`Latest: ${renderGameParticipantReferences(latestNote,game,{identityId})}`,
+    latest:latestNote === 'Ready' ? '' : `Latest: ${renderGameParticipantReferences(latestNote,game,{identityId})}`,
   });
 }

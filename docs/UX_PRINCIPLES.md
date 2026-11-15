@@ -47,7 +47,11 @@ External references that informed these principles include Apple Human Interface
 ## Approachable Copy Principle
 
 - Write all user-facing text as if speaking to a first-time player who just wants to play. Technical accuracy is not an excuse for jargon.
-- Prefer showing state through UI treatment (color, position, icons, visual hierarchy) over telling the player about state in text. If the UI already communicates something, the text is redundant — remove it.
+- Prefer interaction design, position, icons and visual hierarchy to explain routine interface states. Remove neutral copy that merely repeats an evident state or a stronger message. Preserve meaningful status, action, authority, error, recovery and accessibility context. Color or animation alone cannot carry essential meaning.
+- Friendly copy and brand atmosphere are useful product content. Keep all three Home lines: "Take your seat", "Start something new", and "A familiar rival, or a new challenge? You decide." Keep "Link copied! Ready to share." Brevity alone is not a reason to remove warmth.
+- Judge copy in context. "Game finished" above the result heading is redundant. A finish notification during deliberate History review communicates a new event and must retain the approved result information. Keep useful screen-reader context without repeating the focused heading.
+- Keep clear preparation and readiness feedback, including a friendly acknowledgement when a game becomes ready. Do not remove readiness feedback before an equally clear replacement is delivered.
+- Suppress idle "Latest: Ready", not meaningful Latest events. Preserve approved causes, player identity, required instructions and useful empty states. For changed surfaces, review both removals and the approved copy that must remain.
 - Use natural, first-person phrasing ("You are Player 1") over label-colon-value patterns ("Role: Player 1"). The player is a person in a game, not a row in a database.
 - Hide empty optional lists. Explicit audience state is an exception: Viewers uses None when empty, as specified in the [Players contract](ai/PLAYERS_CARD_CONTRACT.md).
 - Error and recovery messages should describe what is happening for the player, not what the system is doing internally. Avoid words like "sync," "optimistic," "authoritative," "server," "route," "snapshot," or "live state" in routine messages. Technical details belong in the optional, privacy-filtered [Details disclosure](ai/GAME_RECOVERY.md#presentation-and-diagnostics) and debug report, rather than the main message.
@@ -55,7 +59,7 @@ External references that informed these principles include Apple Human Interface
 - Section headings should feel like natural wayfinding, not database table names. Use Players with a subordinate Viewers section, as specified in the [Players contract](ai/PLAYERS_CARD_CONTRACT.md).
 - Use human-readable names in player-facing controls and messages. Do not substitute raw device or operation IDs when a friendly name is unavailable. Optional diagnostic reports may include only the identifiers allowed by the recovery privacy contract.
 
-Examples illustrating the spirit:
+Examples illustrating the spirit, not authorization to remove established role, turn or recovery information. Apply current surface contracts and explicit approvals before changing existing copy:
 
 | Before | After | Why |
 |---|---|---|
@@ -255,7 +259,7 @@ Show each opponent on first play even when ready. Never force watching all image
 ## Sound
 Wooden-tabletop palette; sound defaults ON unless explicitly muted. Visible lightweight shared-header toggle, independent of login. Remember the device choice, respect browser restrictions and any available explicit no-sound preference. Reduced motion is not mute.
 
-Distinct physical cues: light lift/tick for selection; softer tick for preview; gentle release for cancellation; crisp clack for committed placement; distinct removal contact for captures; differentiated turn/result cues; restrained game-entry and introduction cues. Hover is silent. Deliberate click, tap, or keyboard preview gets immediate feedback. Do not duplicate cues on renders, acknowledgements, reconnects or selection restoration. Immediate tactile placement feedback is deduplicated against acknowledgements. Result cues require confirmation. Hidden pages, initial loads, ordinary buttons, logo and image cycling are silent; never replay missed sounds.
+Distinct physical cues: light lift/tick for selection; softer tick for preview; gentle release for cancellation; crisp clack for committed placement; distinct removal contact for captures; differentiated turn/result cues; restrained game-entry and introduction cues. Hover is silent. Deliberate click, tap, or keyboard preview gets immediate feedback. Do not duplicate cues on renders, acknowledgements, reconnects or selection restoration. Immediate tactile placement feedback is deduplicated against acknowledgements. Result cues require confirmation and belong to the eligible result card opening, not its receipt, replay or reconciliation. A result deferred by a dialog or background state sounds once when the card actually opens. Explicit View result intentionally replays it. Hidden pages, initial loads, ordinary buttons, logo and image cycling are otherwise silent; never replay missed sounds.
 
 
 ## Review refinements: integrated, playful surfaces
@@ -263,7 +267,7 @@ Distinct physical cues: light lift/tick for selection; softer tick for preview; 
 - Artwork belongs to its component: use true transparent negative space or an exactly matched plain surface, preserve intentional crisp edges, and avoid rectangular backgrounds or feathered disguises. Apply this consistently across every opponent, scene and choice illustration.
 - Use angular clipped corners prominently on cards and sections, selectively accented in red/blue. Colored accents meet the component edges. Soft primary buttons and restrained modal surfaces provide contrast without nested boxes.
 - The aligned background grid recedes with distance from the logo. Preserve the approved wordmark itself.
-- Remove implementation language and raw identifiers from normal play. Keep only copy that helps players choose, understand waiting, or recover. Explain consequences, not internal mechanisms.
+- Remove implementation language and raw identifiers from normal play. Keep copy that helps players choose, understand waiting or recover, or adds friendly brand atmosphere. Explain consequences, not internal mechanisms.
 - Audio follows the visible action immediately, including local placement before server acknowledgement. Deduplicate by action identity; rejection remains visibly recoverable. Preserve deliberate mute, silent replay/background behavior, and silent hover. Built-in-speaker timing is the review baseline.
 - Invitations state their recipient purpose: red/blue for an open playing seat, purple for viewing. Merge players and invitation actions. Friend creation opens a dismissible Invite modal; copy confirms success without closing it. Recipient intent never replaces server authorization.
 - Introduction scenes rotate every three seconds; hover/focus stay silent and do not pause, manual carets or deliberate keyboard actions stop cycling for the visit, and reduced motion stays manual.
@@ -307,6 +311,14 @@ A result represents the acknowledged game outcome, never a pending local move. A
 
 Play again offers a deliberate opponent and side choice, with the opposite side selected by default. Friend starts a fresh invitation and never forces the former opponent into another match. Self-play retains its chosen starting side through reloads. Unavailable trained opponents remain disabled. Closing the dialog or changing accounts cancels pending continuation. The optional creation-side field defaults to red for existing clients and changes no game rules.
 
+### History destruction timing
+
+History animations match the timing of actual removal in live play. Attribution explains which move caused a destruction; it never moves the removal animation to that move.
+
+“Show me again” preserves every supply cut, restoration and repeated cut, with destruction animated only when live play finalized it. Selecting a move shows its supply-cut and pending-destruction state, including pieces awaiting turn-end settlement. Immediate no-retreat destruction is the exception: animate it on the move where it actually happened. Selecting a completed turn animates its turn-end destructions only, then leaves static destroyed markers. Repeat that animation on deliberate turn reselection, never on refresh or layout changes. Respect reduced motion while preserving the same final state and accessible meaning.
+
+The attribution and inspection contract is recorded in [Web app spec §7.1](RIGHELT_WEB_APP_SPEC.md#71-destruction-attribution-and-inspection).
+
 ### Account settings and player identity
 
 Settings belong in a stone-cut side flyout that leaves the game usable on wider screens and fills the screen on phones. Sign-in and account creation remain modal. Settings and password changes share the account surface, branded action icons and player emblem. Keep credential behavior and session fencing unchanged.
@@ -317,7 +329,7 @@ Player names are quiet text controls: display name first, username smaller under
 
 Opening, changing, and dismissing a dialog must preserve the background page's scroll position. Move focus into the dialog without scrolling the page, then return it to the triggering control without moving the viewport. An overlay is an interruption within the current place, not navigation to a new place. Decorative layers must not create scrollbars. Keep real scrolling available when content exceeds the viewport.
 
-Hide Continue playing once loading confirms there are no unfinished games. Group the board legend by meaning: Commander above Command line, Supply point above Supply line, and Group strength at the top right.
+Hide Continue playing once loading confirms there are no unfinished games. Group Board labels by meaning: Commander with Command line, Supply point with Supply line, and Group strength as a standalone peer. Keep each family together when the layout stacks, align parent and child text on one shared icon/text grid, and collapse an absent child instead of reserving a blank row. Previous turn is a separate contextual row, not a member of either network family.
 
 Use the same compact presence indicator on home cards and player rows. Keep the display name primary and the username quiet underneath. Opening a profile expands its row rather than wrapping the surrounding controls. A prepared player invitation appears in the vacant seat as Awaiting player, without claiming it has been delivered.
 
@@ -375,7 +387,7 @@ A player request awaiting approval keeps the invitation surface at the top. The 
 
 Notices inside an existing surface use an unboxed status marker, text, and clearly grouped actions. A standalone notice can own one cut surface. Avoid rounded pastel alert boxes nested inside stone panels. Shared components own padding, empty-state collapse, and spacing between messages and actions. Test both empty and populated messages so hidden content cannot reserve accidental space.
 
-The legend explains only the current board visualization. Commander and Supply point stay present and retain their independent inspector affiliation colors. Path samples appear only when their paths are drawn, using the separate semantic styles in the [legend contract](RIGHELT_WEB_APP_SPEC.md#independent-board-legend-inspection). Group strength appears only when an actual group-strength badge is visible, not merely when highlighted group members exist. Legend changes resize the section smoothly, including interrupted transitions.
+The legend explains only the current board visualization. Commander and Supply point stay present and retain their independent inspector affiliation colors. Path samples appear beneath their own parent only when their paths are drawn, using the separate semantic styles in the [legend contract](RIGHELT_WEB_APP_SPEC.md#independent-board-legend-inspection). Group strength appears only when an actual group-strength badge is visible, not merely when highlighted group members exist. Previous turn occupies a separate passive contextual row only while the wash is painted. All rows share one 24px icon track and flexible text track, with icons aligned to the first line of wrapped text. Content-driven height, enlarged text, focus paint, and forced-color samples must remain clear of the Board's painted corner cut. Legend changes resize the section smoothly, including interrupted transitions.
 
 Artwork that includes gameplay uses the current Righelt board and piece vocabulary: clipped unit pieces, the stepped commander with its open horizontal center, and the angular supply-point arch. Use the shared piece-symbol source and rendered board as references. Avoid generic checker discs. Preserve the characters, scene continuity, large composition, and surface-integrated negative space while updating the game details.
 
@@ -386,7 +398,7 @@ Friend's Start card uses the animated hands. Its narrative overlay expands those
 
 Commander windows match the square's current fill but are opaque. Move-preview and command/supply paths and center dots must not show through, including ghost and selected states. Keep opacity on the colored piece body, not its cutout fill.
 
-Immediate local move feedback is tactile input feedback. A result cue requires the first confirmed terminal transition. Rejected optimistic finishing moves must not sound like a win. A matching acknowledgement suppresses repeated placement feedback but must still deliver a newly confirmed result once. Account focus restoration uses preventScroll, matching the shared overlay contract.
+Immediate local move feedback is tactile input feedback. A result cue requires an eligible presentation of a confirmed terminal transition. Rejected optimistic finishing moves must not sound like a win. Receipts, socket updates, HTTP reconciliation and Board replay stay quiet so result entry owns one cue. Account focus restoration uses preventScroll, matching the shared overlay contract.
 
 Shared piece stacks own their elevation above paths. Individual commander masking must preserve the stack's internal underlay/top order. Browser coverage exercises both ordinary commander previews and a commander pushed beneath a unit. Pending approval has one accessible foreground status, never a duplicate notice in the inert preview.
 

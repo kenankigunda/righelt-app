@@ -34,3 +34,15 @@ export function renderGameDateInlay(startedAt,options={}){
   const celestial=celestialMarkMarkup(model,{className:'game-date-celestial'});
   return `<svg class="game-date-inlay" viewBox="0 0 48 56" role="img" aria-label="${escape(`Started ${model.label}, ${model.phase}`)}" focusable="false"><path class="game-date-orbit-highlight" d="M3 37V10l7-7h28l7 7v27"/><path class="game-date-orbit" stroke="${deep}" d="M3 37V10l7-7h28l7 7v27"/>${celestial}<text class="game-date-month" x="24" y="19">${escape(model.month)}</text><text class="game-date-day" x="24" y="36">${escape(model.day)}</text></svg>`;
 }
+
+export function createViewerTimeZoneRefresh({readTimeZone=()=>Intl.DateTimeFormat().resolvedOptions().timeZone,onChange=()=>{}}={}){
+  let current=readTimeZone();
+  return{
+    current:()=>current,
+    reconcile(){
+      const next=readTimeZone();
+      if(next===current)return false;
+      current=next;onChange(next);return true;
+    },
+  };
+}

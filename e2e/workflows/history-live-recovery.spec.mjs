@@ -1,65 +1,93 @@
 import { test, expect } from "@playwright/test";
 
 import {
-  acceptPendingRequest,
-  closeContextQuietly,
   createGameFromHome,
-  createIsolatedPage,
   getHistoryMoveCount,
   makeAnyLegalMove,
-  openDirectGameLink,
   openHistoryMode,
-  requestPlayerJoin,
   returnToLive,
 } from "../support/app.mjs";
 
-test("history mode stays latched while live updates append and return-to-live restores the latest state", async ({ browser, baseURL }) => {
-  const { context: creatorContext, page: creatorPage } = await createIsolatedPage(browser);
-  const { context: playerContext, page: playerPage } = await createIsolatedPage(browser);
-  let releaseHistory = null;
-  let releaseLive = null;
-  const historyReady = new Promise((resolve) => {
-    releaseHistory = resolve;
-  });
-  const liveReady = new Promise((resolve) => {
-    releaseLive = resolve;
+test("returning Live cancels obsolete History hydration without surrendering current authority", async ({ page }) => {
+  const { gameId } = await createGameFromHome(page);
+  await page.locator('[data-action="play-as-both-players"]').click();
+  await expect(page.getByTestId("game-role")).toContainText("both players");
+  await makeAnyLegalMove(page, "p1");
+  await makeAnyLegalMove(page, "p2");
+  await openHistoryMode(page, 0);
+
+  let releaseDelivery;
+  const deliveryGate = new Promise(resolve => { releaseDelivery = resolve; });
+  let heldRequest = null;
+  let snapshotReads = 0;
+  let archiveReads = 0;
+  let retiredRouteReads = 0;
+  let heldResponseReady = false;
+  let heldRequestCancelled = false;
+  const onRequestFailed = request => {
+    if (request === heldRequest) heldRequestCancelled = true;
+  };
+  page.on("requestfailed", onRequestFailed);
+
+  await page.route(`**/api/shell/games/${gameId}/**`, async route => {
+    const request = route.request();
+    const endpoint = new URL(request.url()).pathname.split("/").at(-1);
+    if (endpoint === "history" || endpoint === "live") {
+      retiredRouteReads += 1;
+      await route.abort();
+      return;
+    }
+    if (endpoint === "decision-history") archiveReads += 1;
+    if (endpoint !== "decision-snapshot") {
+      await route.continue();
+      return;
+    }
+    snapshotReads += 1;
+    if (heldRequest) {
+      await route.continue();
+      return;
+    }
+    heldRequest = request;
+    const response = await route.fetch();
+    heldResponseReady = true;
+    await deliveryGate;
+    try {
+      await route.fulfill({ response });
+    } catch (error) {
+      if (!heldRequestCancelled) throw error;
+    }
   });
 
   try {
-    await creatorContext.route("**/api/shell/games/*/history", async (route) => {
-      await historyReady;
-      await route.continue();
-    });
-    await creatorContext.route("**/api/shell/games/*/live", async (route) => {
-      await liveReady;
-      await route.continue();
-    });
+    const beforeSelection = await getHistoryMoveCount(page);
+    await openHistoryMode(page, 1);
+    await expect.poll(() => snapshotReads, {
+      message: "Expected History selection to reach the current decision-snapshot boundary",
+    }).toBe(1);
+    await expect.poll(() => heldResponseReady, {
+      message: "Expected the real snapshot response to be held before client delivery",
+    }).toBe(true);
+    expect(archiveReads).toBe(0);
+    expect(retiredRouteReads, "Retired /history and /live routes must never own this proof").toBe(0);
 
-    const { gameHash } = await createGameFromHome(creatorPage);
-    await openDirectGameLink(playerPage, baseURL, gameHash);
-    await requestPlayerJoin(playerPage);
-    await acceptPendingRequest(creatorPage);
-    await expect(playerPage.getByTestId("game-role")).toContainText("Guest 2");
+    await returnToLive(page);
+    await expect.poll(() => heldRequestCancelled, {
+      message: "Expected Return to Live to abort the obsolete optional snapshot consumer",
+    }).toBe(true);
+    await expect(page).toHaveURL(new RegExp(`#\\/game\\/${gameId}(?:\\?|$)`));
+    await expect(page.getByTestId("game-shell")).toHaveAttribute("data-game-id", gameId);
+    await expect(page.getByTestId("history-return-live")).toHaveCount(0);
+    await expect(page.getByTestId("game-role")).toContainText("both players");
 
-    await makeAnyLegalMove(creatorPage, "p1");
-    const historyCountBeforeSelection = await getHistoryMoveCount(creatorPage);
-    await openHistoryMode(creatorPage, 0);
-    await expect(creatorPage.getByTestId("history-return-live")).toBeVisible();
-    releaseHistory?.();
-
-    await makeAnyLegalMove(playerPage, "p2");
-    await expect
-      .poll(async () => getHistoryMoveCount(creatorPage), {
-        message: "Expected live updates to append while the creator remains in history mode",
-      })
-      .toBeGreaterThan(historyCountBeforeSelection);
-
-    await returnToLive(creatorPage);
-    releaseLive?.();
-    await expect(creatorPage.getByTestId("history-return-live")).toHaveCount(0);
-    await expect(creatorPage.getByTestId("game-role")).toContainText("Guest 1");
+    await makeAnyLegalMove(page, "p2");
+    await expect.poll(() => getHistoryMoveCount(page), {
+      message: "Expected current live authority to admit the next self-play action",
+    }).toBeGreaterThan(beforeSelection);
+    expect(snapshotReads).toBe(1);
+    expect(retiredRouteReads).toBe(0);
   } finally {
-    await closeContextQuietly(creatorContext);
-    await closeContextQuietly(playerContext);
+    releaseDelivery?.();
+    page.off("requestfailed", onRequestFailed);
+    await page.unrouteAll({ behavior: "wait" });
   }
 });

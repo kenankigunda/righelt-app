@@ -41,6 +41,7 @@ test('E-U02 actual trainer worker ignores profile-injected exploration in normal
   const clean = result => { delete result.elapsedMs; return result; };
   assert.deepEqual(clean(injected.messages[0].result), clean(baseline.messages[0].result));
   assert.equal(injected.messages[0].result.rootExploration, undefined);
+  assert.deepEqual(injected.messages[0].result.searchIdentity.requestedProfile,{simulations:3});
 });
 
 test('E-I01 actual worker enables explicit development arm and rejects unsupported on requests before inference', async () => {

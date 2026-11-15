@@ -38,10 +38,22 @@ export function ownsBoardActor(game, identityId) {
 
 export function opponentBoardMessage(game, status, selection = {}, {canInteract = false, identityId} = {}) {
   if (!game || game.inHistoryMode) return null;
-  if (selection.selectedPieceId || selection.inspection) return null;
-  if (isCompletedGame(game) && game.pendingComputerSaveStartedAt == null) return {text:BOARD_PROMPT.complete};
+  if (selection.inspection) return null;
+  const own = roles(game,identityId);
+  const actor = normalizeActivitySide(game.controlSeat) ?? activityStateActorSide(game.board?.state);
+  const terminal = game.pendingComputerSaveStartedAt == null && (isCompletedGame(game) || (game.board?.state?.outcome?.status && game.board.state.outcome.status !== 'ongoing') || game.status === 'finished');
+  if (terminal) return selection.selectedPieceId ? null : {text:BOARD_PROMPT.complete};
+  const retreat = game.board?.state?.continuation?.type === 'push' && game.board.state.continuation.phase === 'retreat';
+  if (retreat) {
+    if (game.computerTurn || computerProfile(game,actor)) return computerBoardMessage(game,status,{});
+    if (actor && own.has(actor)) return null;
+    if (own.size) return 'Waiting for your opponent to retreat';
+    if (!actor) return 'Waiting for the retreat';
+    const actorName=playerDisplayName(game,actor);
+    return {text:`${actorName} is choosing a retreat`,actorName};
+  }
+  if (selection.selectedPieceId) return null;
   if (game.computerTurn || game.pendingComputerSaveStartedAt != null) return computerBoardMessage(game, status, selection);
-  if ((game.board?.state?.outcome?.status && game.board.state.outcome.status !== 'ongoing') || game.status === 'finished') return {text:BOARD_PROMPT.complete};
   const localTurn = canInteract || ownsBoardActor(game,identityId);
   if (canInteract && game.control === 'opponent' && !game.board?.state?.continuation) return null;
   if (localTurn && game.board?.state?.continuation) return null;
@@ -54,8 +66,6 @@ export function opponentBoardMessage(game, status, selection = {}, {canInteract 
     const actorName=actor?playerDisplayName(game,actor):null;
     return {text:actorName?`${actorName} to play`:'Waiting for the game',...(actorName?{actorName}:{}),context:message};
   };
-  const own = roles(game,identityId);
-  const actor = normalizeActivitySide(game.controlSeat) ?? activityStateActorSide(game.board?.state);
   const completed = latestOpponentTurn(game,{identityId});
   const started = (game.moves ?? []).some(move => !move.undone && move.turnIndex === game.board?.state?.turnIndex);
   if (localTurn) {

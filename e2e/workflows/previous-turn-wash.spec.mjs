@@ -24,11 +24,11 @@ for(const width of [390,1440])test(`previous opponent turn uses restorable squar
  expect(action).toBeTruthy();await submitPlayableAction(owner,action);
  const board=opponent.getByTestId('game-board'),cell=point=>board.locator(`.cell[data-row="${point.row}"][data-col="${point.col}"]`);
  const washes=board.locator('.previous-turn-source,.previous-turn-target,.previous-turn-deletion');
- const previousTurnKey=opponent.locator('.overlay-key [data-legend-entry="previousTurn"]');
+ const previousTurnKey=opponent.locator('[data-legend-entry="previousTurn"]'),previousTurnControl=previousTurnKey.locator('[data-previous-turn-key]');
  await expect(label(opponent).getByRole('button',{name:'Pass',exact:true})).toBeEnabled();
  await expect(board).toHaveAttribute('data-presentation-context','previous-turn');
  await expect(cell(action.from)).toHaveClass(/previous-turn-source/);await expect(cell(action.to)).toHaveClass(/previous-turn-target/);
- await expect(previousTurnKey).toBeVisible();await expect(previousTurnKey).toHaveText('Previous turn');await expect(previousTurnKey.locator('.previous-turn-key-swatch')).toHaveAttribute('aria-hidden','true');await expect(previousTurnKey.locator('button,a,[tabindex]')).toHaveCount(0);
+ await expect(previousTurnKey).toBeVisible();await expect(previousTurnKey).toHaveText('Changes by opponent');await expect(previousTurnKey.locator('.previous-turn-key-swatch')).toHaveAttribute('aria-hidden','true');await expect(previousTurnControl).toBeVisible();if(width===390)await expect(previousTurnControl).toHaveAttribute('aria-pressed','false');else await expect(previousTurnControl).not.toHaveAttribute('aria-pressed',/.+/);
  await expect(board.locator('.recorded-action-source-piece,.move-ghost,.history-role-source,.history-role-target')).toHaveCount(0);
  const [sourcePaint,targetPaint,plainPaint]=await Promise.all([action.from,action.to,{row:0,col:0}].map(point=>cell(point).evaluate(node=>getComputedStyle(node).backgroundImage)));
  expect(sourcePaint).not.toBe(targetPaint);expect(sourcePaint).not.toBe(plainPaint);expect(targetPaint).not.toBe(plainPaint);
@@ -38,8 +38,8 @@ for(const width of [390,1440])test(`previous opponent turn uses restorable squar
  await cell(empty).click();await expect(washes.first()).toBeVisible();await expect(previousTurnKey).toBeVisible();
  await opponent.reload();await expect(opponent.getByTestId('game-shell')).toBeVisible();await switchGamePanel(opponent,'board');await expect(washes.first()).toBeVisible();
  await opponent.evaluate(()=>document.documentElement.style.fontSize='200%');
- const keyGeometry=await previousTurnKey.evaluate(node=>{const swatch=node.querySelector('.previous-turn-key-swatch'),legend=node.closest('.overlay-key'),r=node.getBoundingClientRect(),s=swatch.getBoundingClientRect();return {text:node.textContent.trim(),item:{width:r.width,scrollWidth:node.scrollWidth},swatch:{width:s.width,height:s.height,weight:getComputedStyle(swatch).getPropertyValue('--previous-turn-weight').trim(),image:getComputedStyle(swatch).backgroundImage},overflow:document.documentElement.scrollWidth-innerWidth,legendHeight:legend.getBoundingClientRect().height};});
- expect(keyGeometry.text).toBe('Previous turn');expect(keyGeometry.item.scrollWidth).toBeLessThanOrEqual(keyGeometry.item.width+1);expect(keyGeometry.swatch).toMatchObject({width:20,height:20,weight:'17%'});expect(keyGeometry.swatch.image).toContain('linear-gradient');expect(keyGeometry.overflow).toBeLessThanOrEqual(1);expect(keyGeometry.legendHeight).toBeGreaterThanOrEqual(20);
+ const keyGeometry=await previousTurnKey.evaluate(node=>{const swatch=node.querySelector('.previous-turn-key-swatch'),r=node.getBoundingClientRect(),s=swatch.getBoundingClientRect();return {text:node.textContent.trim(),item:{width:r.width,height:r.height,scrollWidth:node.scrollWidth},swatch:{width:s.width,height:s.height,weight:getComputedStyle(swatch).getPropertyValue('--previous-turn-weight').trim(),image:getComputedStyle(swatch).backgroundImage},overflow:document.documentElement.scrollWidth-innerWidth};});
+ expect(keyGeometry.text).toBe('Changes by opponent');expect(keyGeometry.item.scrollWidth).toBeLessThanOrEqual(keyGeometry.item.width+1);expect(keyGeometry.swatch).toMatchObject({width:20,height:20,weight:'17%'});expect(keyGeometry.swatch.image).toContain('linear-gradient');expect(keyGeometry.overflow).toBeLessThanOrEqual(1);expect(keyGeometry.item.height).toBeGreaterThanOrEqual(20);
  await opponent.evaluate(()=>document.documentElement.style.fontSize='');
  expect((await projected(opponent,gameId)).gameplayRevision).toBe(before.gameplayRevision);expect(writes).toEqual([]);opponent.off('request',watch);
  await opponent.screenshot({path:info.outputPath(`previous-turn-wash-${width}.png`),fullPage:true});

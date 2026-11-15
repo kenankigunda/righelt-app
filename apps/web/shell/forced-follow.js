@@ -1,12 +1,10 @@
 import { deterministicStateHash } from '../generated/packages/game-engine/src/hash.js';
 import { canonicalCommandJson } from '../generated/packages/shared-types/src/sync-protocol.js';
+import {automaticFollowAction} from '../board/follow-continuation.js';
 
 export function mandatoryFollowAction(game) {
-  const state = game?.board?.state;
-  if (state?.outcome?.status !== 'ongoing' || state.continuation?.type !== 'push' || state.continuation.phase !== 'follow') return null;
-  const actions = game.legalActions ?? [];
-  const action = actions.length === 1 ? actions[0] : null;
-  return action?.type === 'follow' && action.actorId && action.from && action.to ? structuredClone(action) : null;
+  const action=automaticFollowAction(game?.board?.state,game?.legalActions);
+  return action?structuredClone(action):null;
 }
 
 const sameScope = (token, context) => token && context.visible && context.eligible && token.owner === context.owner && token.scope === context.scope && token.gameId === context.game?.id;

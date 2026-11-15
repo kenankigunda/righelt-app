@@ -3,16 +3,20 @@ import assert from 'node:assert/strict';
 import {issueDiagnostics} from '../shell/issue-diagnostics.js';
 import {renderDiagnosticDisclosure,handleDiagnosticAction} from '../shell/diagnostic-disclosure.js';
 
-test('labelled inline details copies the closed recovery support report and confirms success',async t=>{
+test('subtle accessible diagnostic caret copies the closed recovery support report and confirms success',async t=>{
  issueDiagnostics.clear();t.after(()=>issueDiagnostics.clear());
  const original=Object.getOwnPropertyDescriptor(globalThis,'navigator');let copied;
  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{clipboard:{writeText:async value=>{copied=value;}}}});
  t.after(()=>{if(original)Object.defineProperty(globalThis,'navigator',original);else delete globalThis.navigator;});
  const id=issueDiagnostics.capture('inline-copy',{operation:'move_recovery',stage:'notice_promoted',gameId:'g',commandId:'same-command',fingerprint:'same-fingerprint',authorization:'SECRET'});
  const target=action=>({dataset:{action,incidentId:id}});
- assert.match(renderDiagnosticDisclosure(id),/>Details<\/button>/);
+ const closed=renderDiagnosticDisclosure(id);
+ assert.match(closed,/aria-label="Show diagnostic details"/);assert.match(closed,/aria-expanded="false"/);
+ assert.match(closed,/<svg aria-hidden="true" focusable="false"/);assert.doesNotMatch(closed,/>Details<\/button>/);
  await handleDiagnosticAction(target('toggle-diagnostic'));
- assert.match(renderDiagnosticDisclosure(id),/>Copy full details<\/button>/);
+ const expanded=renderDiagnosticDisclosure(id);
+ assert.match(expanded,/aria-label="Hide diagnostic details"/);assert.match(expanded,/aria-expanded="true"/);
+ assert.match(expanded,/>Copy full details<\/button>/);
  await handleDiagnosticAction(target('copy-diagnostic'));
  assert.equal(copied,issueDiagnostics.text(id));assert.doesNotMatch(copied,/SECRET/);
  assert.match(renderDiagnosticDisclosure(id),/role="status">Full details copied\./);

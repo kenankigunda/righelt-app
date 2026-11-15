@@ -78,8 +78,11 @@ class ExportParityTest(unittest.TestCase):
     def test_expiry_and_failed_numeric_report_remain_incomplete(self):
         with tempfile.TemporaryDirectory() as d:
             root,checkpoint,corpus,_=self.fixture(d)
-            result=evaluate(root,checkpoint,corpus,time.monotonic())
+            with patch.dict('os.environ',{'RIGHELT_TRAINING_DEVICE':'cpu'}),patch('righelt_training.export_parity.load_checkpoint') as load,patch('righelt_training.export_parity.export_onnx') as export:
+                result=evaluate(root,checkpoint,corpus,time.monotonic())
+            load.assert_not_called();export.assert_not_called()
             self.assertFalse(result['complete']);self.assertFalse(result['numericPassed'])
+            self.assertEqual(result['referenceDevice'],'cpu');self.assertEqual(result['reason'],'export parity budget insufficient')
             with patch('righelt_training.export_parity.verify_corpus',return_value=[{'encoded':[0.0]*4600}]*1000),patch('torch.backends.mps.is_available',return_value=True),patch('righelt_training.export_parity.load_checkpoint'),patch('righelt_training.export_parity.export_onnx',return_value={}):
                 report=evaluate(root,checkpoint,corpus,time.monotonic()+60,checker=lambda *a,**k:{'numericPassed':True,'maxAbsoluteError':[float('nan'),0]})
             self.assertFalse(report['complete']);self.assertTrue(report['failed'])

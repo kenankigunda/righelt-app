@@ -896,21 +896,17 @@ button.secondary:disabled {
   margin: 0;
 }
 
-/* Terminal recovery keeps primary choices together. Details remains a stable,
-   secondary row and can never squeeze Reload or Home out of the action area. */
+/* Terminal recovery keeps primary choices together. The diagnostic disclosure
+   stays in the quiet first-line corner and never shares their action row. */
 .shell-game-alert.is-terminal-recovery {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "copy" "actions" "disclosure" "details";
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "copy disclosure" "actions actions" "details details";
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 .shell-game-alert.is-terminal-recovery .shell-game-alert-actions {
   max-width: none;
   justify-content: flex-start;
 }
-.shell-game-alert.is-terminal-recovery .issue-caret {
-  justify-self: start;
-}
-
 .shell-game-alert:not(:has(.issue-diagnostic)) {
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas: "copy" "actions";
@@ -931,12 +927,12 @@ button.secondary:disabled {
    This layout is identical before and after expansion, preserving its hit target. */
 @container game-alert (width < 480px) {
   .shell-game-alert:has(.shell-game-alert-actions):has(.issue-diagnostic) {
-    grid-template-areas: "copy copy" "actions disclosure" "details details";
+    grid-template-areas: "copy disclosure" "actions actions" "details details";
     grid-template-rows: auto auto minmax(0, 1fr);
   }
   .shell-game-alert.is-terminal-recovery:has(.issue-diagnostic) {
-    grid-template-areas: "copy" "actions" "disclosure" "details";
-    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-areas: "copy disclosure" "actions actions" "details details";
+    grid-template-rows: auto auto minmax(0, 1fr);
   }
 }
 
@@ -953,9 +949,9 @@ button.secondary:disabled {
   }
   .shell-game-alert-actions { max-width: 13rem; align-self: center; justify-content: flex-end; }
   .shell-game-alert.is-terminal-recovery:has(.issue-diagnostic) {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "copy" "actions" "disclosure" "details";
-    grid-template-rows: auto auto auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "copy disclosure" "actions actions" "details details";
+    grid-template-rows: auto auto minmax(0, 1fr);
   }
   .shell-game-alert.is-terminal-recovery .shell-game-alert-actions { max-width: none; justify-content: flex-start; }
 }
@@ -1013,6 +1009,7 @@ button.secondary:disabled {
   list-style: none;
   display: grid;
   gap: var(--section-item-gap);
+  position: relative;
 }
 
 button.is-pressing,
@@ -1114,11 +1111,17 @@ button.button-release-bounce,
   pointer-events: none;
 }
 
-.history-item.history-item-waiting,
 .history-return-live {
   box-sizing: border-box;
   min-block-size: 48px;
   align-items: center;
+}
+
+.history-return-live.is-transition-overlay {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  z-index: 1;
 }
 
 .history-item.history-item-waiting > .history-move-line,
@@ -1126,10 +1129,13 @@ button.button-release-bounce,
   width: 100%;
 }
 
-.history-selection-pending :is(.history-move-line,.history-turn-heading) {
+:is(.history-item,.history-turn):has(> .history-selection-pending) :is(.history-move-line,.history-turn-heading),
+:is(.history-item,.history-turn).history-selection-pending :is(.history-move-line,.history-turn-heading),
+.history-return-live > .history-selection-pending {
   animation: history-selection-pending 900ms ease-in-out infinite alternate;
 }
 
+.history-turn:has(> .history-selection-pending) > .history-list-nested,
 .history-turn.history-selection-pending > .history-list-nested {
   animation: history-selection-rail-pending 900ms ease-in-out infinite alternate;
 }
@@ -1371,9 +1377,15 @@ button.button-release-bounce,
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .history-selection-pending :is(.history-move-line,.history-turn-heading),
+  :is(.history-item,.history-turn):has(> .history-selection-pending) :is(.history-move-line,.history-turn-heading),
+  :is(.history-item,.history-turn).history-selection-pending :is(.history-move-line,.history-turn-heading),
+  .history-return-live > .history-selection-pending,
+  .history-turn:has(> .history-selection-pending) > .history-list-nested { animation: none; }
   .history-turn.history-selection-pending > .history-list-nested { animation: none; }
-  .history-selection-pending :is(.history-move-line,.history-turn-heading) { opacity: .68; }
+  :is(.history-item,.history-turn):has(> .history-selection-pending) :is(.history-move-line,.history-turn-heading),
+  :is(.history-item,.history-turn).history-selection-pending :is(.history-move-line,.history-turn-heading),
+  .history-return-live > .history-selection-pending { opacity: .68; }
+  .history-turn:has(> .history-selection-pending) > .history-list-nested { border-left-color:color-mix(in srgb,currentColor 68%,transparent); }
   .history-turn.history-selection-pending > .history-list-nested { border-left-color:color-mix(in srgb,currentColor 68%,transparent); }
   .history-item[data-action].history-item-release {
     animation: none;
@@ -2373,11 +2385,14 @@ textarea:focus-visible {
 @keyframes reconnect-sweep { from { transform: translateX(0); } to { transform: translateX(800%); } }
 [data-loading-hidden] .reconnect-background::before,
 [data-loading-hidden] .reconnect-background::after { animation-play-state: paused; }
-.issue-diagnostic > button.issue-caret { background: transparent; color: inherit; box-shadow: none; border: 0; min-width: 44px; min-height: 44px; padding: 6px 10px; }
+.issue-diagnostic > button.issue-caret { background: transparent; color: inherit; box-shadow: none; border: 0; min-width: 44px; min-height: 44px; padding: 0; align-items: flex-start; }
+.issue-diagnostic > button.issue-caret > svg { width: 14px; height: 14px; margin-block-start: calc((max(44px, 1lh) - 14px) / 2); fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: transform 140ms ease; }
+.issue-diagnostic > button.issue-caret[aria-expanded="true"] > svg { transform: rotate(180deg); }
 .issue-details { font-size: 13px; line-height: 1.4; }
 .issue-details pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; user-select: text; }
 .shell-game-alert .issue-diagnostic { display: contents; }
-.shell-game-alert .issue-caret { grid-area: disclosure; align-self: start; width: auto; min-height: 44px; }
+.shell-game-alert:has(.issue-diagnostic) .shell-game-alert-copy { align-self: start; padding-block-start: max(0px, calc((44px - 1lh) / 2)); }
+.shell-game-alert .issue-caret { grid-area: disclosure; align-self: start; justify-self: end; width: 44px; min-height: 44px; }
 .shell-game-alert .issue-details { grid-area: details; min-width: 0; min-height: 0; overflow: auto; border-top: 1px solid var(--divider, var(--line)); padding-top: 12px; }
 .shell-game-alert .issue-details > p { margin: 0 0 8px; }
 .shell-game-alert .issue-details > button { min-height: 44px; margin: 0 8px 8px 0; }
@@ -2387,6 +2402,7 @@ textarea:focus-visible {
 .shell-header-status:has(.issue-details) { height: auto; }
 @media (prefers-reduced-motion: reduce) {
   .board-wrap > .board, .board-wrap > .overlay-lines { transition: none; }
+  .issue-diagnostic > button.issue-caret > svg { transition: none; }
   .reconnect-background::before { animation: none; left: 37%; }
   .reconnect-background::after { animation: none; left: 45.75%; }
 }

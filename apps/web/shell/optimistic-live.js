@@ -1,8 +1,10 @@
 import { computerProfileFor } from '../generated/packages/shared-types/src/computer-play.js';
 import { destructionRecords, removalNotices } from "../generated/packages/game-engine/src/removals.js";
+import { attributeDestructions } from "../generated/packages/game-engine/src/destruction-attribution.js";
 export { collectDestroyedPieceRecords } from "../generated/packages/game-engine/src/removals.js";
 import {
   applyAction,
+  deterministicStateHash,
   listLegalActions,
   resolveToStability,
   validateAction,
@@ -17,6 +19,15 @@ const clone = (value) => structuredClone(value);
 const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
 const getSideToMoveSeat = (game) => (game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2");
 const getSeatIdentity = (game, seat) => (seat === "Player 1" ? game.player1?.identityId ?? null : game.player2?.identityId ?? null);
+const inspectionSnapshot = (frame, settled) => frame && deterministicStateHash(frame) !== deterministicStateHash(settled)
+  ? clone(frame) : undefined;
+const turnMovesThrough = (game, pendingMoves, actualMove) => [...game.moves, ...pendingMoves]
+  .filter(move => !move.undone && move.turnIndex === actualMove.turnIndex && move.index <= actualMove.index);
+const attributedRecords = (game, pendingMoves, events, operationId, actualMove) => attributeDestructions(
+  destructionRecords(events, operationId),
+  turnMovesThrough(game, pendingMoves, actualMove),
+  actualMove.clientCommandId ?? actualMove.moveId ?? null,
+);
 
 // These are the fields this projector changes. Fresh read-only metadata stays
 // current when an equivalent authority snapshot arrives during worker execution.
@@ -57,6 +68,7 @@ const completeTurn = (game, queuedAt, pendingMoves, operationId) => {
   if (!validation.ok) return { ok: false, error: validation.code, validation };
   const closed = applyAction(game.board.state, { type: "end_turn" }).state;
   const endedAt = queuedAt;
+  let inspectionFrame = null;
   activeTurn.endedAt = endedAt;
   activeTurn.status = "complete";
   const { nextState, nextTurn } = finalizeResolvedTurn({
@@ -65,19 +77,25 @@ const completeTurn = (game, queuedAt, pendingMoves, operationId) => {
     endedAt,
     resolveToStability,
     onRemoval: (event) => events.push(event),
+    onInspectionFrame: frame => { inspectionFrame ??= clone(frame); },
   });
   const lastMove = [...game.moves, ...pendingMoves].reverse().find((move) => !move.undone && move.turnIndex === activeTurn.index);
   if (lastMove) {
+    if(events.length)lastMove.inspectionSnapshot ??= inspectionSnapshot(inspectionFrame, nextState);
     lastMove.snapshot = clone(nextState);
-    lastMove.destroyedPieces = [...(lastMove.destroyedPieces ?? []), ...destructionRecords(events, operationId)];
+    lastMove.destroyedPieces = [
+      ...(lastMove.destroyedPieces ?? []),
+      ...attributedRecords(game, pendingMoves, events, operationId, lastMove),
+    ];
   }
   game.turns.push(nextTurn);
   game.board.state = nextState;
   game.updatedAt = endedAt;
-  return { ok: true, nextTurn, events };
+  return { ok: true, nextTurn, events, destroyedPieces:lastMove?.destroyedPieces??[] };
 };
 
 const buildPendingMoveEntry = ({ command, selectionSnapshot, snapshot, activeTurn, index }) => ({
+  moveId: command.clientCommandId,
   index,
   turnIndex: activeTurn.index,
   turnMoveIndex: activeTurn.moveIndexes.length - 1,
@@ -152,8 +170,13 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
 
       const events = [];
       const onRemoval = (event) => events.push(event);
+      let inspectionFrame = null;
       const applied = applyAction(stable, command.action, { onRemoval });
-      const nextStable = resolveToStability(applied.state, { artifactMode: "full", onRemoval });
+      const nextStable = resolveToStability(applied.state, {
+        artifactMode: "full",
+        onRemoval,
+        onInspectionFrame: frame => { inspectionFrame ??= clone(frame); },
+      });
       const turnSettled = nextStable.continuation == null;
       const finalizedTurn = turnSettled
         ? finalizeResolvedTurn({
@@ -188,15 +211,16 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
         activeTurn,
         index: workingGame.moves.length + pendingMoves.length,
       });
-      pendingMove.destroyedPieces = destructionRecords(events, command.clientCommandId);
+      pendingMove.inspectionSnapshot = inspectionSnapshot(inspectionFrame, settledState);
       pendingMoves.push(pendingMove);
+      pendingMove.destroyedPieces = attributedRecords(workingGame, pendingMoves, events, command.clientCommandId, pendingMove);
       liveLegalActions = listLegalActions(settledState);
       commandResults.set(command.clientCommandId, {
         accepted: true,
         state: clone(settledState),
         legalActions: liveLegalActions,
         removedPieces: removalNotices(events, command.clientCommandId),
-        destroyedPieces: destructionRecords(events, command.clientCommandId),
+        destroyedPieces: clone(pendingMove.destroyedPieces),
         outcome: settledState.outcome ?? null,
       });
       continue;
@@ -210,7 +234,7 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
     commandResults.set(command.clientCommandId, {
       accepted: true,
       removedPieces: removalNotices(ended.events, command.clientCommandId),
-      destroyedPieces: destructionRecords(ended.events, command.clientCommandId),
+      destroyedPieces: clone(ended.destroyedPieces),
       state: clone(workingGame.board.state),
       legalActions: liveLegalActions,
       outcome: workingGame.board.state.outcome ?? null,

@@ -49,10 +49,12 @@ for (const width of [933, 932, 901, 900, 899, 390]) test(`recovery overlay and s
  const after=await geometry();expect(Math.abs(after.y-before.y)).toBeLessThanOrEqual(1);expect(Math.abs(after.x-before.x)).toBeLessThanOrEqual(1);
  const box=await banner.boundingBox();expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(width+1);
  if(width===390){
-  const caret=banner.getByRole("button",{name:"Details",exact:true});
+  const caret=banner.getByRole("button",{name:"Show diagnostic details",exact:true});
   expect(await caret.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
   const hit=await caret.boundingBox();expect(hit.width).toBeGreaterThanOrEqual(44);expect(hit.height).toBeGreaterThanOrEqual(44);
-  await caret.click();await expect(caret).toHaveAttribute("aria-expanded","true");
+  const alignment=await caret.evaluate(button=>{const svg=button.querySelector('svg'),copy=button.closest('.shell-game-alert')?.querySelector('.shell-game-alert-copy'),svgRect=svg?.getBoundingClientRect(),copyRect=copy?.getBoundingClientRect(),style=copy?getComputedStyle(copy):null,lineHeight=style?Number.parseFloat(style.lineHeight):NaN,paddingTop=style?Number.parseFloat(style.paddingTop):NaN;return{caretCenter:svgRect?(svgRect.top+svgRect.bottom)/2:null,firstLineCenter:copyRect&&Number.isFinite(lineHeight)&&Number.isFinite(paddingTop)?copyRect.top+paddingTop+lineHeight/2:null};});
+  expect(alignment.caretCenter).not.toBeNull();expect(alignment.firstLineCenter).not.toBeNull();expect(Math.abs(alignment.caretCenter-alignment.firstLineCenter)).toBeLessThanOrEqual(1);
+  await caret.click();const hideCaret=banner.getByRole("button",{name:"Hide diagnostic details",exact:true});await expect(hideCaret).toHaveAttribute("aria-expanded","true");
   await page.evaluate(()=>Object.defineProperty(navigator,"clipboard",{configurable:true,value:{writeText:async()=>{throw Error("Unavailable")}}}));
   await banner.getByRole("button",{name:"Copy full details",exact:true}).click();
   await expect(banner).toContainText("Copy the full details below");
@@ -61,7 +63,7 @@ for (const width of [933, 932, 901, 900, 899, 390]) test(`recovery overlay and s
   expect(details.y+details.height).toBeLessThanOrEqual(expanded.y+expanded.height+1);
   await page.mouse.move(0,0);
   await page.screenshot({path:info.outputPath("diagnostics-mobile.png")});
-  await caret.click();await expect(caret).toHaveAttribute("aria-expanded","false");
+  await hideCaret.click();await expect(banner.getByRole("button",{name:"Show diagnostic details",exact:true})).toHaveAttribute("aria-expanded","false");
  }
  const placement=await page.locator('[data-shell-alert-zone]').evaluate(el=>getComputedStyle(el).position);
  await expect(page.locator("#app")).toHaveAttribute("data-shell-layout-mode",width<933?"narrow":"wide");

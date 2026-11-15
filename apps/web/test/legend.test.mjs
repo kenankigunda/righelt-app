@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { getCommandLegendColor, getCommandLegendSwatchStyle, updateLegendVisibility, getInspectionLegendState, updateInspectionLegend, getRenderedPreviousTurnLegendState, updatePreviousTurnLegend } from "../legend.js";
+import {renderBoardLegend} from "../shell/board-legend.js";
 
 const testDir = fileURLToPath(new URL(".", import.meta.url));
-const shellAppSource = readFileSync(join(testDir, "..", "shell", "app.js"), "utf8");
 const stylesSource = readFileSync(join(testDir, "..", "styles.css"), "utf8");
 
 test("command legend uses current side-to-move color when no piece is selected", () => {
@@ -45,10 +45,24 @@ test("command legend swatch style exposes the CSS variable", () => {
   );
 });
 
-test("shell command legend swatch is state-driven", () => {
-  assert.match(shellAppSource, /id="shell-command-legend-swatch"/);
-  assert.match(shellAppSource, /getCommandLegendSwatchStyle\(game\.currentSnapshot \?\? null\)/);
-  assert.match(shellAppSource, /updateInspectionLegend\(document\.querySelector\('.overlay-key'\),state,\{selectedPieceId,\.\.\.overlay\}\);/);
+test("Board legend renders semantic families in family-major reading order", () => {
+  const html=renderBoardLegend({sideToMove:'P2',pieces:[]});
+  const commandFamily=html.indexOf('data-legend-family="command"');
+  const commandLine=html.indexOf('data-legend-entry="command"');
+  const supplyFamily=html.indexOf('data-legend-family="supply"');
+  const supplyLine=html.indexOf('data-legend-entry="supply"');
+  const strength=html.indexOf('data-legend-entry="group"');
+  assert.ok(commandFamily>=0&&commandFamily<commandLine&&commandLine<supplyFamily);
+  assert.ok(supplyFamily<supplyLine&&supplyLine<strength);
+  assert.match(html,/role="group" aria-label="Commander and command line"/);
+  assert.match(html,/role="group" aria-label="Supply point and supply line"/);
+  assert.match(html,/data-legend-entry="command" hidden/);
+  assert.match(html,/data-legend-entry="supply" hidden/);
+  assert.match(html,/data-legend-entry="group" hidden/);
+  assert.doesNotMatch(html,/data-legend-entry="previousTurn"|Previous turn|Changes by opponent/,'the contextual key belongs above the squares, not in the Board-label families');
+  assert.match(html,/--supply-owner:var\(--player-p2\)/);
+  assert.match(html,/id="shell-command-legend-swatch"[^>]+--swatch-command-color: var\(--player-p2\)/);
+  assert.equal((html.match(/<button\b/g)??[]).length,2,'only the two existing inspectors are interactive');
 });
 
 test("command and supply samples keep distinct role patterns and semantic supply color", () => {
@@ -84,13 +98,15 @@ test("same legend visibility retains running animation; changed visibility resta
 });
 
 test('previous-turn key follows only the rendered live cue and uses the prior player color',()=>{
- const item={hidden:true,style:{setProperty:(name,value)=>{item[name]=value}}},painted={};
- const board={context:'previous-turn',painted,getAttribute(name){return name==='data-presentation-context'?this.context:null;},querySelector(){return this.painted;}};
+ const control={attributes:{'aria-pressed':'true'},setAttribute(name,value){this.attributes[name]=value},hasAttribute(name){return name in this.attributes}};
+ const item={hidden:true,attributes:{},style:{setProperty:(name,value)=>{item[name]=value}},querySelector:selector=>selector==='[data-previous-turn-key]'?control:null,getAttribute(name){return this.attributes[name]??null},setAttribute(name,value){this.attributes[name]=value},removeAttribute(name){delete this.attributes[name]}},painted={};
+ const board={context:'previous-turn',episode:'turn-2',painted,getAttribute(name){return name==='data-presentation-context'?this.context:name==='data-previous-turn-episode'?this.episode:null;},querySelector(){return this.painted;}};
  const legend={querySelector:selector=>selector==='[data-legend-entry="previousTurn"]'?item:null,getBoundingClientRect:()=>({height:20}),getAnimations:()=>[],get scrollHeight(){return item.hidden?20:40;},animate:()=>{}};
- assert.deepEqual(getRenderedPreviousTurnLegendState(board,{sideToMove:'P2'}),{visible:true,owner:'P1'});
- assert.deepEqual(updatePreviousTurnLegend(legend,board,{sideToMove:'P2'},true),{visible:true,owner:'P1'});assert.equal(item.hidden,false);assert.equal(item['--previous-turn-color'],'var(--player-p1)');
- board.context='history';assert.deepEqual(updatePreviousTurnLegend(legend,board,{sideToMove:'P2'},true),{visible:false,owner:null});assert.equal(item.hidden,true);
- board.context='previous-turn';board.painted=null;assert.deepEqual(updatePreviousTurnLegend(legend,board,{sideToMove:'P1'},true),{visible:false,owner:null});assert.equal(item.hidden,true);
+ assert.deepEqual(getRenderedPreviousTurnLegendState(board,{sideToMove:'P2'}),{visible:true,owner:'P1',episode:'turn-2'});
+ assert.deepEqual(updatePreviousTurnLegend(legend,board,{sideToMove:'P2'},true),{visible:true,owner:'P1',episode:'turn-2'});assert.equal(item.hidden,false);assert.equal(item['--previous-turn-color'],'var(--player-p1)');assert.equal(control.attributes['aria-pressed'],'false');
+ control.attributes['aria-pressed']='true';delete control.attributes['data-hover-retired'];board.episode='turn-4';updatePreviousTurnLegend(legend,board,{sideToMove:'P2'},true);assert.equal(control.attributes['aria-pressed'],'false');assert.equal(control.attributes['data-hover-retired'],'true');
+ board.context='history';assert.deepEqual(updatePreviousTurnLegend(legend,board,{sideToMove:'P2'},true),{visible:false,owner:null,episode:null});assert.equal(item.hidden,true);assert.equal(control.attributes['aria-pressed'],'false');
+ board.context='previous-turn';board.painted=null;assert.deepEqual(updatePreviousTurnLegend(legend,board,{sideToMove:'P1'},true),{visible:false,owner:null,episode:null});assert.equal(item.hidden,true);
 });
 
 

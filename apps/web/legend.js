@@ -38,16 +38,25 @@ export function updateLegendVisibility(legend, visible, reducedMotion = false) {
 export function getRenderedPreviousTurnLegendState(board, snapshot) {
   const visible = board?.getAttribute?.('data-presentation-context') === 'previous-turn'
     && Boolean(board.querySelector?.('.cell.previous-turn-source,.cell.previous-turn-target,.cell.previous-turn-deletion'));
-  if (!visible) return {visible:false,owner:null};
-  return {visible:true,owner:snapshot?.sideToMove === 'P2' ? 'P1' : 'P2'};
+  if (!visible) return {visible:false,owner:null,episode:null};
+  return {visible:true,owner:snapshot?.sideToMove === 'P2' ? 'P1' : 'P2',episode:board?.getAttribute?.('data-previous-turn-episode')??null};
 }
 
 /** The legend follows the cue that the adapter actually painted, not an available turn record. */
 export function updatePreviousTurnLegend(legend, board, snapshot, reducedMotion = false) {
   const state = getRenderedPreviousTurnLegendState(board,snapshot);
   const item = legend?.querySelector?.('[data-legend-entry="previousTurn"]');
-  if (item && state.owner) item.style.setProperty('--previous-turn-color',ownerColor(state.owner));
-  updateLegendVisibility(legend,{previousTurn:state.visible},reducedMotion);
+  if (item) {
+    if (state.owner) item.style.setProperty('--previous-turn-color',ownerColor(state.owner));
+    const control = item.querySelector?.('[data-previous-turn-key]');
+    const priorEpisode=item.getAttribute?.('data-previous-turn-episode')??null;
+    if(control&&(!state.visible||priorEpisode!==state.episode)){
+      if(control.hasAttribute?.('aria-pressed'))control.setAttribute('aria-pressed','false');
+      control.setAttribute('data-hover-retired','true');
+    }
+    if(state.episode)item.setAttribute?.('data-previous-turn-episode',state.episode);else item.removeAttribute?.('data-previous-turn-episode');
+    item.hidden = !state.visible;
+  }
   return state;
 }
 

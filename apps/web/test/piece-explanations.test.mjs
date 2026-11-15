@@ -1,7 +1,7 @@
 import {renderCoordinateChip} from '../board/coordinate-chip.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {getSelectedPieceExplanation, getSelectedPieceCondition, SELECTED_PIECE_EXPLANATIONS, SELECTED_CONTINUATION_LABELS} from '../board/piece-explanations.js';
+import {getSelectedPieceExplanation, getSelectedPieceGuidance, getSelectedPieceCondition, SELECTED_PIECE_EXPLANATIONS, SELECTED_CONTINUATION_LABELS} from '../board/piece-explanations.js';
 import {getBlockedMoveExplanation, BLOCKED_PREVIEW_REASON} from '../interaction.js';
 
 test('selected-piece explanations separate display connectivity from frozen sequence eligibility', () => {
@@ -18,6 +18,16 @@ test('selected-piece explanations separate display connectivity from frozen sequ
   }
   assert.equal(getSelectedPieceExplanation(piece, {continuation:{type:'move',frozenPieceStatesById:{A:{supplied:false}}}}), null);
   assert(SELECTED_PIECE_EXPLANATIONS.every(text => text && !/[.:;]$/.test(text)));
+});
+
+test('frozen sequence guidance explains the immutable admission boundary without promising this-turn recovery',()=>{
+ const piece={id:'A',supplied:true,commanded:true};
+ const snapshot={continuation:{type:'rush',frozenPieceStatesById:{A:{supplied:true,commanded:false}}}};
+ assert.deepEqual(getSelectedPieceGuidance(piece,snapshot),{
+  text:"This piece can't move during this rush.",
+  detail:'It had no command connection when this rush began. Reconnecting it may let it move on future turns, but not this turn.',
+ });
+ assert.deepEqual(getSelectedPieceGuidance({...piece,displaySupplied:false},{}),{text:'No supply connection'});
 });
 
 test('blocked target explanations use player-facing causes without leaking unknown rule codes', () => {

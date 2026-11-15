@@ -3,7 +3,7 @@ import {writeFile} from 'node:fs/promises';
 import {settledMessage,measureSemanticGeometry,assertSemanticGeometry} from './support/message-semantic-geometry.mjs';
 import {createRushBlockerScenario} from '../e2e/support/rush-blocker-scenario.mjs';
 
-for (const width of [320, 390]) test(`selection explanations retain their actual context owner at ${width}px with enlarged text`, async ({page}, info) => {
+for (const width of [320, 390]) test(`selection guidance owns one accessible Board message at ${width}px with enlarged text`, async ({page}, info) => {
   await page.setViewportSize({width, height:1000});
   await page.goto('/browser-integration/support/board-message.html');
   await page.waitForFunction(() => window.fixtureReady);
@@ -32,27 +32,37 @@ for (const width of [320, 390]) test(`selection explanations retain their actual
     });
   }, {kind, interactive});
   await configure('inactive');
-  await expect(page.locator('#fixture-context')).toContainText('No command connection for piece at 4, 2');
-  await expect(page.locator('#preview')).not.toContainText('Inactive:');
+  await expect(page.locator('#preview')).toContainText('No command connection for piece at 4, 2');
+  await expect(page.locator('#fixture-context')).toBeEmpty();
   await accountMessageGrowth();
   expect(await page.locator('.cell.selected-piece').evaluate(node => getComputedStyle(node, '::after').content)).toBe('none');
   await page.screenshot({path:info.outputPath(`inactive-${width}-200.png`)});
   await configure('frozen');
-  await expect(page.locator('#fixture-context')).toContainText('Cannot move: no command at start of rush for piece at 4, 2');
-  await expect(page.locator('#preview button')).toHaveText('End turn');
+  await expect(page.locator('#preview')).toContainText("This piece can't move during this rush.");
+  await expect(page.locator('#fixture-context')).toBeEmpty();
+  const why=page.locator('[data-board-message-action="toggle-board-explanation"]');
+  await expect(why).toHaveAttribute('aria-expanded','false');
+  expect(await why.evaluate(node=>parseFloat(getComputedStyle(node,'::before').height))).toBeGreaterThanOrEqual(44);
+  await why.click();
+  await expect(why).toHaveAttribute('aria-expanded','true');
+  await expect(page.locator('#board-guidance-detail')).toContainText('It had no command connection when this rush began.');
+  await expect(page.locator('#board-guidance-detail')).toContainText('not this turn');
+  await expect(why).toHaveText('Less');
+  await why.click();
+  await expect(page.locator('#board-guidance-detail')).toBeHidden();
   await accountMessageGrowth();
   await configure('frozen-blocker');
-  await expect(page.locator('#fixture-context')).toContainText('Cannot move: no command or supply at start of rush for piece at 4, 2');
-  await expect(page.locator('#fixture-context')).toContainText('9, 9');
-  await expect(page.locator('#fixture-context [aria-label="Required Board guidance"]')).toHaveCount(1);
-  await expect(page.locator('#fixture-context [aria-label="Required Board guidance"] .board-context-dismiss')).toHaveCount(0);
-  await expect(page.locator('#preview button')).toHaveCount(0);
+  await expect(page.locator('#preview')).toContainText("This piece can't move during this rush.");
+  await expect(page.locator('#fixture-context')).toBeEmpty();
+  await page.locator('.cell[data-row="0"][data-col="0"]').click();
+  await expect(page.locator('#preview')).toContainText('Select a rush to restore supply for piece at 9, 9');
+  await expect(page.locator('#preview .board-obligatory-pill')).toHaveText('Obligatory');
   await accountMessageGrowth();
   await configure('frozen', false);
-  await expect(page.locator('#fixture-context')).toContainText('Cannot move');
+  await expect(page.locator('#fixture-context')).toContainText("This piece can't move during this rush.");
   await expect(page.locator('#preview button')).toHaveCount(0);
   await page.evaluate(() => window.boardFixture.inspect({kind:'command',pieceId:'A'}));
-  await expect(page.locator('#fixture-context')).toContainText('Cannot move: no command at start of rush for piece at 4, 2');
+  await expect(page.locator('#fixture-context')).toContainText("This piece can't move during this rush.");
   await expect(page.locator('.board-event-label')).toHaveCount(0);
   await accountMessageGrowth();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -68,9 +78,9 @@ for (const width of [320, 390]) test(`selection explanations retain their actual
       {type:'pass'}, ...[{row:3,col:4},{row:5,col:4},{row:4,col:3}].map(to => ({type:'move',actorId:'C1',from:{row:4,col:4},to})),
     ], {selectionState:{selectedPieceId:'C1',source:{row:4,col:4},target:{row:4,col:5}}});
   });
-  await expect(page.locator('#fixture-context')).toContainText('Destination would have no supply for piece at 4, 4');
-  await expect(page.locator('#fixture-context .board-preview-coordinate-chip')).toHaveText('4, 4');
-  await expect(page.locator('#preview')).not.toContainText('Destination would have no supply');
+  await expect(page.locator('#preview')).toContainText('Destination would have no supply for piece at 4, 4');
+  await expect(page.locator('#preview .board-preview-coordinate-chip')).toHaveText('4, 4');
+  await expect(page.locator('#fixture-context')).toBeEmpty();
   await expect(page.locator('#preview button')).toHaveCount(0);
   expect(await page.locator('.cell.target').evaluate(node => getComputedStyle(node,'::after').content)).toBe('none');
   await accountMessageGrowth();
@@ -128,6 +138,65 @@ for (const width of [320, 390]) test(`selection explanations retain their actual
   await writeFile(sourceEvidencePath,JSON.stringify({legality,paint,scope:'Real engine/runtime/adapter at existing width and200%text. Native hit/selection and computed paint, not physical display measurement.'}),{mode:0o600});
   await info.attach('Actual rush-source identity, legality and paint',{path:sourceEvidencePath,contentType:'application/json'});
   await page.screenshot({path:info.outputPath(`rush-source-${width}-200.png`)});
+});
+
+test('Joined guidance keeps one focus-safe responsive height owner across native modes',async({page,browserName},info)=>{
+  await page.emulateMedia({reducedMotion:'no-preference',forcedColors:'none'});
+  await page.setViewportSize({width:390,height:1000});
+  await page.goto('/browser-integration/support/board-message.html');
+  await page.waitForFunction(()=>window.fixtureReady);
+  await page.evaluate(async()=>{
+    await window.boardFixture.setup('rush',false);
+    const piece={id:'A',owner:'P1',kind:'unit',position:{row:4,col:2},supplied:true,commanded:true,displayCommanded:false};
+    const state={boardSize:10,sideToMove:'P1',turnIndex:0,outcome:{status:'ongoing'},pieces:[piece],continuation:{type:'rush',owner:'P1',rushChainPieceIds:[],rushedPieceIds:[],frozenPieceStatesById:{A:{supplied:true,commanded:false}}}};
+    await window.boardFixture.configure(state,[{type:'end_turn'}],{selectionState:{selectedPieceId:'A',source:{row:4,col:2},target:null}});
+    await document.fonts.ready;
+  });
+  await settledMessage(page);
+  const slot=page.locator('.board-message-slot'),toggle=page.locator('[data-board-message-action="toggle-board-explanation"]'),detail=page.locator('#board-guidance-detail');
+  const collapsed=await measureSemanticGeometry(page);
+  const inline=await toggle.evaluate(button=>{
+    const rect=button.getBoundingClientRect(),pseudo=getComputedStyle(button,'::before');
+    const text=button.previousSibling,range=document.createRange();range.setStart(text,Math.max(0,text.length-5));range.setEnd(text,text.length);
+    const words=range.getBoundingClientRect(),hit={x:rect.left+rect.width/2,y:rect.top+rect.height/2-parseFloat(pseudo.height)/2+1};
+    return {display:getComputedStyle(button).display,parent:button.parentElement.id,baselineDelta:Math.abs(words.bottom-rect.bottom),pseudoHeight:parseFloat(pseudo.height),hit,hitOwns:document.elementFromPoint(hit.x,hit.y)?.closest('[data-board-message-action="toggle-board-explanation"]')===button};
+  });
+  expect(inline).toMatchObject({display:'inline',parent:'preview',hitOwns:true});
+  expect(inline.baselineDelta).toBeLessThanOrEqual(4);expect(inline.pseudoHeight).toBeGreaterThanOrEqual(44);
+  await slot.evaluate(node=>{const animate=node.animate;window.__guidanceAnimations=[];node.animate=function(frames,options){window.__guidanceAnimations.push({frames,options});return Reflect.apply(animate,this,[frames,options]);};});
+  await page.mouse.click(inline.hit.x,inline.hit.y);
+  await expect(toggle).toHaveAttribute('aria-expanded','true');await expect(detail).toBeVisible();
+  await expect.poll(()=>page.evaluate(()=>window.__guidanceAnimations.length)).toBeGreaterThan(0);
+  expect(await page.evaluate(()=>window.__guidanceAnimations.at(-1).options)).toMatchObject({duration:260,easing:'cubic-bezier(.22,.72,.2,1)'});
+  await settledMessage(page);const expanded=await measureSemanticGeometry(page);expect(expanded.slot.height).toBeGreaterThan(collapsed.slot.height);
+  const adjacency=await page.evaluate(()=>{const button=document.querySelector('[data-board-message-action="toggle-board-explanation"]'),detail=document.querySelector('#board-guidance-detail'),preview=document.querySelector('#preview'),style=getComputedStyle(detail);const b=button.getBoundingClientRect(),d=detail.getBoundingClientRect(),p=preview.getBoundingClientRect();return{gap:d.top-b.bottom,margin:parseFloat(style.marginBlockStart),inside:d.left>=p.left&&d.right<=p.right,overflow:document.documentElement.scrollWidth>innerWidth};});
+  expect(adjacency.inside).toBe(true);expect(adjacency.overflow).toBe(false);expect(adjacency.gap).toBeGreaterThanOrEqual(adjacency.margin-.5);expect(adjacency.gap).toBeLessThan(40);
+
+  await toggle.focus();await expect(toggle).toBeFocused();
+  await toggle.evaluate(button=>{button.click();button.click();button.click();});
+  await expect(toggle).toHaveAttribute('aria-expanded','false');await expect(toggle).toBeFocused();
+  await settledMessage(page);
+  await toggle.evaluate(button=>{button.click();button.click();button.click();});
+  await expect(toggle).toHaveAttribute('aria-expanded','true');await expect(toggle).toBeFocused();await settledMessage(page);
+
+  await page.setViewportSize({width:1200,height:1000});
+  await page.evaluate(async()=>{document.documentElement.dir='rtl';document.documentElement.style.fontFamily='serif';await document.fonts.ready;});
+  await settledMessage(page);await expect(detail).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  const desktop=await measureSemanticGeometry(page);expect(desktop.slot.height).toBeGreaterThan(0);
+  await page.emulateMedia({forcedColors:'active'});await page.evaluate(()=>{document.body.tabIndex=-1;document.body.focus();document.body.removeAttribute('tabindex');});await page.keyboard.press(browserName==='webkit'?'Alt+Tab':'Tab');await expect(toggle).toBeFocused();
+  const forced=await page.evaluate(()=>{const button=document.activeElement,detail=document.querySelector('#board-guidance-detail'),slot=button.closest('.board-message-slot'),b=button.getBoundingClientRect(),s=slot.getBoundingClientRect(),style=getComputedStyle(button),ring=parseFloat(style.outlineWidth)+Math.max(0,parseFloat(style.outlineOffset));return{focused:button.matches('[data-board-message-action="toggle-board-explanation"]'),outline:style.outlineStyle,border:getComputedStyle(detail).borderTopStyle,fit:b.top-ring>=s.top&&b.bottom+ring<=s.bottom};});
+  expect(forced).toMatchObject({focused:true,fit:true});expect(forced.outline).not.toBe('none');expect(forced.border).not.toBe('none');
+
+  await page.emulateMedia({reducedMotion:'reduce',forcedColors:'none'});
+  const animationCount=await page.evaluate(()=>window.__guidanceAnimations.length);
+  await toggle.click();await expect(toggle).toHaveAttribute('aria-expanded','false');
+  expect(await slot.evaluate(node=>node.getAnimations().filter(animation=>animation.playState==='running').length)).toBe(0);
+  await toggle.click();await expect(toggle).toHaveAttribute('aria-expanded','true');
+  expect(await slot.evaluate(node=>node.getAnimations().filter(animation=>animation.playState==='running').length)).toBe(0);
+  expect(await page.evaluate(()=>window.__guidanceAnimations.length)).toBe(animationCount);
+  await settledMessage(page);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:info.outputPath('joined-guidance-desktop-rtl-forced-reduced.png')});
 });
 
 test('named computer phases keep one colored cue and stable board position without a timer', async ({page}) => {

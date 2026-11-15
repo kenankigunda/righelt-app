@@ -36,11 +36,14 @@ export class ComputerRuntime {
     Object.assign(this, { workerFactory, timers, fetchImpl });
     this.generation = 0; this.requestId = 0; this.worker = null; this.pending = null; this.modelId = null; this.controller = null;
   }
-  cancel(reason = 'cancelled') {
+  cancel(reason = 'cancelled', {preserveIdle = false} = {}) {
+    const keepWorker = preserveIdle && Boolean(this.worker && this.modelId && !this.pending && !this.controller);
     this.generation++;
     this.controller?.abort(reason); this.controller = null;
-    this.worker?.terminate(); this.worker = null; this.modelId = null;
-    if (this.workerUrl) { URL.revokeObjectURL(this.workerUrl); this.workerUrl = null; }
+    if (!keepWorker) {
+      this.worker?.terminate(); this.worker = null; this.modelId = null;
+      if (this.workerUrl) { URL.revokeObjectURL(this.workerUrl); this.workerUrl = null; }
+    }
     const pending = this.pending; this.pending = null;
     if (pending) { this.timers.clearTimeout(pending.timer); pending.reject(new Error(reason)); }
   }
@@ -102,11 +105,18 @@ export class ComputerRuntime {
     worker.onerror = worker.onmessageerror = () => { if (this.worker === worker) this.cancel('worker-error'); };
     await this.request({ type: 'initialize', bytes: model.bytes, runtimeMjsBytes, runtimeWasmBytes, runtimeVersion: manifest.runtimeVersion, modelVersion: descriptor.sha256 }, onProgress);
     if (generation !== this.generation) throw new Error('cancelled');
+    if (this.controller === controller) this.controller = null;
     this.modelId = modelId; this.cacheAvailable = model.cached;
     } catch (error) { if (this.generation === preparingGeneration) this.cancel(error.message); throw error; }
   }
   async compute({ gameId, gameplayRevision, state, modelId, profile, seed, controlGeneration, analysis = false }, onProgress) {
-    await this.prepare(modelId, onProgress);
+    const preparation = this.prepare(modelId, onProgress);
+    // prepare() synchronously advances the generation when cold. Capture only
+    // after invoking it, then reject an obsolete continuation without
+    // cancelling a replacement worker or request.
+    const generation = this.generation;
+    await preparation;
+    if (generation !== this.generation || this.modelId !== modelId || !this.worker) throw new Error('cancelled');
     if (!COMPUTER_PROFILES[profile]) throw new Error('invalid-profile');
     const settings = { ...COMPUTER_PROFILES[analysis ? 'horus' : profile], ...(analysis ? { temperature: 0, maxValueGap: 0 } : {}) };
     return this.request({ type: 'compute', state, profile: settings, metadata: { gameId, gameplayRevision, fingerprint: deterministicStateHash(state), modelVersion: getComputerModel(modelId).sha256, profileVersion: settings.version, seed, controlGeneration } }, onProgress);

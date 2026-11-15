@@ -29,7 +29,6 @@ test('explicit reveal clears prior downward travel before residual scrolling and
   assert.equal(nav.dataset.visible, 'false'); // The normal idle policy remains.
   mounted.destroy();
 });
-
 // Controlled event leaves exercise the actual owner. They do not simulate the
 // browser's default Tab traversal or claim native :focus-visible timing.
 function handoffFixture() {
@@ -73,7 +72,6 @@ for (const altKey of [false, true]) test(`visible first ${altKey ? 'Alt+Tab' : '
     assert.equal(f.controls.inert, false, 'default Tab scroll must not hide its destinations');
   } finally { f.close(); }
 });
-
 test('first native Tab handoff protects idle and downward scroll before focusin without assuming focus-visible', () => {
   const f = handoffFixture();
   try {
@@ -135,15 +133,8 @@ for (const end of ['pointerdown', 'blur', 'outside focus']) test(`first Tab hand
   } finally { f.close(); }
 });
 
-test('new incoming flyout hides tabs once, preserves deliberate reveal and never hides focused navigation',()=>{
+test('mobile navigation has no incoming-narration hiding channel',()=>{
  const f=handoffFixture();
- try{
-  f.focus(f.outside);f.mounted.reveal();assert.equal(f.mounted.incoming('turn:1'),true);
-  assert.equal(f.nav.dataset.visible,'false');assert.equal(f.controls.inert,true);assert.equal(f.timers.size,0);
-  f.mounted.reveal();assert.equal(f.mounted.incoming('turn:1'),false);assert.equal(f.nav.dataset.visible,'true','quiet same-turn publication cannot override deliberate navigation');
-  f.focus(f.players,false);assert.equal(f.mounted.incoming('turn:2'),false);assert.equal(f.nav.dataset.visible,'true');assert.equal(f.controls.inert,false);
-  assert.equal(f.timers.size,0,'arrival retires the old idle timer while preserving focused navigation');
-  f.focus(f.outside);assert.equal(f.mounted.incoming('turn:3'),true);f.scroll(100);f.scroll(80);assert.equal(f.nav.dataset.visible,'true','existing upscroll reveal remains authoritative');
-  f.mounted.incoming(null);f.mounted.reveal();f.expire();assert.equal(f.nav.dataset.visible,'false','ordinary idle behavior returns when the incoming host retires');
- }finally{f.close();}
+ try { assert.equal('incoming' in f.mounted,false);f.mounted.reveal();assert.equal(f.nav.dataset.visible,'true'); }
+ finally { f.close(); }
 });

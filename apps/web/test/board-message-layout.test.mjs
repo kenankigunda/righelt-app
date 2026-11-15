@@ -15,12 +15,14 @@ test('complete finite prompt reservation excludes unbounded narration and action
  assert.doesNotMatch(html,/data-board-message-action=|data-board-preview-action=|Show me again|rushed several|had several pieces follow/);
  for(const copy of ['Select a piece or','Select a move for piece at','Select a rush or','Select a retreat','Select a follow'])assert(html.includes(copy));
  assert.match(html,/disabled tabindex="-1"/);
- assert.match(html,/class="board-message-live"[\s\S]*<div data-board-context-details><\/div>[\s\S]*<\/div><p class="board-preview-label board-message-sizing"/);
+ assert.match(html,/class="board-message-live"[\s\S]*<div data-board-context-details><\/div>[\s\S]*data-legend-entry="previousTurn" hidden[\s\S]*data-previous-turn-key[\s\S]*Changes by opponent[\s\S]*<\/div><p class="board-preview-label board-message-sizing"/);
+ assert.equal((html.match(/Changes by opponent/g)??[]).length,1);
 });
 test('loading retains identical sizing replicas without a visible prompt or identity',()=>{
  const loading=renderBoardMessageSlot({loading:true}),live=renderBoardMessageSlot();
  assert(loading.includes('<p class="board-preview-label" aria-hidden="true"></p>'));
  assert.doesNotMatch(loading,/data-board-context-details/);
+ assert.doesNotMatch(loading,/data-previous-turn-key|Changes by opponent/);
  assert.equal(loading.slice(loading.indexOf('<p class="board-preview-label board-message-sizing"')),live.slice(live.indexOf('<p class="board-preview-label board-message-sizing"')));
  assert(!loading.includes(' id='));
  const app=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
@@ -55,6 +57,7 @@ test('computer cue keeps one operation across search/save revisions and retires 
  for(const phase of ['checking','looking-ahead','saving']){updateComputerBoardLoading(host,{...game,gameplayRevision:7,pendingComputerSaveStartedAt:0},{phase},{scope:'owner1'});assert.equal(host.dataset.loadingKey,key);}
  updateComputerBoardLoading(host,game,{phase:'checking'},{scope:'owner1',inspecting:true});assert.equal(host.dataset.loadingKey,key);assert.equal(host.dataset.loadingSuppressed,'true');
  updateComputerBoardLoading(host,game,{phase:'checking'},{scope:'owner1'});assert.equal(host.dataset.loadingKey,key);assert.equal(host.dataset.loadingSuppressed,'false');
+ updateComputerBoardLoading(host,game,{phase:'checking'},{scope:'owner1',loadingKey:'history:g:turn:2',suppressLoadingCue:true});assert.equal(host.dataset.loadingState,'pending');assert.equal(host.dataset.loadingSuppressed,'true');assert.equal(host.dataset.loadingKey,'history:g:turn:2');
  for(const options of [{game:{...game,board:{state:{outcome:{status:'p1_win'}}}}},{game:{...game,liveCurrentSnapshot:{outcome:{status:'draw'}}}},{game:{...game,computerTurn:null}},{game:{...game,inHistoryMode:true}},{game:{...game,computer:{paused:true}}},{status:{phase:'recovery'}},{status:{phase:'other-device'}},{replaying:true}]){
   updateComputerBoardLoading(host,options.game??game,options.status??{}, {scope:'owner1',replaying:options.replaying});
   assert.equal(host.dataset.loadingState,'idle');assert.equal(host.dataset.loadingKey,undefined);

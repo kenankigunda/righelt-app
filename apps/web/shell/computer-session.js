@@ -22,7 +22,27 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   const repetitions = new Map();
   let phaseDeadline = null;
   let decisionRetry = null;
+  let wakeQueued = false, wakeRunning = false, wakeAgain = false, wakeVersion = 0, tickVersion = 0;
   const retryWait = createForegroundRecoveryWait({ clock, setTimer: timers.setTimeout?.bind(timers) ?? (() => null), clearTimer: timers.clearTimeout?.bind(timers) ?? (() => {}), onChange });
+  const wake = () => {
+    if (destroyed) return;
+    wakeAgain = true; wakeVersion = tickVersion;
+    if (wakeQueued || wakeRunning) return;
+    wakeQueued = true;
+    // Leave the current gate's promise continuations intact, then re-read the
+    // complete current authority once. A second request during that read is
+    // coalesced into one later pass rather than parallel tick ownership.
+    queueMicrotask(() => queueMicrotask(async () => {
+      wakeQueued = false;
+      if (destroyed) { wakeAgain = false; return; }
+      if (wakeVersion !== tickVersion) { wakeAgain = false; return; }
+      wakeRunning = true; wakeAgain = false;
+      const context = current();
+      try { await tick(); }
+      catch (error) { publish({ phase: 'recovery', message: error.message }, context); }
+      finally { wakeRunning = false; if (wakeAgain) wake(); }
+    }));
+  };
   const cancelPhaseDeadline = () => {
     if (phaseDeadline) timers.clearTimeout?.(phaseDeadline.timer);
     phaseDeadline = null;
@@ -69,7 +89,12 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   };
   const keyFor = ({ game, accountGeneration }) => game ? `${accountGeneration}:${game.id}:${game.gameplayRevision}:${game.computer?.generation}:${game.computer?.modelId}` : null;
   const current = () => { const context = getContext(); return { ...context, key: keyFor(context) }; };
-  const cancelWork = (reason) => { cancelPhaseDeadline(); epoch++; speculation.discard();runtime.cancel(reason); };
+  const cancelWork = (reason, {preserveIdle = false} = {}) => { cancelPhaseDeadline(); epoch++; speculation.discard();runtime.cancel(reason,{preserveIdle}); };
+  const sameRuntimeScope = (previous, context) => Boolean(previous?.game && context.game
+    && sameOwnerScope(ownerScope(previous), context)
+    && previous.game.computer?.ownerId === context.game.computer?.ownerId
+    && previous.game.computer?.generation === context.game.computer?.generation
+    && previous.game.computer?.modelId === context.game.computer?.modelId);
   const ownLease = game => !destroyed && isOngoingGame(game) && sameOwnerScope(acknowledgedLease, current()) && acknowledgedLease.generation === game?.computer?.generation && game?.computer?.lease?.deviceId === deviceId && game.computer.lease.expiresAt > clock();
   const resumeSupported = game => game?.sharedReceipts === true && game.computerCapabilities?.resumeHere === COMPUTER_CAPABILITIES.resumeHere;
   const recoveryScopeIsCurrent = context => !destroyed && isOngoingGame(current().game) && sameOwnerScope(ownerScope(context), current()) && current().authenticated;
@@ -114,12 +139,13 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     const scoped = workFor(context), pending = Promise.resolve().then(work);
     scoped.leaseWork = pending; scoped.leaseWorkAction = action;
     onChange();
-    const clear = () => {
+    const clear = result => {
       if (scoped.leaseWork !== pending) return;
       scoped.leaseWork = null; scoped.leaseWorkAction = null;
       if (!destroyed) onChange();
+      if (result === true) wake();
     };
-    void pending.then(clear, clear);
+    void pending.then(clear, () => clear(false));
     return pending;
   };
   const withControlWork = async (work, context = current()) => {
@@ -177,6 +203,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     }, 'renew', context);
   };
   async function tick() {
+    tickVersion++;
     if (destroyed) return;
     const context = current(), game = context.game, work = workFor(context);
     if (decisionRetry && (!context.visible || !context.authenticated || context.key !== decisionRetry.key || !sameOwnerScope(decisionRetry.scope, context))) { decisionRetry = null; retryWait.reset(); }
@@ -205,7 +232,9 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       if (!context.visible && analysis?.phase === 'computing') cancelAnalysis();
       return;
     }
-    if (active && (context.key !== active.key || !sameOwnerScope(ownerScope(active), context)) && !(sameOwnerScope(ownerScope(active),context)&&speculation.matches(game,`${context.accountGeneration}:${game.id}`))) cancelWork('position-or-control-changed');
+    if (active && (context.key !== active.key || !sameOwnerScope(ownerScope(active), context)) && !(sameOwnerScope(ownerScope(active),context)&&speculation.matches(game,`${context.accountGeneration}:${game.id}`))) {
+      cancelWork('position-or-control-changed',{preserveIdle:sameRuntimeScope(active,context)});
+    }
     if (!sameOwnerScope(statusScope, context)) {
       recovery = null; lastPositionRevision = null; repetitions.clear();
       publish({phase:'idle'}, context);
@@ -244,6 +273,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
           if (!recoveryScopeIsCurrent(context)) return;
           renewedAt = clock(); lastAcquisitionFailure = null; acquisitionAttempts = 0; retryAt = 0;
           publish({phase:'idle', message:undefined}, context);
+          return true;
         } catch (error) {
           if (!recoveryScopeIsCurrent(context)) return;
           lastAcquisitionFailure = {code:error.code ?? error.message, at:clock()};
@@ -355,6 +385,8 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       await pendingSubmission;
       decisionRetry = null;
       publish({ phase: 'idle' }, context);
+      const latest = current();
+      if (latest.key !== context.key && sameOwnerScope(ownerScope(context), latest)) wake();
     } catch (error) {
       if(pendingSubmission){speculation.discard();runtime.cancel('parent-command-unconfirmed');}
       // A lost evidence-write response may already have stored a completed
@@ -459,7 +491,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   };
   return {
     tick, analyze, cancelAnalysis, getUndoWaitAdmission,
-    withMutation: (work, { undoAdmission = null } = {}) => {
+    withMutation: (work, { completedUndo = false, undoAdmission = null } = {}) => {
       if (undoAdmission) {
         const admission = getUndoWaitAdmission(undoAdmission.gameId);
         if (!admission || !sameOwnerScope(undoAdmission, current()) || admission.leaseWork !== undoAdmission.leaseWork
@@ -474,13 +506,20 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
         let context = current();
         const mayMutate = value => sameOwnerScope(ownerScope(original), value) && value.authenticated && value.game?.computer?.ownerId === value.transport.getIdentityId();
         if (!mayMutate(context)) return false;
+        // A completed game cannot hold or acquire the ongoing-game computer
+        // lease. History Undo is the one explicit mutation that may reopen it,
+        // so admit only the exact terminal revision and control generation the
+        // owner activated. The durable revert command remains authoritative;
+        // this path does not change the terminal projection locally.
+        const completedUndoIsCurrent = completedUndo && isCompletedGame(original.game)
+          && isCompletedGame(context.game) && context.key === original.key;
         if (undoAdmission) {
           const game = context.transport.getGameViewModel(context.game.id);
           if (game?.sharedMutationsBlocked || game?.gameplayRevision !== undoAdmission.renewal.revision
             || game?.computer?.generation !== undoAdmission.renewal.generation || !ownLease(context.game)) return false;
         }
         try {
-          if (!ownLease(context.game)) {
+          if (!completedUndoIsCurrent && !ownLease(context.game)) {
             // Undo is explicit owner intent. Claim its serialized lease before
             // pausing, while ordinary ticks continue to respect another device.
             const foreignLease = context.game.computer.lease?.expiresAt > clock();

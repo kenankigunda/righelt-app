@@ -3,12 +3,14 @@ import {renderBoardMessageHtml,renderBoardInlineAction,boardPromptPattern} from 
 import {BOARD_TURN_CAPTIONS} from './perspective-labels.js';
 import {computerActivityActorSide,setActivityActor} from './activity-affiliation.js';
 import {boardPromptSizingModels} from '../board/prompt-models.js';
+import {icon} from '../icons.js';
 
 const escape = value => String(value).replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
 const renderMessageSizing=(fallback,boardSize)=>boardPromptSizingModels({boardSize}).map((message,index)=>`<p class="board-preview-label board-message-sizing${fallback?' board-message-fallback-sizing':''}" data-sizing-font="${fallback?'fallback':'primary'}"${boardPromptPattern(message)?` data-prompt-pattern="${boardPromptPattern(message)}"`:""} data-sizing-variant="prompt:${index}" aria-hidden="true" inert>${renderBoardMessageHtml(message,{sizing:true})}</p>`).join('');
 
 export function renderBoardMessageSlot({id, loading = false, loadingKey,boardSize=10} = {}) {
-  return `<div class="board-message-slot"><div class="board-message-live"${id ? ' role="region" aria-label="Board guidance" tabindex="-1"' : ''}><p class="board-preview-label"${id ? ` id="${escape(id)}"` : ''}${loading ? ' aria-hidden="true"' : ''}>${loading ? '' : 'Select a piece'}</p><span class="board-message-activity" aria-hidden="true" data-loading-state="${loading && loadingKey ? 'pending' : 'idle'}" data-loading-context="external"${loading && loadingKey ? ` data-loading-key="${escape(loadingKey)}"` : ''}></span>${loading?'':'<div data-board-context-details></div>'}</div>${renderMessageSizing(false,boardSize)}${renderMessageSizing(true,boardSize)}</div>`;
+  const previousTurnKey = loading ? '' : `<div class="previous-turn-key-host" data-board-message-height-transition data-legend-entry="previousTurn" hidden><button type="button" class="previous-turn-key" data-previous-turn-key><i class="previous-turn-key-swatch" aria-hidden="true"></i><i class="previous-turn-key-replay" aria-hidden="true" hidden>${icon('rematch')}</i><span data-previous-turn-key-label>Changes by opponent</span></button></div>`;
+  return `<div class="board-message-slot"><div class="board-message-live"${id ? ' role="region" aria-label="Board guidance" tabindex="-1"' : ''}><p class="board-preview-label"${id ? ` id="${escape(id)}"` : ''}${loading ? ' aria-hidden="true"' : ''}>${loading ? '' : 'Select a piece'}</p><span class="board-message-activity" aria-hidden="true" data-loading-state="${loading && loadingKey ? 'pending' : 'idle'}" data-loading-context="external"${loading && loadingKey ? ` data-loading-key="${escape(loadingKey)}"` : ''}></span>${loading?'':'<div data-board-context-details></div>'}${previousTurnKey}</div>${renderMessageSizing(false,boardSize)}${renderMessageSizing(true,boardSize)}</div>`;
 }
 
 export function renderBoardHeadingSlot({loading = false} = {}) {
@@ -23,9 +25,9 @@ const activeMessages = new WeakMap();
 let operation = 0;
 // This host is a sibling of the runtime-owned prompt. Its cue therefore survives
 // repeated prompt innerHTML writes and phase/proof-save updates without resets.
-export function updateComputerBoardLoading(element, game, status = {}, {replaying = false, inspecting = false, loadingKey = null, scope = ''} = {}) {
+export function updateComputerBoardLoading(element, game, status = {}, {replaying = false, inspecting = false, suppressLoadingCue = false, loadingKey = null, scope = ''} = {}) {
   if (!element) return;
-  element.dataset.loadingSuppressed = String(inspecting);
+  element.dataset.loadingSuppressed = String(inspecting || suppressLoadingCue);
   const operationPending = typeof loadingKey === 'string' && loadingKey.length > 0;
   const pending = operationPending || Boolean(game?.computer && (!isCompletedGame(game) || game.pendingComputerSaveStartedAt != null) && !game.inHistoryMode && !replaying && !game.computer.paused
     && !['recovery','other-device','paused'].includes(status.phase)

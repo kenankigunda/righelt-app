@@ -1,9 +1,10 @@
-import { LIVE_HISTORY } from "../../shared-types/src/sync-protocol";
+import { LIVE_HISTORY, canonicalCommandJson } from "../../shared-types/src/sync-protocol";
 import { boundedEngineOperation } from "../../game-engine/src/computation-guard";
 import {isTerminalOutcome, type OutcomeStatus} from '../../shared-types/src/engine';
 import {CURRENT_RETREAT_SEMANTICS,archivedRetreatSemantics,type RetreatSemantics} from '../../shared-types/src/retreat-rules';
 import { computerProfileFor, type ComputerControl, type ComputerProfile, type ComputerProof } from '../../shared-types/src/computer-play';
 import { destructionRecords, removalNotices, type RemovalEvent } from "../../game-engine/src/removals";
+import { attributeDestructions, type RemovalPhase } from "../../game-engine/src/destruction-attribution";
 export { collectDestroyedPieceRecords } from "../../game-engine/src/removals";
 import { applyAction } from "../../game-engine/src/apply";
 import { proveRelevantContinuation } from "../../game-engine/src/early-ending-proof";
@@ -67,6 +68,8 @@ export type MoveEntry = {
   undoEventSeq?: number;
   selectionSnapshot: GameState;
   snapshot: GameState;
+  /** Post-action position before turn-settlement removals; absent when identical to snapshot. */
+  inspectionSnapshot?: GameState;
   /** Persistent record of pieces destroyed during resolution of this move. */
   destroyedPieces?: DestroyedPieceRecord[];
   /** Immutable source identity for history copied into a branched game. */
@@ -260,7 +263,28 @@ export type DestroyedPieceRecord = {
   supplied: boolean;
   commanded: boolean;
   reason: "no_retreat" | "loss_of_supply" | "commander_unsupplied";
+  /** Actual visual/removal boundary; causalMoveId may point to an earlier cut. */
+  removalPhase?: RemovalPhase;
+  causalMoveId?: string;
 };
+
+const turnMovesThrough = (game: LiveGame, move: MoveEntry | null) => game.moves
+  .filter(candidate => candidate.undone !== true && (!move || candidate.turnIndex === move.turnIndex))
+  .filter(candidate => !move || candidate.index <= move.index);
+
+const attributedDestructionRecords = (
+  game: LiveGame,
+  events: RemovalEvent[],
+  operationId: string,
+  actualMove: MoveEntry | null,
+) => attributeDestructions(
+  destructionRecords(events, operationId),
+  turnMovesThrough(game, actualMove),
+  actualMove?.clientCommandId ?? actualMove?.moveId ?? null,
+) as DestroyedPieceRecord[];
+
+const distinctInspectionFrame = (frame: GameState | null, settled: GameState) =>
+  frame && deterministicStateHash(frame) !== deterministicStateHash(settled) ? clone(frame) : undefined;
 
 export type PieceMovePreview = Action & {
   legal: boolean;
@@ -509,7 +533,8 @@ export const asPreparedImportedHistory = (value: unknown): PreparedImportedHisto
       || !Number.isSafeInteger(move.turnMoveIndex) || !Number.isFinite(move.displayMoveNumber)
       || (move.actorSide !== "P1" && move.actorSide !== "P2") || typeof move.at !== "string"
       || typeof move.notation !== "string" || !asAction(move.action) || !asGameState(move.selectionSnapshot)
-      || !asGameState(move.snapshot) || !move.importedFrom || !asIdentity(move.importedFrom.gameId)
+      || !asGameState(move.snapshot) || (move.inspectionSnapshot !== undefined && !asGameState(move.inspectionSnapshot))
+      || !move.importedFrom || !asIdentity(move.importedFrom.gameId)
       || !asIdentity(move.importedFrom.decisionId) || !Number.isSafeInteger(move.importedFrom.gameplayRevision)) return null;
     return clone(move);
   });
@@ -1512,7 +1537,8 @@ export const terminalEffectMatches = (record: TerminalOutcomeRecord, turns: Turn
       if (isTerminalOutcome(stable.outcome.status)) {
         return record.cause.kind === "commander-settlement"
           && deterministicStateHash(stable) === deterministicStateHash(record.board)
-          && JSON.stringify(destructionRecords(removals, record.decisive.clientCommandId)) === JSON.stringify(record.removals);
+          && canonicalCommandJson(destructionRecords(removals, record.decisive.clientCommandId))
+            === canonicalCommandJson(record.removals.map(({ removalPhase: _phase, causalMoveId: _causal, ...removal }) => removal));
       }
       if (!stable.continuation) return false;
       const owner = getTurnOwnerSideForState(stable), proof = proveRelevantContinuation(stable, owner);
@@ -1523,7 +1549,8 @@ export const terminalEffectMatches = (record: TerminalOutcomeRecord, turns: Turn
       return proof.endpointCount === record.cause.endpointCount
         && proof.optionalEndpointCount === record.cause.optionalEndpointCount
         && deterministicStateHash(settlement.frame.occupancy) === deterministicStateHash(record.board)
-        && JSON.stringify(destructionRecords(removals, record.decisive.clientCommandId)) === JSON.stringify(record.removals);
+        && canonicalCommandJson(destructionRecords(removals, record.decisive.clientCommandId))
+          === canonicalCommandJson(record.removals.map(({ removalPhase: _phase, causalMoveId: _causal, ...removal }) => removal));
     }
     if (effect.kind !== "end-turn" || record.decisive.action.type !== "end_turn") return false;
     if (effect.before.turnIndex !== record.decisive.turnIndex
@@ -1536,7 +1563,8 @@ export const terminalEffectMatches = (record: TerminalOutcomeRecord, turns: Turn
       activeTurn: { ...clone(turn), status: "active", endedAt: null }, endedAt: turn.endedAt,
       resolveToStability, onRemoval: event => removals.push(clone(event)) });
     return deterministicStateHash(resolved.nextState) === deterministicStateHash(record.board)
-      && JSON.stringify(destructionRecords(removals, record.decisive.clientCommandId)) === JSON.stringify(record.removals);
+      && canonicalCommandJson(destructionRecords(removals, record.decisive.clientCommandId))
+        === canonicalCommandJson(record.removals.map(({ removalPhase: _phase, causalMoveId: _causal, ...removal }) => removal));
   } catch {
     return false;
   }
@@ -1595,8 +1623,9 @@ export const applyAcceptedAutomaticEnding = (
   if (!cause || !isTerminalOutcome(game.board.state.outcome.status)) return null;
 
   const operationId = commit.clientCommandId || result.move?.moveId || "terminal-outcome";
-  const addedDestroyed = destructionRecords(additionalRemovals, operationId);
+  const addedDestroyed = attributedDestructionRecords(game, additionalRemovals, operationId, result.move ?? null);
   if (result.move) {
+    result.move.inspectionSnapshot ??= distinctInspectionFrame(result.move.snapshot, game.board.state);
     result.move.snapshot = clone(game.board.state);
     if (addedDestroyed.length) {
       result.move.destroyedPieces = [...(result.move.destroyedPieces ?? []), ...addedDestroyed];
@@ -1684,8 +1713,13 @@ const applyServerActionInternal = (
   const moveIdForEffects = nextMoveId();
   const events: RemovalEvent[] = [];
   const onRemoval = (event: RemovalEvent) => events.push(event);
+  let inspectionFrame: GameState | null = null;
   const applied = applyAction(stable, action, { onRemoval, retreatSemantics });
-  const next = resolveToStability(applied.state, { artifactMode: "full", onRemoval });
+  const next = resolveToStability(applied.state, {
+    artifactMode: "full",
+    onRemoval,
+    onInspectionFrame: frame => { inspectionFrame ??= clone(frame); },
+  });
   const destroyedPieces = destructionRecords(events, clientCommandId ?? moveIdForEffects);
   next.sideToMove = getSideForSeat(getControlSeatForTurn(next, activeTurn.playerSeat));
   next.turnIndex = activeTurn.index;
@@ -1704,6 +1738,7 @@ const applyServerActionInternal = (
     clientCommandId: clientCommandId ?? null,
     selectionSnapshot: stable,
     snapshot: clone(next),
+    ...(distinctInspectionFrame(inspectionFrame, next) ? { inspectionSnapshot: clone(inspectionFrame!) } : {}),
     destroyedPieces,
   };
   game.moves.push(move);
@@ -1732,7 +1767,7 @@ const applyServerActionInternal = (
     turnSettled = true;
   }
   move.snapshot = clone(game.board.state);
-  move.destroyedPieces = destructionRecords(events, clientCommandId ?? moveIdForEffects);
+  move.destroyedPieces = attributedDestructionRecords(game, events, clientCommandId ?? moveIdForEffects, move);
   return { ok: true as const, move, state: clone(game.board.state), removedPieces: removalNotices(events, clientCommandId ?? moveIdForEffects), destroyedPieces: move.destroyedPieces, turnSettled };
 };
 
@@ -1750,6 +1785,7 @@ const settleServerTurn = (game: LiveGame, operationId = nextMoveId(), observedRe
     return { ok: false as const, error: "turn_not_initialized" };
   }
   const removalEvents: RemovalEvent[] = observedRemovals.map(event => clone(event));
+  let inspectionFrame: GameState | null = null;
   const endedAt = now();
   activeTurn.endedAt = endedAt;
   activeTurn.status = "complete";
@@ -1759,17 +1795,23 @@ const settleServerTurn = (game: LiveGame, operationId = nextMoveId(), observedRe
     endedAt,
     resolveToStability,
     onRemoval: (event) => removalEvents.push(event),
+    onInspectionFrame: frame => { inspectionFrame ??= clone(frame); },
   });
   const lastMove = [...game.moves].reverse().find((move) => !isMoveUndone(move) && move.turnIndex === activeTurn.index);
   if (lastMove) {
+    if (removalEvents.length) lastMove.inspectionSnapshot ??= distinctInspectionFrame(inspectionFrame, nextState);
     lastMove.snapshot = clone(nextState);
-    lastMove.destroyedPieces = [...(lastMove.destroyedPieces ?? []), ...destructionRecords(removalEvents, operationId)];
+    lastMove.destroyedPieces = [
+      ...(lastMove.destroyedPieces ?? []),
+      ...attributedDestructionRecords(game, removalEvents, operationId, lastMove),
+    ];
   }
   game.turns.push(nextTurn);
   game.board.state = nextState;
   game.updatedAt = endedAt;
   addNotification(game, `Turn ${activeTurn.index + 1} ended. ${nextTurn.playerSeat} to play`);
-  return { ok: true as const, turn: clone(nextTurn), removalEvents, removedPieces: removalNotices(removalEvents, operationId), destroyedPieces: destructionRecords(removalEvents, operationId) };
+  return { ok: true as const, turn: clone(nextTurn), removalEvents, removedPieces: removalNotices(removalEvents, operationId),
+    destroyedPieces: attributedDestructionRecords(game, removalEvents, operationId, lastMove ?? null) };
 };
 
 /** Explicit closure uses the same engine legality/transition as computer search. */

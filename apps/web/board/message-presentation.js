@@ -63,7 +63,10 @@ const renderActorRest = (rest,coordinates,actorName,side,accessibleName) => {
 };
 export function renderBoardMessageHtml(message, {sizing = false} = {}) {
   if (message.rows) return message.rows.map(row => `<span class="board-message-row">${renderBoardMessageHtml(row,{sizing})}</span>`).join('');
-  if(message.confirmation)return `${escape(message.text??'Confirm')} <strong>${escape(message.confirmation.text)} ${renderCoordinateChip(message.confirmation.point,message.confirmation.pointClass)}</strong>`;
+  if(message.confirmation){
+    const confirmation=`${escape(message.text??'Confirm')} <strong>${escape(message.confirmation.text)} ${renderCoordinateChip(message.confirmation.point,message.confirmation.pointClass)}</strong>`;
+    return confirmation+(message.after?` ${renderCopy(message.after,message.coordinates)}`:'')+renderGuidanceDisclosure(message,{sizing});
+  }
   const {text,actorName,rest,actions}=boardMessagePresentation(message);
   const parts=Array.isArray(message.parts)&&message.parts.every(part=>part&&typeof part.text==='string')
     &&message.parts.map(part=>part.text).join('')===text?message.parts:null;
@@ -71,8 +74,14 @@ export function renderBoardMessageHtml(message, {sizing = false} = {}) {
     :actorName?`${renderActorName(actorName,message.actorToneSide,message.actorAccessibleName)}${renderActorRest(rest,message.coordinates,actorName,message.actorToneSide,message.actorAccessibleName)}`:renderCopy(text,message.coordinates);
   const {inline,detached}=partitionMessageActions(actions);
   const sentence=copy+(message.badge?` <span class="board-obligatory-pill"${boardPromptPattern(message)?` data-board-prompt-pattern="${DETACHED_REQUIRED_RETRY}"`:""}>${escape(message.badge)}</span>`:'')+inline.map(action=>` ${renderBoardInlineAction(action,{sizing})}`).join('');
-  return sentence+(detached.length?`<span class="board-message-actions">${detached.map(action=>renderBoardInlineAction(action,{sizing})).join(' ')}</span>`:'');
+  return sentence+renderGuidanceDisclosure(message,{sizing})+(detached.length?`<span class="board-message-actions">${detached.map(action=>renderBoardInlineAction(action,{sizing})).join(' ')}</span>`:'');
 }
+
+const renderGuidanceDisclosure = (message,{sizing}) => {
+  if(sizing||typeof message.detail?.text!=='string'||!message.detail.text)return '';
+  const expanded=message.detail.expanded===true,id=message.detail.id??'board-guidance-detail';
+  return ` <button type="button" class="board-guidance-disclosure" data-board-message-action="toggle-board-explanation" aria-expanded="${expanded}" aria-controls="${escape(id)}">${expanded?'Less':'Why?'}</button><span id="${escape(id)}" class="board-guidance-detail"${expanded?'':' hidden'}>${renderCopy(message.detail.text,message.detail.coordinates??[])}</span>`;
+};
 
 /** Patch changed narration without detaching its focused replay/action controls. */
 export function patchBoardMessage(element, html, {isRuntimeDisabled=()=>false}={}) {
@@ -83,7 +92,7 @@ export function patchBoardMessage(element, html, {isRuntimeDisabled=()=>false}={
   const compatible = (left,right) => {
     if (left.nodeType !== right.nodeType || left.nodeName !== right.nodeName) return false;
     if (left.nodeType === 1) {
-      const attrs = node => [...node.attributes].filter(attr => attr.name !== 'title' && !(attr.name === 'disabled' && isRuntimeDisabled(node))).map(attr => {
+      const attrs = node => [...node.attributes].filter(attr => attr.name !== 'title' && !(attr.name === 'disabled' && isRuntimeDisabled(node)) && !(attr.name === 'aria-expanded' && node.matches?.('[data-board-message-action="toggle-board-explanation"]'))).map(attr => {
         // Keep native press feedback on the live control through quiet refreshes.
         // Semantic attributes (including disabled/action identity) still matter.
         const inlineAction=node.matches?.('button[data-board-message-action],button[data-board-preview-action]');
@@ -104,6 +113,10 @@ export function patchBoardMessage(element, html, {isRuntimeDisabled=()=>false}={
   const patch = (left,right) => {
     if (left.nodeType === 3 && left.nodeValue !== right.nodeValue) left.nodeValue = right.nodeValue;
     if (left.nodeType === 1 && left.title !== right.title) left.title = right.title;
+    if (left.nodeType === 1 && left.getAttribute?.('aria-expanded') !== right.getAttribute?.('aria-expanded')) {
+      const expanded=right.getAttribute('aria-expanded');
+      if(expanded===null)left.removeAttribute('aria-expanded');else left.setAttribute('aria-expanded',expanded);
+    }
     const previous=[...left.childNodes], incoming=[...right.childNodes];
     const actionKey=node=>node.nodeType===1&&node.matches?.('button[data-board-message-action]')
       ? node.getAttribute('data-board-message-action') : null;

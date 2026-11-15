@@ -26,13 +26,13 @@ export function createBoardContextOwner({store,getScope,onRetire=()=>{},onIntent
 // Replacing a host alone never turns body focus into permission to steal focus.
 export function createBoardContextFocus({doc,owner,reveal=()=>{},enqueue=queueMicrotask}) {
  const win=doc.defaultView,returns=new Set();let disposed=false;
- const begin=(trigger,{allows=()=>false,allowRemoval=false,onRetire=()=>{}}={},activation=false)=>{
+ const begin=(trigger,{allows=()=>false,allowRemoval=false,allowDeferredRemoval=false,onRetire=()=>{}}={},activation=false)=>{
   const token=owner.capture(),original=doc.activeElement;
-  let removedControl=null;
+  let removedControl=null,lastOwnedControl=original===trigger?trigger:null;
   let live=!disposed&&(activation||original===trigger)&&Boolean(trigger?.isConnected);
   const owned=target=>target===trigger||allows(target);
-  const retire=()=>{removedControl=null;if(!live)return;live=false;onRetire();};
-  const focus=event=>{if(!owned(event.target))retire();};
+  const retire=()=>{removedControl=null;lastOwnedControl=null;if(!live)return;live=false;onRetire();};
+  const focus=event=>{if(owned(event.target))lastOwnedControl=event.target;else retire();};
   const pointer=event=>{if(!owned(event.target))retire();};
   const key=event=>{if(!owned(event.target)||event.key==='Tab')retire();};
   const visibility=()=>{if(doc.hidden)retire();};
@@ -48,8 +48,10 @@ export function createBoardContextFocus({doc,owner,reveal=()=>{},enqueue=queueMi
   };
   returns.add(release);
   const intentCurrent=()=>live&&!disposed&&!doc.hidden&&owner.current(token);
+  const deferredOwnedRemovalCurrent=()=>allowDeferredRemoval&&doc.activeElement===doc.body&&lastOwnedControl!==trigger&&lastOwnedControl!==null
+   &&(!lastOwnedControl.isConnected||lastOwnedControl.disabled||!owned(lastOwnedControl)||Boolean(lastOwnedControl.closest?.('[inert],[hidden],[aria-hidden="true"]')));
   const current=()=>intentCurrent()
-   &&(owned(doc.activeElement)||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]')))||(removedControl!==null&&doc.activeElement===doc.body&&!removedControl.isConnected));
+   &&(owned(doc.activeElement)||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]')))||(removedControl!==null&&doc.activeElement===doc.body&&!removedControl.isConnected)||deferredOwnedRemovalCurrent());
   // Only this synchronous renderer can grant a one-shot return after removing
   // its currently focused replay control. Initial body focus, an earlier
   // removal, a connected control or another active element grants nothing.

@@ -96,7 +96,7 @@ test('guidance failure reaches local Details without changing legal play',async(
     const incident=report.locator('.issue-diagnostic');
     const incidentId=await incident.getAttribute('data-incident-id');
     expect(incidentId).toBeTruthy();
-    await report.getByRole('button',{name:'Details',exact:true}).click();
+    await report.getByRole('button',{name:'Show diagnostic details',exact:true}).click();
     const details=report.locator('.issue-details pre');
     await expect(details).toBeVisible();
     const text=await details.textContent();

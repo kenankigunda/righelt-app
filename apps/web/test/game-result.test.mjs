@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getGameResult, getEligibleRematchResult, renderHistoryResult, createRematchDialog, RESULT_HEADING_CONTRACT, REMATCH_CHOICES_CONTRACT } from "../shell/game-result.js";
+import { getGameResult, getEligibleRematchResult, getResultNotice, renderResultNoticeText, renderHistoryResult, createRematchDialog, RESULT_HEADING_CONTRACT, REMATCH_CHOICES_CONTRACT } from "../shell/game-result.js";
 const game = (status = "ongoing") => ({ id: "g", player1: { identityId: "red" }, player2: { identityId: "blue" }, board: { state: { outcome: { status, reason: "p2_commander_unsupplied" } } } });
 test("results use authoritative ownership and selected self-play start for the rematch", () => {
   assert.equal(RESULT_HEADING_CONTRACT, 'named-perspective-v3');
@@ -28,6 +28,16 @@ test("History rematch eligibility follows saved human seats, not result visibili
   assert.match(renderHistoryResult(completed,"red",{includeRematch:true}),/data-action="rematch" data-game-id="g"/);
 });
 
+test('completion notices use saved decisive-turn truth and preserve role-colored winner names',()=>{
+ const completed={...game('p1_win'),terminalOutcome:{decisive:{turnIndex:4}}};
+ assert.deepEqual(getResultNotice(completed,'red'),{text:'You won on Turn 5',parts:[{text:'You',side:'p1'},{text:' won'},{text:' on Turn 5'}]});
+ const spectator=getResultNotice(completed,'viewer');assert.equal(spectator.text,'Guest 1 won on Turn 5');assert.match(renderResultNoticeText(spectator),/player-tone-p1/);assert.match(renderResultNoticeText(spectator),/Red:/);
+ assert.equal(getResultNotice({...completed,board:{state:{outcome:{status:'draw'}}}},'red').text,'Draw on Turn 5');
+ assert.equal(getResultNotice({...completed,terminalOutcome:undefined},'red').text,'You won','missing provenance never invents a turn');
+ const self={...completed,selfPlayMode:true,selfPlayStartSide:'p2',player2:{identityId:'red'}};
+ assert.equal(getResultNotice(self,'red').text,'You won as Red on Turn 5');
+});
+
 test('actual defeat causes remain distinct and legacy push results are interpreted without rewriting history',()=>{
  const captured={...game('p1_win'),board:{state:{outcome:{status:'p1_win',reason:'p2_commander_destroyed'},pieces:[{id:'C1',supplied:true}]}}};
  assert.equal(getGameResult(captured,'red').reason,'Guest 2’s commander was destroyed.');
@@ -37,6 +47,15 @@ test('actual defeat causes remain distinct and legacy push results are interpret
  legacy.board.state.pieces.push({id:'C2',supplied:false});assert.equal(getGameResult(legacy,'red').reason,'Guest 2’s commander lost its supply.');
  assert.equal(getGameResult(game('draw'),'red').tone,'draw');
  const watch={...captured,computer:{seats:{p1:'tau',p2:'horus'},manual:false}};assert.equal(getGameResult(watch,'red').tone,'neutral');
+});
+
+test('unknown terminal provenance keeps the result without inventing a generic reason',()=>{
+ const unknown={...game('p1_win'),board:{state:{outcome:{status:'p1_win',reason:'legacy_unknown'}}}};
+ const result=getGameResult(unknown,'red');
+ assert.equal(result.title,'You won');
+ assert.equal(result.reason,'');
+ assert.deepEqual(result.reasonParts,[]);
+ assert.equal(renderHistoryResult(unknown,'red').includes('The game has finished.'),false);
 });
 
 

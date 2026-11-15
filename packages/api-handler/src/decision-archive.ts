@@ -38,7 +38,9 @@ export function archiveStatements(env: LiveGameEnv, before: LiveGame | null, gam
   for (const move of added) append({ id: move.moveId, kind: 'decision', revision, eventSeq, at: move.at, move });
   for (const move of game.moves) {
     const old = before?.moves.find(candidate => candidate.moveId === move.moveId);
-    if (old && !move.undone && (JSON.stringify(old.snapshot) !== JSON.stringify(move.snapshot) || JSON.stringify(old.destroyedPieces) !== JSON.stringify(move.destroyedPieces))) {
+    if (old && !move.undone && (JSON.stringify(old.snapshot) !== JSON.stringify(move.snapshot)
+      || JSON.stringify(old.inspectionSnapshot) !== JSON.stringify(move.inspectionSnapshot)
+      || JSON.stringify(old.destroyedPieces) !== JSON.stringify(move.destroyedPieces))) {
       append({ id: `finalize-${eventSeq}-${move.moveId}`, kind: 'finalization', revision, eventSeq, at: game.updatedAt, targetDecisionId: move.moveId, finalizedMove: move });
     }
   }

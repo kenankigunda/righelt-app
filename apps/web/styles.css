@@ -1144,6 +1144,25 @@ button:disabled {
 [data-presentation-context="previous-turn"] .cell:is(.previous-turn-source,.previous-turn-deletion,.previous-turn-target) {
   --cell-floor-image:linear-gradient(color-mix(in srgb,var(--previous-turn-color) var(--previous-turn-weight),transparent),color-mix(in srgb,var(--previous-turn-color) var(--previous-turn-weight),transparent)),var(--marble-face,none);
 }
+[data-shell-panel="board"]:has(.previous-turn-key:is(:focus-visible,[aria-pressed="true"])) [data-presentation-context="previous-turn"] .cell:is(.previous-turn-source,.previous-turn-deletion) {
+  outline:2px dashed var(--previous-turn-color);
+  outline-offset:-3px;
+}
+[data-shell-panel="board"]:has(.previous-turn-key:is(:focus-visible,[aria-pressed="true"])) [data-presentation-context="previous-turn"] .cell.previous-turn-target {
+  outline:2px solid var(--previous-turn-color);
+  outline-offset:-3px;
+}
+html[data-hover-capability="hover"] [data-shell-panel="board"]:has(.previous-turn-key:not([data-hover-retired="true"]):hover) [data-presentation-context="previous-turn"] .cell:is(.previous-turn-source,.previous-turn-deletion) {
+  outline:2px dashed var(--previous-turn-color);
+  outline-offset:-3px;
+}
+html[data-hover-capability="hover"] [data-shell-panel="board"]:has(.previous-turn-key:not([data-hover-retired="true"]):hover) [data-presentation-context="previous-turn"] .cell.previous-turn-target {
+  outline:2px solid var(--previous-turn-color);
+  outline-offset:-3px;
+}
+@media(forced-colors:active){
+  [data-shell-panel="board"]:has(.previous-turn-key:is(:focus-visible,[aria-pressed="true"]),.previous-turn-key:not([data-hover-retired="true"]):hover) [data-presentation-context="previous-turn"] .cell:is(.previous-turn-source,.previous-turn-deletion,.previous-turn-target) {outline-color:Highlight;forced-color-adjust:auto;}
+}
 
 /* Warning semantics are independent of either player's affiliation. */
 .board-obligatory-pill {

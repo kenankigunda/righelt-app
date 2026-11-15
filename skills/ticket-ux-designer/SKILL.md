@@ -19,3 +19,7 @@ Use this skill for the UX Designer phase of `Tk` or `Tkuxd`.
 - Do not request new mocks for ticket planning.
 - If the referenced existing UI surface is still ambiguous after text clarification, request a screenshot of the current product and ensure backlog references stay up to date.
 - Use `./scripts/backlog.sh` for task reads and writes, with the backlog git pull/push bookends around writes.
+
+## Product copy
+
+Design user-facing copy under the [Approachable Copy Principle](../../docs/UX_PRINCIPLES.md#approachable-copy-principle). Remove neutral repetition of evident interface states while preserving friendly atmosphere and meaningful action, authority, error, recovery and accessible context. Record both removal and keep examples for affected existing surfaces. Follow the [copy regression guidance](../../docs/ai/UX_VALIDATION_WORKFLOW.md#copy-review-and-regression-scope) using proportionate executed-behavior proof.

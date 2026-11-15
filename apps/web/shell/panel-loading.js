@@ -4,7 +4,7 @@ export const loadingText = (width = '72%', sample = '&nbsp;') => `<span class="p
 export const renderSummarySlots = ({title, started, role, turn, latest}) => `
   <h2 class="game-summary-title">${title}</h2><div class="section-stack">
     <p class="small">${started}</p><p class="small" data-testid="game-role">${role}</p>
-    <div class="section-followup"><p class="small" data-testid="active-turn-label">${turn}</p><p class="small">${latest}</p></div>
+    <div class="section-followup"><p class="small" data-testid="active-turn-label">${turn}</p>${latest ? `<p class="small">${latest}</p>` : ''}</div>
   </div>`;
 
 export const renderSummaryLoading = (title = `Game ${loadingText('8ch')}`) => `<div class="panel-loading-content" aria-hidden="true">${renderSummarySlots({

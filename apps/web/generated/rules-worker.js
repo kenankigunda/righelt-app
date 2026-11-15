@@ -2359,7 +2359,7 @@ function evaluateTerminalPhase(state) {
   state.outcome = outcome;
   return true;
 }
-function runResolvePass(state, mode, onRemoval) {
+function runResolvePass(state, mode, onRemoval, onInspectionFrame) {
   let changed = false;
   const nextArtifacts = computeBaselineArtifacts(state, mode);
   if (state.artifacts?.supply) {
@@ -2387,6 +2387,12 @@ function runResolvePass(state, mode, onRemoval) {
   if (applyContinuationPhase(state, onRemoval)) {
     changed = true;
   }
+  if (!state.continuation && onInspectionFrame) {
+    try {
+      onInspectionFrame(structuredClone(state));
+    } catch {
+    }
+  }
   if (applyForcedEffectsPhase(state, onRemoval)) {
     changed = true;
   }
@@ -2397,7 +2403,7 @@ function resolveToStability(state, options) {
   const maxPasses = options?.maxPasses ?? MAX_RESOLVE_PASSES;
   let pass = 0;
   while (pass < maxPasses) {
-    const changed = runResolvePass(state, mode, options?.onRemoval);
+    const changed = runResolvePass(state, mode, options?.onRemoval, options?.onInspectionFrame);
     if (!changed) {
       if (!state.continuation) {
         evaluateTerminalPhase(state);
@@ -2637,6 +2643,37 @@ function applyAction(state, action, options) {
   };
 }
 
+// apps/web/generated/packages/game-engine/src/destruction-attribution.js
+var moveKey = (move) => move.clientCommandId || move.moveId || null;
+var inspectionStateForMove = (move) => move.inspectionSnapshot ?? move.snapshot ?? null;
+var displayedSupply = (piece) => {
+  if (!piece)
+    return null;
+  return typeof piece.displaySupplied === "boolean" ? piece.displaySupplied : piece.supplied !== false;
+};
+var finalSupplyLossMoveId = (moves, pieceId, actualMoveId) => {
+  const actualIndex = actualMoveId ? moves.findIndex((move) => moveKey(move) === actualMoveId || move.moveId === actualMoveId) : moves.length - 1;
+  if (actualIndex < 0)
+    return null;
+  let candidate = null;
+  for (let index = 0; index <= actualIndex; index += 1) {
+    const move = moves[index];
+    const piece = inspectionStateForMove(move)?.pieces?.find((entry) => entry.id === pieceId);
+    const supplied = displayedSupply(piece);
+    const key = moveKey(move);
+    if (supplied === false && key)
+      candidate = candidate ?? key;
+    else
+      candidate = null;
+  }
+  return candidate;
+};
+var attributeDestructions = (records, moves, actualMoveId) => records.map((record) => {
+  const removalPhase = record.reason === "no_retreat" ? "immediate" : "turn_settlement";
+  const causalMoveId = removalPhase === "immediate" ? actualMoveId : typeof record.pieceId === "string" && record.pieceId ? finalSupplyLossMoveId(moves, record.pieceId, actualMoveId) : null;
+  return { ...record, removalPhase, ...causalMoveId ? { causalMoveId } : {} };
+});
+
 // apps/web/generated/packages/shared-types/src/sync-protocol.js
 var LIVE_HISTORY = Object.freeze({ requestHeader: "X-Righelt-Projection", requestValue: "history-v1", socketQuery: "historyProjection", snapshotValue: "summary-v1" });
 var SHARED_OPERATIONS = Object.freeze(["revert-request", "revert-approve", "revert-reject", "revert-rescind", "computer-control"]);
@@ -2707,7 +2744,7 @@ var buildNextTurn = (activeTurn, endedAt) => {
     lastMoveAt: null
   };
 };
-var finalizeResolvedTurn = ({ state, activeTurn, endedAt, resolveToStability: resolveToStability2, onRemoval }) => {
+var finalizeResolvedTurn = ({ state, activeTurn, endedAt, resolveToStability: resolveToStability2, onRemoval, onInspectionFrame }) => {
   const nextTurn = buildNextTurn(activeTurn, endedAt);
   const nextState = resolveToStability2(
     {
@@ -2717,7 +2754,7 @@ var finalizeResolvedTurn = ({ state, activeTurn, endedAt, resolveToStability: re
       continuation: null,
       pieces: clearTransientTurnFlags(state?.pieces)
     },
-    { artifactMode: "full", onRemoval }
+    { artifactMode: "full", onRemoval, onInspectionFrame }
   );
   return { nextState, nextTurn };
 };
@@ -2727,6 +2764,13 @@ var clone = (value) => structuredClone(value);
 var getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
 var getSideToMoveSeat = (game) => game.board?.state?.sideToMove === "P1" ? "Player 1" : "Player 2";
 var getSeatIdentity = (game, seat) => seat === "Player 1" ? game.player1?.identityId ?? null : game.player2?.identityId ?? null;
+var inspectionSnapshot = (frame, settled) => frame && deterministicStateHash(frame) !== deterministicStateHash(settled) ? clone(frame) : void 0;
+var turnMovesThrough = (game, pendingMoves, actualMove) => [...game.moves, ...pendingMoves].filter((move) => !move.undone && move.turnIndex === actualMove.turnIndex && move.index <= actualMove.index);
+var attributedRecords = (game, pendingMoves, events, operationId, actualMove) => attributeDestructions(
+  destructionRecords(events, operationId),
+  turnMovesThrough(game, pendingMoves, actualMove),
+  actualMove.clientCommandId ?? actualMove.moveId ?? null
+);
 var PROJECTED_GAME_FIELDS = Object.freeze([
   "board",
   "moves",
@@ -2760,6 +2804,7 @@ var completeTurn = (game, queuedAt, pendingMoves, operationId) => {
   if (!validation.ok) return { ok: false, error: validation.code, validation };
   const closed = applyAction(game.board.state, { type: "end_turn" }).state;
   const endedAt = queuedAt;
+  let inspectionFrame = null;
   activeTurn.endedAt = endedAt;
   activeTurn.status = "complete";
   const { nextState, nextTurn } = finalizeResolvedTurn({
@@ -2767,19 +2812,27 @@ var completeTurn = (game, queuedAt, pendingMoves, operationId) => {
     activeTurn,
     endedAt,
     resolveToStability,
-    onRemoval: (event) => events.push(event)
+    onRemoval: (event) => events.push(event),
+    onInspectionFrame: (frame) => {
+      inspectionFrame ??= clone(frame);
+    }
   });
   const lastMove = [...game.moves, ...pendingMoves].reverse().find((move) => !move.undone && move.turnIndex === activeTurn.index);
   if (lastMove) {
+    if (events.length) lastMove.inspectionSnapshot ??= inspectionSnapshot(inspectionFrame, nextState);
     lastMove.snapshot = clone(nextState);
-    lastMove.destroyedPieces = [...lastMove.destroyedPieces ?? [], ...destructionRecords(events, operationId)];
+    lastMove.destroyedPieces = [
+      ...lastMove.destroyedPieces ?? [],
+      ...attributedRecords(game, pendingMoves, events, operationId, lastMove)
+    ];
   }
   game.turns.push(nextTurn);
   game.board.state = nextState;
   game.updatedAt = endedAt;
-  return { ok: true, nextTurn, events };
+  return { ok: true, nextTurn, events, destroyedPieces: lastMove?.destroyedPieces ?? [] };
 };
 var buildPendingMoveEntry = ({ command, selectionSnapshot, snapshot, activeTurn, index }) => ({
+  moveId: command.clientCommandId,
   index,
   turnIndex: activeTurn.index,
   turnMoveIndex: activeTurn.moveIndexes.length - 1,
@@ -2844,8 +2897,15 @@ var projectOptimisticGame = ({ authoritativeGame, identityId, queue }) => {
       }
       const events = [];
       const onRemoval = (event) => events.push(event);
+      let inspectionFrame = null;
       const applied = applyAction(stable, command.action, { onRemoval });
-      const nextStable = resolveToStability(applied.state, { artifactMode: "full", onRemoval });
+      const nextStable = resolveToStability(applied.state, {
+        artifactMode: "full",
+        onRemoval,
+        onInspectionFrame: (frame) => {
+          inspectionFrame ??= clone(frame);
+        }
+      });
       const turnSettled = nextStable.continuation == null;
       const finalizedTurn = turnSettled ? finalizeResolvedTurn({
         state: nextStable,
@@ -2876,15 +2936,16 @@ var projectOptimisticGame = ({ authoritativeGame, identityId, queue }) => {
         activeTurn,
         index: workingGame.moves.length + pendingMoves.length
       });
-      pendingMove.destroyedPieces = destructionRecords(events, command.clientCommandId);
+      pendingMove.inspectionSnapshot = inspectionSnapshot(inspectionFrame, settledState);
       pendingMoves.push(pendingMove);
+      pendingMove.destroyedPieces = attributedRecords(workingGame, pendingMoves, events, command.clientCommandId, pendingMove);
       liveLegalActions = listLegalActions(settledState);
       commandResults.set(command.clientCommandId, {
         accepted: true,
         state: clone(settledState),
         legalActions: liveLegalActions,
         removedPieces: removalNotices(events, command.clientCommandId),
-        destroyedPieces: destructionRecords(events, command.clientCommandId),
+        destroyedPieces: clone(pendingMove.destroyedPieces),
         outcome: settledState.outcome ?? null
       });
       continue;
@@ -2897,7 +2958,7 @@ var projectOptimisticGame = ({ authoritativeGame, identityId, queue }) => {
     commandResults.set(command.clientCommandId, {
       accepted: true,
       removedPieces: removalNotices(ended.events, command.clientCommandId),
-      destroyedPieces: destructionRecords(ended.events, command.clientCommandId),
+      destroyedPieces: clone(ended.destroyedPieces),
       state: clone(workingGame.board.state),
       legalActions: liveLegalActions,
       outcome: workingGame.board.state.outcome ?? null

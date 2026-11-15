@@ -3,7 +3,6 @@ import {settledMessage,measureBoardMessageGeometry,assertSettledBoardMessageGrow
 import {CURRENT_COMPUTER_MODEL} from '../../packages/shared-types/src/computer-play.ts';
 import {ACTION_CONTRACT_HEADER,ACTION_CONTRACT_VERSION} from '../../apps/web/generated/packages/shared-types/src/sync-protocol.js';
 import {readProjectedGame,waitForComputerDecision,waitForOpponentReady} from '../support/computer-projection.mjs';
-import {switchGamePanel} from '../support/app.mjs';
 
 test.use({viewport:{width:390,height:740},hasTouch:true});
 const notice=page=>page.locator('[data-computer-status]');
@@ -53,7 +52,7 @@ test('computer save failures take priority while the delayed saving notice stays
     await expect(page.getByTestId('sync-recovery-banner').getByRole('button',{name:'Retry connection',exact:true})).toBeVisible();
     await expect(page.getByTestId('sync-recovery-banner').getByRole('link',{name:'Home',exact:true})).toBeVisible();
     await expect(page.getByTestId('sync-recovery-banner').getByRole('button',{name:'Reload game',exact:true})).toHaveCount(0);
-    await expect(page.getByTestId('sync-recovery-banner').getByRole('button',{name:'Details',exact:true})).toBeVisible();
+    await expect(page.getByTestId('sync-recovery-banner').getByRole('button',{name:'Show diagnostic details',exact:true})).toBeVisible();
     await expect(page.locator('[data-alert-stack-card][inert] .shell-game-alert-copy').first()).toBeHidden();
     await expect(page.locator('[data-alert-stack-card][inert] button').first()).toBeHidden();
     expect(await page.getByTestId('sync-recovery-banner').evaluate(el=>!el.closest('[hidden],[inert],[aria-hidden="true"]'))).toBe(true);
@@ -68,23 +67,18 @@ test('computer save failures take priority while the delayed saving notice stays
     // A transient recovery card here does not establish a terminal failure.
     await expect.poll(()=>page.evaluate(readProjectedGame,{id:game.id,guest:true,expectedComputer:{modelId:game.computer.modelId,profile:'babs'}}),{timeout:30000}).toBeTruthy();
     await expect(notice(page)).toHaveCount(0);
-    const acceptedContext=page.locator('[data-incoming-context]:has([data-action="replay-board-context"])');
-    await expect(acceptedContext).toHaveCount(1);
-    const acceptedReplay=acceptedContext.getByRole('button',{name:'Show me again',exact:true});
-    const acceptedContextKey=await acceptedReplay.getAttribute('data-board-context-key');
-    expect(acceptedContextKey).toBeTruthy();
     // The validated obsolete computer rejection is quiet; the accepted
-    // replacement has its own current context without a human retry prompt.
+    // replacement settles without a human retry prompt. Narrow layouts do not
+    // retain the removed incoming narration or replay surface.
     await expect(page.getByTestId('sync-failure-banner')).toHaveCount(0);
     await expect(page.locator('[data-alert-stack-card]')).toHaveCount(0);
-    await expect(acceptedContext).toBeVisible();
-    await expect(acceptedReplay).toHaveAttribute('data-board-context-key',acceptedContextKey);
-    await expect(acceptedReplay).toBeVisible();
+    await expect(page.locator('[data-incoming-context],.incoming-move-flyout,.history-incoming,[data-action="toggle-incoming-narration"]')).toHaveCount(0);
+    await expect(page.getByRole('button',{name:/Changes by opponent/})).toBeVisible();
     await settledMessage(page);
-    const growth={scope:'Accepted narration geometry only; notices retained their original exact geometry checks',before:beforeMessage,after:await measureBoardMessageGeometry(page)};
-    try{await persistGeometryEvidence(info,'accepted-message-growth.json',growth);growth.movement=assertSettledBoardMessageGrowth(growth.before,growth.after);growth.status='complete';}
+    const growth={scope:'Accepted move settled-message geometry only; notices retained their original exact geometry checks',before:beforeMessage,after:await measureBoardMessageGeometry(page)};
+    try{await persistGeometryEvidence(info,'accepted-move-growth.json',growth);growth.movement=assertSettledBoardMessageGrowth(growth.before,growth.after);growth.status='complete';}
     catch(error){growth.failure=String(error);throw error;}
-    finally{await persistGeometryEvidence(info,'accepted-message-growth.json',growth);}
+    finally{await persistGeometryEvidence(info,'accepted-move-growth.json',growth);}
     const saved=await page.evaluate(readProjectedGame,{id:game.id,guest:true});
     const committed=saved.moves.filter(move=>move.computerProof?.modelId===game.computer.modelId);
     expect(committed).toHaveLength(1);
@@ -96,11 +90,6 @@ test('computer save failures take priority while the delayed saving notice stays
     expect(receipt.ok()).toBe(true);
     expect((await receipt.json()).commandOutcomes).toEqual([expect.objectContaining({clientCommandId:originalCommand.clientCommandId,fingerprint:originalCommand.fingerprint,outcome:'rejected',reason:'computer_control_changed'})]);
     for(const generation of new Set(submissions.map(command=>command.generation)))expect(new Set(submissions.filter(command=>command.generation===generation).map(command=>command.id)).size).toBe(1);
-    await acceptedContext.getByRole('button',{name:'Hide previous turn',exact:true}).click();
-    await expect(acceptedContext.getByRole('button',{name:'Show me again',exact:true})).toHaveCount(0);
-    await switchGamePanel(page,'history');
-    await expect(page.locator('[data-mobile-panel="history"]')).toHaveAttribute('data-active','true');
-    await expect(page.locator('.history-live-replay')).toHaveCount(0);
   }finally{holdGameplay=false;}
 });
 
@@ -139,8 +128,8 @@ for(const failure of ['transient','terminal'])test(failure==='transient'
   await expect(notice(page)).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Show me again',exact:true})).toBeVisible();
   await settledMessage(page);
-    const growth={scope:'Accepted narration geometry only; notices retained their original exact geometry checks',before:beforeMessage,after:await measureBoardMessageGeometry(page)};
-    try{await persistGeometryEvidence(info,'accepted-message-growth.json',growth);growth.movement=assertSettledBoardMessageGrowth(growth.before,growth.after);growth.status='complete';}
+    const growth={scope:'Accepted move settled-message geometry only; notices retained their original exact geometry checks',before:beforeMessage,after:await measureBoardMessageGeometry(page)};
+    try{await persistGeometryEvidence(info,'accepted-move-growth.json',growth);growth.movement=assertSettledBoardMessageGrowth(growth.before,growth.after);growth.status='complete';}
     catch(error){growth.failure=String(error);throw error;}
-    finally{await persistGeometryEvidence(info,'accepted-message-growth.json',growth);}
+    finally{await persistGeometryEvidence(info,'accepted-move-growth.json',growth);}
 });

@@ -1,7 +1,9 @@
 import {CURRENT_RETREAT_SEMANTICS,archivedRetreatSemantics} from '../../packages/shared-types/src/retreat-rules.ts';
+import {validateTeaching,teachingDecision,verifyTeachingDecision}from './training-teaching.mjs';
 // JSON-lines protocol. Parent owns inference, resource allocation and hard process termination.
 import { createInterface } from 'node:readline';
-import { writeFileSync, renameSync } from 'node:fs';
+import { writeFileSync, renameSync,readFileSync } from 'node:fs';
+import {COMPUTER_PROFILES}from '../../packages/shared-types/src/computer-play.ts';
 import { createEngineOperationBudget, EngineExpansionLimit } from './engine-operation-budget.mjs';
 import { searchRecovery } from './search-recovery.mjs';
 import { decisionProvenance } from './decision-provenance.mjs';
@@ -10,6 +12,7 @@ import { transitionArchivedAction } from './archived-action.mjs';
 import { trainingExplorationOptions } from './exploration-provenance.mjs';
 import { explorationRecord } from './exploration-record.mjs';
 import {encodingHash} from './production-corpus.mjs';
+import {commanderFamily,encodedFamily,encodedDigest} from './evaluation-protection.mjs';
 import { jobBudgetMs } from './worker-budget.mjs';
 import { createHash } from 'node:crypto';
 import { createInitialState, deterministicStateHash, normalizeState, resolveToStability } from '../../packages/game-engine/src/index.ts';
@@ -25,8 +28,8 @@ const send = message => process.stdout.write(`${JSON.stringify(message)}\n`);
 const canonical = value => Array.isArray(value) ? value.map(canonical)
   : value && typeof value === 'object'
     ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
-const searchOptions = profile => ({ simulations: profile?.simulations, temperature: profile?.temperature,
-  maxValueGap: profile?.maxValueGap, maxNodes: experimentConfig.search.maxNodes, decisionCache: false });
+const profileOptions = profile => ({simulations:profile?.simulations,temperature:profile?.temperature,maxValueGap:profile?.maxValueGap});
+const searchOptions = profile => ({...profileOptions(profile),maxNodes:experimentConfig.search.maxNodes,decisionCache:false});
 
 // IDs are canonicalized by owner/location for repetition detection only. Original
 // states and IDs are preserved for exact replay. Administrative counters and UI
@@ -62,10 +65,18 @@ export function ruleFingerprint(state) {
 class BudgetExpired extends Error { constructor(reason='deadline') { super(reason); this.reason=reason; } }
 async function main() {
   const job = await read();
+  const teaching=validateTeaching(job.teaching);
+  if(teaching&&(job.command!=='generate'||job.partition!=='train'))throw Error('Teaching only permitted for training generation');
   if(job.protectedEncodingHashes!==undefined && (job.command!=='generate'||job.partition!=='train'||
     !Array.isArray(job.protectedEncodingHashes)||new Set(job.protectedEncodingHashes).size!==job.protectedEncodingHashes.length||
     job.protectedEncodingHashes.some(hash=>typeof hash!=='string'||!/^[a-f0-9]{64}$/.test(hash))))throw Error('Invalid evaluation protection');
   const protectedEncodings=new Set(job.protectedEncodingHashes??[]);
+  if(job.protectedFamilyIds!==undefined&&(job.command!=='generate'||job.partition!=='train'||
+    !Array.isArray(job.protectedFamilyIds)||new Set(job.protectedFamilyIds).size!==job.protectedFamilyIds.length||
+    job.protectedFamilyIds.some(id=>typeof id!=='string'||!/^simple:[a-f0-9]{64}$/.test(id))))throw Error('Invalid family protection');
+  const protectedFamilies=new Set(job.protectedFamilyIds??[]);
+  const protectedState=state=>protectedEncodings.size&&protectedEncodings.has(encodingHash(state))||
+    protectedFamilies.size&&protectedFamilies.has(commanderFamily(state));
   const explorationOptions = trainingExplorationOptions(job);
   const adoption = job.explorationAdoption;
   if (adoption !== undefined && (job.command !== 'generate' || job.partition !== 'train' ||
@@ -99,6 +110,8 @@ async function main() {
   }
   if (job.command === 'search') {
     let requestId=0;
+    const requestedProfile=Object.fromEntries(Object.entries(profileOptions(job.profile)).filter(([,value])=>value!==undefined));
+    const appliedMaxNodes=job.verifyFallback?1:experimentConfig.search.maxNodes;
     const result=await selectMove({state:job.state,seed:job.seed,...searchOptions(job.profile),...explorationOptions,
       ...(job.verifyFallback ? {maxNodes:1} : {}),deadlineMs:deadline},async encoded=>{
       const id=++requestId;send({type:'evaluate',id,input:Array.from(encoded)});
@@ -115,7 +128,9 @@ async function main() {
       fallbackProof={passed:true,beforeHash:deterministicStateHash(job.state),afterHash:deterministicStateHash(next),
         action:result.action,actionIndex:result.actionIndex,...record};
     }
-    send({type:'searched',result,...(fallbackProof?{fallbackProof}:{})});return;
+    send({type:'searched',result:{...result,searchIdentity:{stateHash:deterministicStateHash(job.state),
+      controller:job.state.sideToMove,requestedProfile,maxNodes:appliedMaxNodes,
+      valuePerspective:'P1',budgetMs,completedSimulations:result.simulations}},...(fallbackProof?{fallbackProof}:{})});return;
   }
   if (job.command === 'replay' || job.command === 'inventory') {
     const inventory = job.command === 'inventory';
@@ -126,6 +141,8 @@ async function main() {
         indices.some(i => !Number.isSafeInteger(i) || i < 0 || i >= job.game.decisions.length))) {
       throw new Error('Invalid training inventory selection');
     }
+    const replayTeaching=validateTeaching(job.game.teaching);
+    if(replayTeaching&&replayTeaching.models.current!==job.game.modelVersion)throw Error('Game changed current teacher-model provenance');
     const snapshots = [];
     let state = job.game.rootState ?? job.game.initialState;
     for (const action of job.game.warmupActions ?? []) { check(); state = transitionArchivedAction(state, action, bounded,retreatSemantics); }
@@ -139,6 +156,10 @@ async function main() {
     for (const [index, record] of job.game.decisions.entries()) {
       check();
       const before = state;
+      verifyTeachingDecision(replayTeaching??undefined,record);
+      if(record.turnIndex!==undefined && (!Number.isSafeInteger(record.turnIndex)||record.turnIndex!==before.turnIndex)) {
+        throw new Error('Replay completed-turn index mismatch');
+      }
       state = replayDecision(state, record, bounded);
       if (inventory && indices.includes(index)) snapshots.push({ index, state: before,
         hash: record.beforeHash, decisionId: record.id, controller: record.controller });
@@ -146,6 +167,12 @@ async function main() {
       repetitions.set(key, (repetitions.get(key) ?? 0) + 1);
     }
     if (deterministicStateHash(state) !== job.game.finalHash) throw new Error('Replay final hash mismatch');
+    if(job.game.finalTurnIndex!==undefined&&job.game.finalTurnIndex!==state.turnIndex)throw Error('Replay final turn mismatch');
+    if(job.game.finalEncoding!==undefined) {
+      const actual=encodeState(state);
+      if(!Array.isArray(job.game.finalEncoding)||actual.length!==job.game.finalEncoding.length||
+        actual.some((v,i)=>v!==job.game.finalEncoding[i]))throw Error('Replay final encoding mismatch');
+    }
     if (state.outcome.status !== job.game.outcome.status) throw new Error('Replay outcome mismatch');
     if (state.outcome.status === 'ongoing') {
       const reason = job.game.decisions.length >= experimentConfig.training.maxDecisions ? 'decision-cap'
@@ -177,6 +204,12 @@ async function main() {
   }
   if (job.command === 'fingerprint') { send({ type: 'fingerprint', fingerprint: ruleFingerprint(job.state) }); return; }
   const arena=job.command==='arena';
+  const evaluationProfile=job.evaluationProfile;
+  if(evaluationProfile!==undefined){
+    const expected=COMPUTER_PROFILES[evaluationProfile?.name];
+    const sourceSha=createHash('sha256').update(readFileSync(new URL('../../packages/shared-types/src/computer-play.ts',import.meta.url))).digest('hex');
+    if(!arena||!expected||evaluationProfile.sourceSha256!==sourceSha||!/^[a-f0-9]{64}$/.test(evaluationProfile.artifactSha256??'')||JSON.stringify(canonical(evaluationProfile.definition))!==JSON.stringify(canonical(expected))||['P1','P2'].some(seat=>JSON.stringify(canonical(job.profiles?.[seat]))!==JSON.stringify(canonical(expected))))throw Error('Invalid authoritative evaluation profile');
+  }
   if (arena && ['P1', 'P2'].some(seat => !job.profiles?.[seat] || !job.modelVersions?.[seat] || !job.profileVersions?.[seat])) {
     throw new Error('Arena model and profile identities are required for both seats');
   }
@@ -204,7 +237,7 @@ async function main() {
     }
   }
   const initialState = structuredClone(state), decisions = [], repetitions = new Map();
-  if(protectedEncodings.size && protectedEncodings.has(encodingHash(state))) {
+  if(protectedState(state)) {
     send({type:'unavailable-start',id:job.id,reason:'protected-evaluation-position'});return;
   }
   if (job.command === 'prepare') {
@@ -213,7 +246,7 @@ async function main() {
   let requestId = 0, termination = 'terminal', truncationReason = null;
   try {
     for (let n = 0; state.outcome.status === 'ongoing'; n++) {
-      if(protectedEncodings.size && protectedEncodings.has(encodingHash(state))) {
+      if(protectedState(state)) {
         send({type:'unfinished',id:job.id,reason:'protected-evaluation-position',decisions:decisions.length});return;
       }
       check();
@@ -224,9 +257,11 @@ async function main() {
       }
       const seed = (job.seed + n) >>> 0;
       const decisionController=state.sideToMove;
-      const profile=arena ? job.profiles[decisionController] : {simulations:experimentConfig.search.selfPlaySimulations,temperature:1,maxValueGap:.1};
+      const profile=teaching?teaching.profiles[decisionController]:arena ? job.profiles[decisionController] : {simulations:experimentConfig.search.selfPlaySimulations,temperature:1,maxValueGap:.1};
       diagnose(state,'search',n,seed,profile);
       const result = await selectMove({ state, seed, ...searchOptions(profile), ...explorationOptions, deadlineMs: deadline }, async encoded => {
+        if(protectedEncodings.size&&protectedEncodings.has(encodedDigest(encoded))||
+          protectedFamilies.size&&protectedFamilies.has(encodedFamily(encoded)))throw new BudgetExpired('protected-evaluation-position');
         const id = ++requestId;
         send({ type: 'evaluate', id, modelSeat:decisionController, input: Array.from(encoded) });
         const reply = await read();
@@ -236,13 +271,14 @@ async function main() {
       const unfinished=searchRecovery(result,{schema:1,id:job.id,familyId:job.familyId,partition:job.partition,
         initialState,decisions,finalHash:deterministicStateHash(state),outcome:state.outcome});
       if(unfinished){send(unfinished);return;}
-      const beforeHash = deterministicStateHash(state), controller = state.sideToMove;
+      const beforeHash = deterministicStateHash(state), controller = state.sideToMove, turnIndex = state.turnIndex;
       const encoded = Array.from(encodeState(state)), legal = result.legality.indices;
       state = result.nextState;
-      decisions.push({ id: `${job.id}:${n}`, controller, action: result.action, beforeHash,
+      decisions.push({ id: `${job.id}:${n}`, controller, turnIndex, action: result.action, beforeHash,
         afterHash: deterministicStateHash(state), seed, legal, encoded,
         modelVersion: arena ? job.modelVersions[controller] : job.modelVersion,
         profileVersion: arena ? job.profileVersions[controller] : `selfplay-${SEARCH_POLICY_VERSION}`,
+        ...(teaching?teachingDecision(teaching,controller):{}),
         ...decisionProvenance(result,SEARCH_POLICY_VERSION), ...adoptionFields });
       const committed=decisions[decisions.length-1];
       send({type:'decision-progress',gameId:job.id,kind:job.kind,decision:{
@@ -259,8 +295,11 @@ async function main() {
   send({ type: 'game', game: { schema: 1,retreatSemantics:CURRENT_RETREAT_SEMANTICS, id: job.id, familyId: job.familyId, partition: job.partition, kind: job.kind,
     seed: job.seed, modelVersion: job.modelVersion, rootState, warmupActions, initialState, decisions, ...adoptionFields,
     ...(job.productionSource ? {productionSource:job.productionSource} : {}),
+    ...(teaching?{teaching}:{}),
+    ...(evaluationProfile?{evaluationProfile}:{}),
     ...(arena ? { modelVersions: job.modelVersions, profileVersions: job.profileVersions } : {}),
-    termination, truncationReason, outcome: state.outcome, finalHash: deterministicStateHash(state) } });
+    termination, truncationReason, outcome: state.outcome, finalHash: deterministicStateHash(state),
+    finalTurnIndex:state.turnIndex,finalEncoding:Array.from(encodeState(state)) } });
 }
 main().catch(error => {
   send({ type: error instanceof BudgetExpired ? 'unfinished' : 'error', message: error.message, ...(error instanceof BudgetExpired ? {reason:error.reason} : {}) });

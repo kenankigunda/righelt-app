@@ -318,7 +318,7 @@ test('error categories remain source-derived and changed output remains hash pro
  assert.throws(()=>transformBoardAdmissionModule(source,altered),/output hash mismatch/);
  const wrongOutput={...recipe,outputSha256:'0'.repeat(64)};assert.throws(()=>transformBoardAdmissionModule(source,wrongOutput),/output hash mismatch/);
  assert.equal(recipe.operations.filter(op=>op.after.includes('runtime-host-error')).length,1);assert.equal(recipe.operations.length,25);
- const unchanged={"/board-adapters/engine-board-adapter.js":"a034f062f0c02981594ec3403aa26d6b07598ee2a86bf8241a6ab030228940ca","/shell/live-transport.js":"69b5a87fd29149ea1ededcadc958387c7fec433a35cd2d9b0c79988a49bcc927","/board/hosts/shell-host.js":"53644aa364736644c0bdddba7e92a8ea9419283b875e8fe7f368778179550525","/shell/app.js":"50a058ec5e7327754bb4329c1558e062692b5feb9cf483a19851902b24a6989c"};
+ const unchanged={"/board-adapters/engine-board-adapter.js":"d5668314a0d060c06b8d5b890920f26ac3b45ffe64c225939032e179d0ad1ed0","/shell/live-transport.js":"f1941aa8889b603583fbc2238289201cd2865982b7a10123429627b26c898039","/board/hosts/shell-host.js":"53644aa364736644c0bdddba7e92a8ea9419283b875e8fe7f368778179550525","/shell/app.js":"bc098d4f30bb13de79e1452aecd89153ed29425d7289acf3597640354125b903"};
  for(const [key,expected] of Object.entries(unchanged)){assert.equal(createHash('sha256').update(JSON.stringify(recipes[key])).digest('hex'),expected);}
 });
 
@@ -400,11 +400,27 @@ test('case source opt-in and sealed inline capture preserve the original two act
  // Keep the original golden: only invert the sealed test-owned observation block.
  const hash=text=>createHash('sha256').update(text).digest('hex');
  const originalSHA='165ec16bb620c0038a8059a2d513401a5a258069ea6ae397130bb58fb5844d30';
- const reviewedCurrentSHA='6ae8c6583ffdd86593a4b84b2409409cbbbf0920ef0ae4f14539c4274e6aee05';
+ const reviewedCurrentSHA='3ef48c2db687397eac6666b987f46fb36942b2479a47a13785edfacd40750540';
  // Preserve the old composed-source golden by exactly inverting the accepted
  // Recovery fault-lifecycle/reconnect fixture changes, not actions.
  const reviewedFixtureBaseSHA='95388c539469a08b581a1058ef79298c978cdaf859e12c5d1b328dd97bd8ca3b';
  const recoveryFixtureUnion=[
+  {
+    "before": " let socketsUnavailable=false,losePush=true,retreatProof=null;const commands=[], sockets=[],pushProofs=[];\n",
+    "after": " let socketsUnavailable=false,losePush=true;const commands=[], sockets=[],pushProofs=[];\n"
+  },
+  {
+    "before": "  const envelope=request.postDataJSON(),values=operationValues(request),action=values.payload?.action;commands.push(envelope);\n  if(action?.type==='retreat'){\n   const response=await fetchFaultResponse(route);if(!response)return;\n   const body=await response.json();\n   retreatProof={envelope,body};\n   await route.fulfill({response});return;\n  }\n  if(action?.type!=='push'){await route.continue();return;}\n",
+    "after": "  const envelope=request.postDataJSON(),values=operationValues(request);commands.push(envelope);\n  if(values.payload?.action?.type!=='push'){await route.continue();return;}\n"
+  },
+  {
+    "before": " await expect(message).toContainText('has been pushed. Choose a square to retreat to.');\n await expect(message).not.toContainText('Supply and command lines');\n",
+    "after": " await expect(message).toContainText('Select a retreat');\n await expect(message).not.toContainText('Supply and command lines');\n"
+  },
+  {
+    "before": " await expect(message).toContainText('has been pushed. Choose a square to retreat to.');\n const automaticFollow=page.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/apply')&&actionFor(request.postDataJSON())?.type==='follow');\n automaticFollow.catch(()=>{});\n await submitPlayableAction(page,retreat);\n await expect.poll(()=>retreatProof).not.toBeNull();\n const {body:retreatBody,envelope:retreatCommand}=retreatProof;\n",
+    "after": " await expect(message).toContainText(\"Select a retreat\");\n const acceptedRetreat=page.waitForResponse(response=>response.request().method()==='POST'&&new URL(response.url()).pathname.endsWith('/apply')&&actionFor(response.request().postDataJSON())?.type==='retreat');\n const automaticFollow=page.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/apply')&&actionFor(request.postDataJSON())?.type==='follow');\n acceptedRetreat.catch(()=>{});automaticFollow.catch(()=>{});\n await submitPlayableAction(page,retreat);\n const retreatResponse=await acceptedRetreat,retreatBody=await retreatResponse.json(),retreatCommand=retreatResponse.request().postDataJSON();\n"
+  },
   {
     "before": " const recordingPieces=page.locator('#shell-board .piece-token.pending-recording-piece');\n await expect(recordingPieces).toHaveCount(1);\n expect(await recordingPieces.evaluateAll(nodes=>nodes.map(node=>node.dataset.pieceId))).toEqual(['A1']);\n expect(await recordingPieces.evaluateAll(nodes=>nodes.map(node=>({name:node.getAttribute('aria-label'),animation:getComputedStyle(node).animationName})))).toEqual([\n  {name:'Red unit, will be destroyed if the turn ends now, recording move',animation:'pending-recording-piece-pulse'},\n ]);\n await page.emulateMedia({reducedMotion:'reduce'});\n expect(await recordingPieces.evaluateAll(nodes=>nodes.map(node=>({animation:getComputedStyle(node).animationName,outline:getComputedStyle(node).outlineStyle})))).toEqual([\n  {animation:'none',outline:'solid'},\n ]);\n await page.emulateMedia({reducedMotion:'no-preference'});\n",
     "after": ""
@@ -590,7 +606,9 @@ test('explicit checkpoint keeps immutable source epoch without relying on pagehi
 test('closed computer recovery descriptors, retention and original catch semantics',async()=>{
  const recipe=JSON.parse(await readFile(new URL('../../../e2e/support/computer-session-recovery-transformation.json',import.meta.url),'utf8'))['/shell/computer-session.js'];
  const source=await readFile(new URL('../../../apps/web/shell/computer-session.js',import.meta.url),'utf8');
- transformBoardAdmissionModule(source,recipe);
+ assert.equal(recipe.operations.length,1);const operation=recipe.operations[0],transformed=transformBoardAdmissionModule(source,recipe);
+ assert.equal(transformed.slice(operation.start,operation.start+operation.after.length),operation.after);
+ assert.equal(transformed.slice(0,operation.start)+operation.before+transformed.slice(operation.start+operation.after.length),source);
  assert.throws(()=>transformBoardAdmissionModule(source+' ',recipe),/source hash/);
  assert.throws(()=>transformBoardAdmissionModule(source,{...recipe,outputSha256:'0'.repeat(64)}),/output hash/);
  const bad=structuredClone(recipe);bad.operations[0].start++;assert.throws(()=>transformBoardAdmissionModule(source,bad),/range/);
@@ -603,7 +621,7 @@ test('closed computer recovery descriptors, retention and original catch semanti
  }
  assert.equal(getters,0);
  const injected=collector({recoveryCategories:COMPUTER_RECOVERY_CATEGORIES});injected.sandbox.__boardAdmissionRecord('computer-session-recovery-error',{errorCategory:'PRIVATE',message:'PRIVATE',identityId:'PRIVATE'});assert(!JSON.stringify(injected.sandbox.__boardAdmissionObservation).includes('PRIVATE'));
- const op=recipe.operations[0];
+ const op=operation;
  for(const sinkThrows of [false,true]){
   const original=Error('stale_state'),seen=[];const env={run:1,epoch:1,error:original,context:{key:'k'},recovery:null,publish:value=>seen.push(value),__boardAdmissionRecovery(){if(sinkThrows)throw Error('sink');}};env.globalThis=env;
   vm.runInNewContext(op.after,env);assert.equal(env.error,original);assert.equal(env.recovery,'k');assert.equal(seen.length,1);assert.equal(seen[0].message,original.message);
@@ -862,7 +880,7 @@ async function rulesTimeoutRecipe(){
 }
 test('computer timeout recipe is strictly bound, exactly invertible and preserves the original computer catch entry',async()=>{
  const{all,recipe,source}=await rulesTimeoutRecipe();
- assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'dbac69c1672ae52cbb515f93d0bed3bdb2db889bc1c5824b9704a43955dc0022');
+ assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'1d0c41f4aa7f783aab7440754d0cee88cf1c60762f41e5fb855a2ab6f66ea627');
  assert.equal(recipe.operations.length,1);const op=recipe.operations[0];assert.equal(op.anchorCount,1);
  const output=transformBoardAdmissionModule(source,recipe);assert.equal(output.slice(op.start,op.start+op.after.length),op.after);
  assert.equal(output.slice(0,op.start)+op.before+output.slice(op.start+op.after.length),source);
@@ -945,6 +963,19 @@ test('preview click instrumentation preserves lookup order and stops before end-
  };
  for(const blocked of [true,false])for(const options of [{},{external:true},{external:true,inspection:true},{external:true,legal:false},{action:'pass'},{throwLookup:true}])assert.deepEqual(run(op.after,blocked,options),run(op.before,blocked,options));
  assert.equal(run(op.after,true).entries,0);assert.equal(run(op.after,false).entries,1);
+});
+test('preview click instrumentation preserves the Board explanation disclosure toggle',()=>{
+ const recipe=recipes['/board/runtime/board-runtime.js'],op=recipe.operations.find(op=>op.after.includes('runtime-preview-entry'));
+ const run=body=>{
+  const button={getAttribute:()=> 'toggle-board-explanation'};
+  const event={target:{closest:selector=>selector.includes('message')?button:null},isTrusted:false,currentTarget:{}};
+  const guidanceDisclosure={key:'piece',open:false};let renders=0;
+  const names=['interactionBlocked','elements','controls','submitPass','endCurrentTurn','rushGuidanceKey','syncRushGuidance','renderStatusContent','inspection','legalActions','getMutationSurface','mutationActivation','guidanceDisclosure','renderStatus'];
+  const runtime=new Function(...names,recipe.prefix+body+';return {handleBoardPreviewClick,getGuidanceDisclosure:()=>guidanceDisclosure};')(false,{boardPreviewLabelEl:event.currentTarget},{onBoardMessageAction:()=>assert.fail('the disclosure remains locally owned')},()=>assert.fail('must not pass'),()=>assert.fail('must not end turn'),null,()=>{},()=>{},null,[],()=>({}),{allow:()=>true},guidanceDisclosure,()=>{renders++;});
+  runtime.handleBoardPreviewClick(event);return{open:runtime.getGuidanceDisclosure().open,renders};
+ };
+ assert.deepEqual(run(op.before),{open:true,renders:1});
+ assert.deepEqual(run(op.after),{open:true,renders:1});
 });
 test('end-turn guard instrumentation preserves every original short-circuit getter count and thrown identity',()=>{
  const recipe=recipes['/board/runtime/board-runtime.js'],op=recipe.operations.find(op=>op.after.includes('runtime-end-turn-entry'));

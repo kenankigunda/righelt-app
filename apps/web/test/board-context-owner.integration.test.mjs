@@ -1,6 +1,5 @@
 import {createBoardContextPresentation} from '../shell/board-context-presentation.js';
 import {createDisplayedReplayStarter,displayedReplayFocusTarget} from '../shell/displayed-replay-starter.js';
-import {createIncomingNarrationState,syncIncomingNarrationRoot} from '../shell/incoming-narration.js';
 import {createRenderGestureGate} from '../shell/render-gesture.js';
 import {createDestinationRouteOwner,destinationReadScope} from '../shell/destination-route-owner.js';
 import {createDestinationRecovery} from '../shell/destination-recovery.js';
@@ -64,9 +63,8 @@ function fixture(t){
  createEngineBoardAdapter(){},prefersReducedMotion:()=>false,
  createComputerReplay:options=>({play:async payload=>{plays.push(payload);context.beforeReplayFinish?.();options.onFinish();},destroy(){},snapshot:()=>({playing:false}),stop(){}}),CSS:{escape:value=>value},
  };
- context.boardContextVisit=0;context.incomingNarrationState=createIncomingNarrationState();context.replayController=null;
+ context.boardContextVisit=0;context.replayController=null;
  context.renderGesture=createRenderGestureGate({render:context.render,schedule:fn=>{queued.push(fn);return fn;},cancel:fn=>{const index=queued.indexOf(fn);if(index>=0)queued.splice(index,1);}});owners.push(context.renderGesture);
- context.syncIncomingNarrationHost=()=>{};
  const presentation=createBoardContextPresentation({appEl:app,document:doc,getDependencies:()=>context,enqueue:fn=>queued.push(fn),createLayout:context.createBoardContextLayout});
  owners.push(presentation);context.presentation=presentation;
  context.startComputerReplay=createDisplayedReplayStarter(()=>({...context,setReplayController:value=>{context.replayController=value;}}),{createReplay:context.createComputerReplay});
@@ -74,7 +72,7 @@ function fixture(t){
   get routeHydrated(){return context.routeHydrated;},set routeHydrated(value){context.routeHydrated=value;}};
  const destinationOwner=createDestinationRouteOwner(()=>({...context,state:routeState,cancelPendingBoardContextReplay:presentation.cancel}));
  const c={receive:presentation.receive,ack:presentation.ack,scope:presentation.scope,owner:presentation.owner,store:presentation.store,replay:context.startComputerReplay,dismiss:presentation.dismiss,
-  replayAction:presentation.replayAction,dispatch:presentation.dispatch,routeSync:destinationOwner.start,resume:presentation.resume,pending:()=>presentation.state.pendingBoardContextReplay,focus:presentation.focus,
+  replayAction:presentation.replayAction,previousDescriptor:presentation.previousTurnReplayDescriptor,replayPrevious:presentation.replayPreviousTurn,dispatch:presentation.dispatch,routeSync:destinationOwner.start,resume:presentation.resume,pending:()=>presentation.state.pendingBoardContextReplay,focus:presentation.focus,
   retire:()=>{context.boardContextVisit++;presentation.owner.retire();}};
  const meta=(intentVersion=0)=>({selectedPieceId:null,phase:null,continuationPhase:null,intentVersion,transient:false});
  c.receive(null,meta());
@@ -85,7 +83,7 @@ function fixture(t){
   while(queued.length)queued.shift()();await Promise.resolve();
   while(queued.length)queued.shift()();await Promise.resolve();
  };while(queued.length)queued.shift()();admissions.length=0;
- return {c,doc,win,context,board,button,dismiss,root,requests,plays,reveals,admissions,renders,meta,flush,notifyMutations:()=>{for(const observer of [...observers])observer.callback([]);},releaseArchive:()=>resolveArchive({items:[{id:context.view.moves[0].moveId,move:{...context.view.moves[0],index:0,turnMoveIndex:0,selectionSnapshot:{pieces:[],sideToMove:'P1'},snapshot:{pieces:[],sideToMove:'P2'}}}],nextCursor:null}),descriptor:()=>captureDisplayedReplay({game:context.view,owner:transport,scope:c.scope(),identityId:'me'})};
+ return {c,doc,win,context,board,button,dismiss,root,requests,plays,reveals,admissions,renders,meta,flush,observerCount:()=>observers.size,notifyMutations:()=>{for(const observer of [...observers])observer.callback([]);},releaseArchive:()=>resolveArchive({items:[{id:context.view.moves[0].moveId,move:{...context.view.moves[0],index:0,turnMoveIndex:0,selectionSnapshot:{pieces:[],sideToMove:'P1'},snapshot:{pieces:[],sideToMove:'P2'}}}],nextCursor:null}),descriptor:()=>captureDisplayedReplay({game:context.view,owner:transport,scope:c.scope(),identityId:'me'})};
 }
 
 test('actual queued context refresh invokes the real recovery helper before layout and coalesces changes',async t=>{
@@ -104,6 +102,15 @@ test('production callback retires a pending archive on the first committed selec
  assert.equal(f.requests.snapshot(),null);
  f.releaseArchive();await pending;await f.flush();assert.equal(f.plays.length,0);assert.equal(f.reveals.length,0);
 });
+test('mobile previous-turn activation reuses the exact current acknowledged replay owner',async t=>{
+ const f=fixture(t);f.c.ack(f.context.view,{}, {identityId:'me',canInteract:true});
+ const episode=`account:game:0:move`,descriptor=f.c.previousDescriptor(episode);
+ assert.equal(descriptor?.key,f.c.store.channel('acknowledged').replay.key);
+ assert.equal(f.c.previousDescriptor('account:game:1:move'),null);
+ assert.equal(f.c.replayPrevious(episode,f.button),true);assert.equal(f.requests.snapshot().phase,'loading');
+ assert.equal(f.c.replayPrevious(episode,f.button),false,'the pending replay remains single-owner');
+ f.releaseArchive();for(let i=0;i<4;i++)await Promise.resolve();await f.flush();assert.equal(f.plays.length,1);
+});
 test('production scope retires both context channels on account and same-game history view changes',t=>{
  const f=fixture(t),notice={message:{text:'Reason'}};
  f.c.ack(f.context.view,{}, {identityId:'me',canInteract:true});
@@ -115,19 +122,6 @@ test('production scope retires both context channels on account and same-game hi
  const b=f.c.store.channel('acknowledged');assert.notEqual(b.key,a.key);assert(!f.c.store.isDismissed(b.key));assert(f.c.store.takeAnnouncement(b.key));
  const token=f.c.owner.capture();f.context.view={...f.context.view,inHistoryMode:true,historyIndex:0};f.c.scope();assert(!f.c.owner.current(token));assert.equal(f.c.store.get(b.key),null);
  f.context.view={...f.context.view,inHistoryMode:false};f.c.scope();assert.notEqual(f.c.scope(),token.scope);
-});
-test('retiring presentation synchronously clears the nested canonical incoming root',t=>{
- const f=fixture(t),header={name:'header'},shell={name:'game-shell'},children=[header,shell],control={isConnected:true,disabled:false};
- const refresh=()=>children.forEach((node,index)=>{node.parentElement=main;node.nextElementSibling=children[index+1]??null;});
- const main={insertBefore(node,before){const current=children.indexOf(node);if(current>=0)children.splice(current,1);const target=children.indexOf(before);children.splice(target<0?children.length:target,0,node);refresh();}};refresh();
- const originalQuery=f.context.appEl.querySelector.bind(f.context.appEl);
- f.doc.createElement=()=>({attributes:new Map(),children:[],parentElement:null,nextElementSibling:null,setAttribute(name,value){this.attributes.set(name,value);},replaceChildren(){for(const child of this.children)child.isConnected=false;this.children=[];if(f.doc.activeElement===control)f.doc.activeElement=f.doc.body;}});
- f.context.appEl.querySelector=selector=>selector==='[data-game-shell-root]'?shell:selector==='[data-incoming-narration-root]'?children.find(node=>node.attributes?.has('data-incoming-narration-root'))??null:selector===':scope > [data-incoming-narration-root]'?null:originalQuery(selector);
- const root=syncIncomingNarrationRoot(f.context.appEl,'<button>Show previous turn</button>',host=>{host.children=[control];});
- assert.deepEqual(children,[header,root,shell]);assert.equal(root.children[0],control);
- f.doc.activeElement=control;f.c.retire();
- assert.deepEqual(root.children,[],'retirement removes stale incoming controls before another view can observe them');
- assert.equal(control.isConnected,false);assert.equal(f.doc.activeElement,f.doc.body);
 });
 test('actual queued dismissal reaches informational Board guidance and loses to a later native outside focus',async t=>{
  const f=fixture(t);f.c.receive({message:{text:'Observer context'}},f.meta());const key=f.c.store.channel('piece').key;
@@ -151,14 +145,23 @@ test('same-intent replay completion returns focus with explicit pointer-mode vis
  const f=fixture(t);f.button.focus();const pending=f.c.replay(f.descriptor(),f.button);f.releaseArchive();await pending;await f.flush();assert.equal(f.plays.length,1);assert.deepEqual(f.plays[0].frames.map(frame=>frame.decisionId),['move']);assert.deepEqual(f.plays[0].frames[0].after,{pieces:[],sideToMove:'P2'});assert.equal(f.doc.activeElement,f.button);assert.deepEqual(f.reveals,[f.button]);
 });
 
-test('incoming replay completion returns focus to its rerendered live action',async t=>{
- const f=fixture(t),descriptor=f.descriptor(),replacement={...f.button,isConnected:true,dataset:{action:'replay-board-context',boardContextKey:descriptor.key},focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
+test('incoming replay completion prefers its current keyed action over a stale connected trigger',async t=>{
+ const f=fixture(t),descriptor=f.descriptor(),replacement={...f.button,isConnected:true,dataset:{action:'replay-board-context',boardContextKey:descriptor.key},getClientRects:()=>[{}],focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
  f.button.dataset={...replacement.dataset};f.button.closest=selector=>selector.includes('[data-incoming-context]')?{}:null;f.button.focus();
- const querySelector=f.context.appEl.querySelector.bind(f.context.appEl);
- let replacementSelector=null;f.context.appEl.querySelector=selector=>{if(selector.includes(`[data-board-context-key="${descriptor.key}"]`)){replacementSelector=selector;return replacement;}return querySelector(selector);};
- f.context.beforeReplayFinish=()=>{f.button.isConnected=false;f.doc.activeElement=f.doc.body;};
+ const querySelectorAll=f.context.appEl.querySelectorAll.bind(f.context.appEl);
+ let replacementSelector=null;f.button.getClientRects=()=>[];f.context.appEl.querySelectorAll=selector=>{if(selector.includes(`[data-board-context-key="${descriptor.key}"]`)){replacementSelector=selector;return [f.button,replacement];}return querySelectorAll(selector);};
+ f.context.beforeReplayFinish=()=>{f.button.closest=selector=>selector.includes('[data-incoming-context]')||selector.includes('[inert]')?{}:null;f.doc.activeElement=f.doc.body;};
  const pending=f.c.replay(descriptor,f.button);f.releaseArchive();await pending;await f.flush();
  assert.equal(f.plays.length,1);assert.match(replacementSelector,/^\[data-incoming-context\]/);assert.equal(f.doc.activeElement,replacement);assert.deepEqual(f.reveals,[replacement]);
+});
+
+test('a newer replay retires an older deferred focus return before its mutation or timeout can steal focus',async t=>{
+ const f=fixture(t),descriptor=f.descriptor();f.button.dataset={action:'replay-board-context',boardContextKey:descriptor.key};f.button.closest=selector=>selector.includes('[data-incoming-context]')?{}:null;f.button.focus();
+ f.context.beforeReplayFinish=()=>{f.button.disabled=true;f.button.closest=selector=>selector.includes('[data-incoming-context]')||selector.includes('[inert]')?{}:null;f.doc.activeElement=f.doc.body;};
+ const first=f.c.replay(descriptor,f.button);f.releaseArchive();await first;assert.equal(f.observerCount(),1);assert(f.context.presentation.state.activeReplayFocusCleanup);
+ const next={isConnected:true,disabled:false,dataset:{...f.button.dataset},getClientRects:()=>[{}],closest:selector=>selector.includes('#shell-board-preview-label')?{}:null,focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
+ f.context.beforeReplayFinish=null;next.focus();await f.c.replay(descriptor,next);await f.flush();assert.equal(f.observerCount(),0);assert.equal(f.doc.activeElement,next);assert.equal(f.context.presentation.state.activeReplayFocusCleanup,null);
+ f.notifyMutations();assert.equal(f.doc.activeElement,next);
 });
 
 test('keyboard-owned Stop replay returns to the visible live incoming action after synchronous removal',async t=>{
@@ -258,33 +261,6 @@ for(const interruption of ['none','outside-focus','new-intent'])test(`incoming h
  p.restoreIncomingFocus(token);await Promise.resolve();
  assert.equal(f.doc.activeElement,interruption==='none'?replacement:interruption==='outside-focus'?f.board:f.doc.body);
  assert.equal(f.reveals.length,0,'fixed incoming host never triggers a Board-page scroll reveal');
-});
-
-test('a matching synchronous incoming toggle replacement remains owned through a following render',async t=>{
- const f=fixture(t),p=f.context.presentation;
- f.button.dataset={action:'toggle-incoming-narration',boardContextKey:'accepted-turn'};
- f.button.closest=selector=>selector==='[data-incoming-context]'?{}:null;f.button.focus();
- const token=p.captureIncomingFocus();assert(token);f.button.isConnected=false;f.doc.activeElement=f.doc.body;
- const first={isConnected:true,disabled:false,dataset:{...f.button.dataset},closest:selector=>selector==='[data-incoming-context]'?{}:null,focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
- first.focus();assert.equal(f.doc.activeElement,first,'the synchronous handler focuses its first replacement');
- first.isConnected=false;f.doc.activeElement=f.doc.body;
- const settled={...first,isConnected:true,focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
- f.context.appEl.querySelectorAll=()=>[settled];p.restoreIncomingFocus(token);await Promise.resolve();
- assert.equal(f.doc.activeElement,settled,'the following committed render retains the same owned toggle focus');
- assert.equal(f.reveals.length,0);
-});
-
-for(const cancellation of [null,'outside-pointer'])test(`a deferred native toggle restores after its owned render: ${cancellation??'current intent'}`,t=>{
- const f=fixture(t),p=f.context.presentation;
- f.button.dataset={action:'toggle-incoming-narration',boardContextKey:'accepted-turn'};
- f.button.closest=selector=>selector==='[data-incoming-context]'?{}:null;f.button.focus();
- const token=p.captureIncomingFocus();assert(token);f.doc.activeElement=f.doc.body;
- const replacement={isConnected:true,disabled:false,dataset:{...f.button.dataset},closest:selector=>selector==='[data-incoming-context]'?{}:null,focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
- f.context.appEl.querySelectorAll=()=>[replacement];
- if(cancellation)f.doc.fire('pointerdown',{target:{}});
- p.restoreIncomingFocus(token,{afterOwnedRender:true});
- assert.equal(f.doc.activeElement,cancellation?f.doc.body:replacement);
- assert.equal(f.reveals.length,0);
 });
 
 test('hidden Board detail never consumes an announcement ahead of the actual visible incoming host',async t=>{
