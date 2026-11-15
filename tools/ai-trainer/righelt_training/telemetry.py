@@ -1,3 +1,5 @@
+import sys
+import math
 """Read-only telemetry. Missing activity observations never imply idle threads."""
 import json
 import os
@@ -81,6 +83,16 @@ class Telemetry:
             result=subprocess.run(['/usr/sbin/sysctl','-n','kern.memorystatus_vm_pressure_level'],capture_output=True,text=True,timeout=2,check=True)
             pressure={'1':'normal','2':'warning','4':'critical'}.get(result.stdout.strip(),'unknown')
         except (OSError,subprocess.SubprocessError):pass
+        if sys.platform.startswith('linux'):
+            # Available memory and swap-growth remain enforced by ResourcePolicy.
+            # Linux has no Darwin pressure sysctl. PSI is an additional signal.
+            try:
+                fields=Path('/proc/pressure/memory').read_text().splitlines()[0].split()
+                avg=float(dict(field.split('=') for field in fields[1:])['avg10'])
+                if not math.isfinite(avg) or avg<0:raise ValueError('invalid Linux memory pressure')
+                pressure='critical' if avg>=10 else 'warning' if avg>=1 else 'normal'
+            except (OSError,ValueError,KeyError,IndexError):
+                pressure='unknown'
         # GPU allocation is process-local; read the runner's own measurement.
         # RSS may overlap these bytes, so this sum is intentionally conservative.
         device_known=self.device_memory_file is None

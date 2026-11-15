@@ -38,7 +38,15 @@ export function validateExplorationProvenance(record) {
   const noise = dirichletNoise(indices.length, evidence.derivedSeed, recipe);
   if (createHash('sha256').update(recipeJson(noise)).digest('hex') !== evidence.noiseSha256) throw new Error('Exploration noise digest mismatch');
   const mass = evidence.rawPriors.reduce((sum, prior) => sum + prior, 0);
-  if (!Number.isFinite(mass) || mass <= 0 || mass > 1 + 1e-12) throw new Error('Invalid exploration prior mass');
+  const selection=evidence.selectionConditioning;
+  if (!Number.isFinite(mass) || mass < 0 || (!selection&&mass===0) || mass > 1 + 1e-12) throw new Error('Invalid exploration prior mass');
+  if(selection){
+    if(selection.version!=='eligible-logits-v1'||!Array.isArray(selection.priors)||selection.priors.length!==indices.length)throw new Error('Invalid selection conditioning');
+    const logits=indices.map(index=>record.search.actions.find(a=>a.index===index)?.policyLogit);
+    if(logits.some(x=>!Number.isFinite(x)))throw new Error('Invalid conditioning logits');
+    const max=Math.max(...logits),weights=logits.map(x=>Math.exp(x-max)),sum=weights.reduce((a,b)=>a+b,0);
+    if(selection.priors.some((p,i)=>p!==(1-settings.noiseWeight)*(weights[i]/sum)+settings.noiseWeight*noise[i]))throw new Error('Selection conditioning mismatch');
+  }
   for (const [i, index] of indices.entries()) {
     const action = record.search.actions.find(item => item.index === index);
     const raw = evidence.rawPriors[i], effective = evidence.effectivePriors[i];

@@ -1,3 +1,4 @@
+from .device import selected_device, configured_device
 """Disposable supervised pipeline canary. Never production training or health data."""
 import argparse
 import gzip
@@ -95,11 +96,11 @@ def train_and_recover(directory,model,positions,archives,manifest_hash,device,de
         digest=save_checkpoint(checkpoint,model,optimizer,round_index=0,updates=updates,replay_ids=archives,
                                manifest_sha256=manifest_hash,recovery_state=state)
         python_next=random.random();torch_next=torch.rand(4)
-        mps_next=torch.rand(4,device='mps') if str(device)=='mps' else None
+        device_next=torch.rand(4,device=device) if str(device)!='cpu' else None
         restored=PolicyValueNet().to(device);restored_optimizer=make_optimizer(restored)
         data=load_checkpoint(checkpoint,restored,restored_optimizer,manifest_sha256=manifest_hash,require_recovery=True)
         if random.random()!=python_next or not torch.equal(torch.rand(4),torch_next):raise ValueError('canary RNG restoration mismatch')
-        if mps_next is not None and not torch.equal(torch.rand(4,device='mps'),mps_next):raise ValueError('canary MPS RNG mismatch')
+        if device_next is not None and not torch.equal(torch.rand(4,device=device),device_next):raise ValueError('canary device RNG mismatch')
         if data['updates']!=updates or any(not torch.equal(a,b) for a,b in zip(model.parameters(),restored.parameters())):
             raise ValueError('canary weight restoration mismatch')
         if len(restored_optimizer.state)!=len(optimizer.state):raise ValueError('canary optimizer recovery mismatch')
@@ -114,7 +115,8 @@ def train_and_recover(directory,model,positions,archives,manifest_hash,device,de
                            'recoveryPassed':True,'maskedValueUpdatePassed':True}
 
 
-def run(directory,corpus,*,device='mps',generator=selfplay,checker=numeric_parity):
+def run(directory,corpus,*,device=None,generator=selfplay,checker=numeric_parity):
+    device=str(selected_device(device))
     directory=Path(directory);runtime=json.loads((directory/'runtime.json').read_text())
     deadline=min(effective_deadline(runtime),time.monotonic()+600)
     report={'schema':1,'passed':False,'complete':False,'productionPromotion':False,'countsTowardHealth':False,
@@ -169,7 +171,7 @@ def run(directory,corpus,*,device='mps',generator=selfplay,checker=numeric_parit
                 if parity.get('numericPassed') is not True or not np.isfinite(parity['maxAbsoluteError']).all():raise ValueError('canary numeric parity failed')
                 errors=[max(a,b) for a,b in zip(errors,parity['maxAbsoluteError'])]
                 report['parityStates']+=len(inputs);atomic_json(output,report)
-            report.update(complete=True,passed=device=='mps' and report['terminalGames']>=2 and report['updates']>=2 and report['parityStates']>=1000,
+            report.update(complete=True,passed=device==configured_device() and report['terminalGames']>=2 and report['updates']>=2 and report['parityStates']>=1000,
                           referenceDevice=device,maxAbsoluteError=errors,corpusSha256=hashlib.sha256(Path(corpus).read_bytes()).hexdigest())
     except (TimeoutError,subprocess.TimeoutExpired) as error:report['reason']=str(error)
     except (ValueError,RuntimeError,OSError,KeyError) as error:report.update(reason=str(error),failed=True)

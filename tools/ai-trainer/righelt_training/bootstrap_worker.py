@@ -1,3 +1,4 @@
+from .device import configured_device
 """Fixed operations for the charged, externally supervised bootstrap proof."""
 import argparse
 from contextlib import contextmanager
@@ -54,13 +55,13 @@ def run(attempt):
             from .parity import main as numeric_main
             with monitor.operation('bootstrap-native-numeric', bound(600)):
                 with arguments(['parity', '--corpus', str(corpus), '--output', str(attempt / 'numeric'),
-                                '--reference-output', str(attempt / 'native-raw.json'), '--require-mps',
+                                '--reference-output', str(attempt / 'native-raw.json'), *(['--require-mps'] if configured_device()=='mps' else ['--device', configured_device()]),
                                 '--checkpoint', str(checkpoint)]):
                     numeric_main()
             from .search_parity import main as search_main
             with monitor.operation('bootstrap-native-search', bound(1800)):
                 with arguments(['search_parity', '--corpus', str(corpus), '--output', str(attempt / 'native-search.json'),
-                                '--device', 'mps', '--limit', str(STATES), '--seconds', str(bound(1790)),
+                                '--device', configured_device(), '--limit', str(STATES), '--seconds', str(bound(1790)),
                                 '--checkpoint', str(checkpoint)]):
                     search_main()
                 if read(attempt / 'native-search.json').get('complete') is not True:

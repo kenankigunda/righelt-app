@@ -11,6 +11,10 @@
     ".npmrc"
   ],
   "rules": [
+    {"prefix": "tools/hosted-compute/", "requirements": ["hosted-budget", "worker-recovery", "artifact-integrity"], "suites": ["tooling"]},
+    {"prefix": "apps/compute-controller/", "requirements": ["hosted-budget", "worker-recovery", "artifact-integrity"], "suites": ["tooling"]},
+    {"prefix": "tools/ai-trainer/", "requirements": ["trainer-correctness", "checkpoint-recovery"], "suites": ["tooling"]},
+
     { "prefix": "packages/game-engine/", "requirements": ["game-rules", "replay-determinism"], "suites": ["engine-unit", "engine-integration", "computer-unit", "computer-integration", "guest-smoke"] },
     { "prefix": "packages/computer-player/", "requirements": ["computer-search", "computer-legality"], "suites": ["computer-unit", "computer-integration", "guest-smoke"] },
     { "prefix": "packages/shared-types/", "requirements": ["shared-contracts"], "suites": ["typecheck", "engine-unit", "computer-unit", "api-handler", "web-unit", "web-integration", "guest-smoke", "auth-smoke"] },

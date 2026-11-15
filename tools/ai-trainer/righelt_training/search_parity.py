@@ -31,9 +31,13 @@ def search_reference(state,model,device,seed,profile,bound_seconds=10):
                     raw,buffer=buffer.split(b'\n',1);message=json.loads(raw)
                     if message['type']=='searched':return message['result']
                     if message['type']!='evaluate':raise RuntimeError(str(message))
-                    x=torch.tensor(message['input'],dtype=torch.float32,device=device).reshape(1,CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize'])
-                    with torch.inference_mode():policy,value=model(x)
-                    reply={'type':'evaluation','id':message['id'],'policyLogits':policy[0].cpu().tolist(),'value':value[0].item()}
+                    if hasattr(model,'infer_export'):
+                        policy,value=model.infer_export(message['input'])
+                    else:
+                        x=torch.tensor(message['input'],dtype=torch.float32,device=device).reshape(1,CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize'])
+                        with torch.inference_mode():policy_tensor,value_tensor=model(x)
+                        policy,value=policy_tensor[0].cpu().tolist(),value_tensor[0].item()
+                    reply={'type':'evaluation','id':message['id'],'policyLogits':policy,'value':value}
                     p.stdin.write((json.dumps(reply,allow_nan=False)+'\n').encode());p.stdin.flush()
         raise TimeoutError('search parity budget exhausted')
     finally:selector.close();stop_worker(p)
@@ -46,8 +50,13 @@ def completed_search(answer):
 def repair_cache(previous,current,revision):
     for field in ('configSha256','referenceDevice','modelSha256','corpusSha256','profile','modelSeed'):
         if previous.get(field)!=current.get(field):raise ValueError('repair reference identity mismatch: '+field)
-    subprocess.run(['git','rev-parse','--verify',revision+'^{commit}'],cwd=ROOT,check=True,stdout=subprocess.DEVNULL)
-    subprocess.run(['git','diff','--exit-code',revision,'--','packages/computer-player/src','packages/game-engine/src','packages/shared-types/src'],cwd=ROOT,check=True,stdout=subprocess.DEVNULL)
+    from .source_image import source_image
+    image=source_image()
+    if image is None:
+        subprocess.run(['git','rev-parse','--verify',revision+'^{commit}'],cwd=ROOT,check=True,stdout=subprocess.DEVNULL)
+        subprocess.run(['git','diff','--exit-code',revision,'--','packages/computer-player/src','packages/game-engine/src','packages/shared-types/src'],cwd=ROOT,check=True,stdout=subprocess.DEVNULL)
+    elif revision!=image['sourceRevision']:
+        raise ValueError('historical repair source is not in this source-only image')
     rows={row['id']:row for row in previous['states']}
     if len(rows)!=len(previous['states']):raise ValueError('duplicate reference state')
     return rows
@@ -55,9 +64,10 @@ def repair_cache(previous,current,revision):
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--corpus',type=Path,required=True);parser.add_argument('--output',type=Path,required=True)
-    parser.add_argument('--repair-reference',type=Path);parser.add_argument('--reference-revision');parser.add_argument('--checkpoint',type=Path);parser.add_argument('--device',choices=['cpu','mps'],default='mps');parser.add_argument('--limit',type=int,default=1000);parser.add_argument('--seconds',type=float,default=1800);args=parser.parse_args()
+    parser.add_argument('--repair-reference',type=Path);parser.add_argument('--reference-revision');parser.add_argument('--checkpoint',type=Path);parser.add_argument('--device',choices=['cpu','mps','cuda'],default='mps');parser.add_argument('--limit',type=int,default=1000);parser.add_argument('--seconds',type=float,default=1800);args=parser.parse_args()
     if not 0<args.limit<=1000 or not 0<args.seconds<=1800:raise ValueError('invalid proof bounds')
-    if args.device=='mps' and not torch.backends.mps.is_available():raise RuntimeError('requires MPS')
+    from .device import selected_device
+    selected_device(args.device)
     torch.set_num_threads(1);torch.manual_seed(107);device=args.device;model=None
     if args.checkpoint:
         meta=json.loads(args.checkpoint.with_suffix('.json').read_text())

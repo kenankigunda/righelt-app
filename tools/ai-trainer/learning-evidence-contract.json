@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "id": "scoped-exploratory-evidence-v1",
+  "purposes": ["competitive", "exploratory", "unclassified"],
+  "actorKinds": ["human", "computer", "unknown"],
+  "labelCategories": ["verified-start", "winning-continuation", "limited-defense", "forced-loss-diagnostic", "strategic-diagnostic"],
+  "historicalPolicyTargets": false,
+  "historicalOptimalNonterminalValues": false,
+  "terminalBoundary": "quarantine-until-reconciled",
+  "discardedBranches": "guards-only",
+  "proofDepth": "actions-separate-from-completed-turns",
+  "publicBudgetsChanged": false,
+  "rewardProxy": null
+}
