@@ -4,6 +4,7 @@ import { qualificationIdentity } from './qualification.mjs';
 import { cashPlan,cloudflareCoverage } from './cash.mjs';
 import { validateScientificAdmission } from './experiment.mjs';
 import { verifyResult } from './result.mjs';
+import { providerFailureDiagnostic } from './providers.mjs';
 import { POLICY, TERMINAL, assert, artifact, canonical, encode, safeName, sha256, validateManifest, reserveCents } from './policy.mjs';
 
 const stopping = new Set(['stopping', 'cleanup-uncertain']);
@@ -16,7 +17,7 @@ export class Controller {
   campaign(db, id) { assert(safeName(id) && db.campaigns[id], 'campaign not found'); return db.campaigns[id]; }
   event(c, type, detail = {}) {
     const last = c.events.at(-1);
-    if (type === 'provider-unavailable' && last?.type === type) { last.count = (last.count ?? 1) + 1; last.lastAt = this.now(); return; }
+    if (type === 'provider-unavailable' && last?.type === type) { last.count = (last.count ?? 1) + 1; last.lastAt = this.now(); last.diagnostic=detail.diagnostic; return; }
     c.events.push({ at: this.now(), type, ...detail });
   }
   status(c) {
@@ -238,7 +239,7 @@ export class Controller {
     for (const c of Object.values(db.campaigns)) {
       if (TERMINAL.has(c.status) || c.status === 'staged') continue;
       try { await this.step(db, c); }
-      catch { this.event(c, 'provider-unavailable'); await this.save(db); }
+      catch(error) { this.event(c, 'provider-unavailable',{diagnostic:providerFailureDiagnostic(error)}); await this.save(db); }
     }
   }
   async step(db, c) {
@@ -300,14 +301,27 @@ export class Controller {
     const launch = { quote: structuredClone(phase.host), name: authority.name, prearmSha256: authority.prearmSha256, cutoff: authority.cutoff, provider: phase.host.provider, startedAt: now,
       hourlyCents: phase.host.hourlyCents, recovery: c.recovering === true, uncertain: true };
     c.attempts.push(launch); this.event(c, 'launch-requested', { generation: c.generation }); await this.save(db);
+    let createStage='worker-token';
     try {
+      const workerToken=await this.token(c.manifest.id,c.generation);
+      createStage='provider-request';
       const resource = await this.providers.create(phase.host, launch.name, {
         COMPUTE_URL: this.config.url, COMPUTE_ID: c.manifest.id, COMPUTE_GENERATION: String(c.generation),
-        COMPUTE_WORKER_TOKEN: await this.token(c.manifest.id, c.generation),
+        COMPUTE_WORKER_TOKEN: workerToken,
       });
+      createStage='response-identity';
       assert(resource?.id && resource.name === launch.name, 'provider create identity mismatch');
+      createStage='launch-persistence';
       launch.resourceId = resource.id; launch.uncertain = false; await this.save(db);
     } catch (error) {
+      launch.createFailure=createStage==='worker-token'
+        ?{schema:1,provider:'runpod',operation:'create-pod',category:'worker-token',dispatch:'not-dispatched',httpStatus:null}
+        :['response-identity','launch-persistence'].includes(createStage)
+          ?{schema:1,provider:'runpod',operation:'create-pod',category:createStage,dispatch:'response-received',httpStatus:null}
+          :providerFailureDiagnostic(error);
+      this.event(c,'create-failed',{generation:c.generation,diagnostic:launch.createFailure});
+      // Diagnostics do not settle a create, stop billing, authorize retry or
+      // clear ownership. Even empty inventories still require reconciliation.
       c.status = 'stopping'; c.nextStatus = 'failed'; c.failure = 'uncertain-create'; await this.save(db);
     }
   }
