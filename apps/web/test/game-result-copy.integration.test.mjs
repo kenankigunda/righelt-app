@@ -51,6 +51,7 @@ test('actual result HTML omits filler when terminal provenance is unknown',()=>{
  const html=renderResultPanel(game,context);
  assert.match(html,/>You<\/bdi><\/span> won/);
  assert.doesNotMatch(html,/The game has finished\./);
+ assert.doesNotMatch(html,/<p>\s*<\/p>/);
 });
 
 test('rematch keeps semantic selected side and opponent values with concise color labels',()=>{
