@@ -144,3 +144,61 @@ test('keyboard-owned selection restores focus to the settled selected entry with
   assert.equal(ignore(), false);
   assert.equal(document.activeElement, body);
 });
+
+test('the exact clicked control owns pending presentation and clears it after settlement', async () => {
+  const view = fixture();
+  const attributes = new Map();
+  const classes = new Set();
+  const trigger = {
+    isConnected: true,
+    classList: {add: value => classes.add(value), remove: value => classes.delete(value)},
+    setAttribute: (name,value) => attributes.set(name,value),
+    getAttribute: name => attributes.get(name) ?? null,
+    removeAttribute: name => attributes.delete(name),
+  };
+  const pending = deferred();
+  const selection = view.actions.run({scope:'game:live',trigger,select:()=>pending.promise});
+  assert.equal(classes.has('history-selection-pending'), true);
+  assert.equal(attributes.get('aria-busy'), 'true');
+  pending.resolve('live');
+  await selection;
+  assert.equal(classes.has('history-selection-pending'), false);
+  assert.equal(attributes.has('aria-busy'), false);
+});
+
+test('one explicit loading episode starts before selection and survives until transition settlement', async () => {
+  const settled = deferred();
+  const events = [];
+  let version = 0;
+  const transition = {
+    version: () => version,
+    async run(scope, select) {
+      version += 1;
+      events.push(`transition:${scope}`);
+      const value = select();
+      events.push(`selected:${scope}`);
+      await settled.promise;
+      return value;
+    },
+  };
+  const actions = createHistorySelectionActions({
+    transition,
+    onPendingChange: episode => events.push(episode ? `pending:${episode.key}` : 'pending:clear'),
+  });
+  const selection = actions.run({scope:'game:live',select:()=>{
+    assert.equal(actions.snapshot().scope, 'game:live');
+    events.push('select');
+    return 'live';
+  }});
+  assert.deepEqual(events, [
+    'pending:history-selection:1:game:live',
+    'transition:game:live',
+    'select',
+    'selected:game:live',
+  ]);
+  assert.equal(actions.snapshot().key, 'history-selection:1:game:live');
+  settled.resolve();
+  assert.deepEqual(await selection, {accepted:true,value:'live'});
+  assert.equal(actions.snapshot(), null);
+  assert.equal(events.at(-1), 'pending:clear');
+});

@@ -25,9 +25,9 @@ const activeMessages = new WeakMap();
 let operation = 0;
 // This host is a sibling of the runtime-owned prompt. Its cue therefore survives
 // repeated prompt innerHTML writes and phase/proof-save updates without resets.
-export function updateComputerBoardLoading(element, game, status = {}, {replaying = false, inspecting = false, loadingKey = null, scope = ''} = {}) {
+export function updateComputerBoardLoading(element, game, status = {}, {replaying = false, inspecting = false, suppressLoadingCue = false, loadingKey = null, scope = ''} = {}) {
   if (!element) return;
-  element.dataset.loadingSuppressed = String(inspecting);
+  element.dataset.loadingSuppressed = String(inspecting || suppressLoadingCue);
   const operationPending = typeof loadingKey === 'string' && loadingKey.length > 0;
   const pending = operationPending || Boolean(game?.computer && (!isCompletedGame(game) || game.pendingComputerSaveStartedAt != null) && !game.inHistoryMode && !replaying && !game.computer.paused
     && !['recovery','other-device','paused'].includes(status.phase)

@@ -1,22 +1,44 @@
-export function createHistorySelectionActions({ transition, playSound = () => {} }) {
+export function createHistorySelectionActions({ transition, playSound = () => {}, onPendingChange = () => {} }) {
   if (!transition || typeof transition.run !== 'function' || typeof transition.version !== 'function') {
     throw new TypeError('History selection actions require one transition owner');
   }
 
   let generation = 0;
-  const run = async ({ scope, select, accepted = () => true, sound = null, after = () => {} }) => {
+  let active = null;
+  const run = async ({ scope, select, accepted = () => true, sound = null, after = () => {}, trigger = null }) => {
     if (typeof select !== 'function' || typeof accepted !== 'function' || typeof after !== 'function') {
       throw new TypeError('History selection action callbacks must be functions');
     }
 
     const actionGeneration = ++generation;
+    const pendingOwner = `${actionGeneration}:${scope}`;
+    active = {generation:actionGeneration,scope,key:`history-selection:${pendingOwner}`};
+    onPendingChange(active);
+    if (trigger?.isConnected) {
+      trigger.classList?.add('history-selection-pending');
+      trigger.setAttribute?.('aria-busy', 'true');
+      trigger.setAttribute?.('data-history-selection-pending-owner', pendingOwner);
+    }
     let committed = false;
     const pending = transition.run(scope, () => {
       committed = true;
       return select();
     });
     const transitionVersion = transition.version();
-    const value = await pending;
+    let value;
+    try {
+      value = await pending;
+    } finally {
+      if (trigger?.getAttribute?.('data-history-selection-pending-owner') === pendingOwner) {
+        trigger.classList?.remove('history-selection-pending');
+        trigger.removeAttribute?.('aria-busy');
+        trigger.removeAttribute?.('data-history-selection-pending-owner');
+      }
+      if (active?.generation === actionGeneration) {
+        active = null;
+        onPendingChange(null);
+      }
+    }
     const isCurrent = () => actionGeneration === generation && transition.version() === transitionVersion;
     if (!committed || !isCurrent()) return { accepted: false, value };
     const didAccept = accepted(value) === true && isCurrent();
@@ -30,7 +52,7 @@ export function createHistorySelectionActions({ transition, playSound = () => {}
     return { accepted: isCurrent(), value };
   };
 
-  return { run };
+  return { run, snapshot: () => active && {...active} };
 }
 
 export function captureHistorySelectionFocus({ document, root, trigger, keyboard = trigger?.matches?.(':focus-visible') }) {

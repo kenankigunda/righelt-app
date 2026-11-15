@@ -1,49 +1,49 @@
 {
   "version": 1,
   "modulePath": "/shell/app.js",
-  "sourceSha256": "f465178058ef9453c833dd953f86a8783ffc1a9fb6c909f371e6daaab41a9e3b",
-  "outputSha256": "9fc7675a28b90db544033f08a8f52034b5997cd1709b07b15ed2fde87edcc874",
+  "sourceSha256": "6a353a0bd6549c3efb51f54fbddf5a9abb4dad5785f65413fa3f25eeb61e0cc6",
+  "outputSha256": "3a8270114a9d07de7d7c112e686c96e534221b51e6a4703a72664462bbbbc86b",
   "prefix": "const __righeltResultReviewFocusProbe = (kind, refs = {}) => { try { globalThis.__RIGHELT_RESULT_REVIEW_FOCUS_PROBE__?.(kind, refs); } catch {} };\n",
   "operations": [
     {
       "label": "context-history-patch",
-      "start": 14600,
-      "end": 14656,
+      "start": 14646,
+      "end": 14702,
       "before": "renderHistoryPanel,patchToolHtml,syncBoardContextDetails",
       "after": "renderHistoryPanel,patchToolHtml:(element,html)=>{const history=element?.matches?.('[data-game-panel=\"history\"]');if(history)__righeltResultReviewFocusProbe(\"history-before-context-patch\",{root:element});const value=patchToolHtml(element,html);if(history)__righeltResultReviewFocusProbe(\"history-after-context-patch\",{root:element});return value;},syncBoardContextDetails"
     },
     {
       "label": "incremental-history-patch",
-      "start": 145043,
-      "end": 145263,
-      "before": "    const historyTransition = historySelectionTransition.capture(historyEl);\n    patchToolHtml(historyEl, renderHistoryPanel(game));\n    historySelectionTransition.present(historyTransition);\n    revealSelectedHistory();",
-      "after": "    const historyTransition = historySelectionTransition.capture(historyEl);\n    __righeltResultReviewFocusProbe(\"history-before-incremental-patch\",{root:historyEl});\n    patchToolHtml(historyEl, renderHistoryPanel(game));\n    __righeltResultReviewFocusProbe(\"history-after-incremental-patch\",{root:historyEl});\n    historySelectionTransition.present(historyTransition);\n    revealSelectedHistory();"
+      "start": 145958,
+      "end": 146013,
+      "before": "    patchToolHtml(historyEl, renderHistoryPanel(game));",
+      "after": "    __righeltResultReviewFocusProbe(\"history-before-incremental-patch\",{root:historyEl});\n    patchToolHtml(historyEl, renderHistoryPanel(game));\n    __righeltResultReviewFocusProbe(\"history-after-incremental-patch\",{root:historyEl});"
     },
     {
       "label": "committed-render-entry",
-      "start": 178942,
-      "end": 179015,
+      "start": 179818,
+      "end": 179891,
       "before": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;",
       "after": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;\n  __righeltResultReviewFocusProbe(\"render-committed-entry\");"
     },
     {
       "label": "original-focus-once",
-      "start": 180445,
-      "end": 180554,
+      "start": 181321,
+      "end": 181430,
       "before": "if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }",
       "after": "if (heading) { heading.tabIndex = -1; __righeltResultReviewFocusProbe(\"focus-before\", {node:heading}); heading.focus({preventScroll:true}); __righeltResultReviewFocusProbe(\"focus-after\", {node:heading}); pendingResultReviewFocus = null; }"
     },
     {
       "label": "existing-render-tail",
-      "start": 180559,
-      "end": 180756,
+      "start": 181435,
+      "end": 181632,
       "before": "  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  resumeBoardContextReplay();",
       "after": "  __righeltResultReviewFocusProbe(\"render-before-join\");\n  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  __righeltResultReviewFocusProbe(\"render-after-join\");\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  resumeBoardContextReplay();\n  __righeltResultReviewFocusProbe(\"render-after-resume\");"
     },
     {
       "label": "explicit-analysis",
-      "start": 250559,
-      "end": 250690,
+      "start": 251435,
+      "end": 251566,
       "before": "if (action === \"analysis\") { confirmedResultOwner.review(actionGameId);completedReviewEntryGeneration++;resultPresentation.clear();",
       "after": "if (action === \"analysis\") { __righeltResultReviewFocusProbe(\"analysis-entry\"); confirmedResultOwner.review(actionGameId);completedReviewEntryGeneration++;resultPresentation.clear();"
     }
