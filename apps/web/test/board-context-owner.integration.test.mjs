@@ -1,6 +1,5 @@
 import {createBoardContextPresentation} from '../shell/board-context-presentation.js';
 import {createDisplayedReplayStarter,displayedReplayFocusTarget} from '../shell/displayed-replay-starter.js';
-import {createIncomingNarrationState,syncIncomingNarrationRoot} from '../shell/incoming-narration.js';
 import {createRenderGestureGate} from '../shell/render-gesture.js';
 import {createDestinationRouteOwner,destinationReadScope} from '../shell/destination-route-owner.js';
 import {createDestinationRecovery} from '../shell/destination-recovery.js';
@@ -64,9 +63,8 @@ function fixture(t){
  createEngineBoardAdapter(){},prefersReducedMotion:()=>false,
  createComputerReplay:options=>({play:async payload=>{plays.push(payload);context.beforeReplayFinish?.();options.onFinish();},destroy(){},snapshot:()=>({playing:false}),stop(){}}),CSS:{escape:value=>value},
  };
- context.boardContextVisit=0;context.incomingNarrationState=createIncomingNarrationState();context.replayController=null;
+ context.boardContextVisit=0;context.replayController=null;
  context.renderGesture=createRenderGestureGate({render:context.render,schedule:fn=>{queued.push(fn);return fn;},cancel:fn=>{const index=queued.indexOf(fn);if(index>=0)queued.splice(index,1);}});owners.push(context.renderGesture);
- context.syncIncomingNarrationHost=()=>{};
  const presentation=createBoardContextPresentation({appEl:app,document:doc,getDependencies:()=>context,enqueue:fn=>queued.push(fn),createLayout:context.createBoardContextLayout});
  owners.push(presentation);context.presentation=presentation;
  context.startComputerReplay=createDisplayedReplayStarter(()=>({...context,setReplayController:value=>{context.replayController=value;}}),{createReplay:context.createComputerReplay});
@@ -115,19 +113,6 @@ test('production scope retires both context channels on account and same-game hi
  const b=f.c.store.channel('acknowledged');assert.notEqual(b.key,a.key);assert(!f.c.store.isDismissed(b.key));assert(f.c.store.takeAnnouncement(b.key));
  const token=f.c.owner.capture();f.context.view={...f.context.view,inHistoryMode:true,historyIndex:0};f.c.scope();assert(!f.c.owner.current(token));assert.equal(f.c.store.get(b.key),null);
  f.context.view={...f.context.view,inHistoryMode:false};f.c.scope();assert.notEqual(f.c.scope(),token.scope);
-});
-test('retiring presentation synchronously clears the nested canonical incoming root',t=>{
- const f=fixture(t),header={name:'header'},shell={name:'game-shell'},children=[header,shell],control={isConnected:true,disabled:false};
- const refresh=()=>children.forEach((node,index)=>{node.parentElement=main;node.nextElementSibling=children[index+1]??null;});
- const main={insertBefore(node,before){const current=children.indexOf(node);if(current>=0)children.splice(current,1);const target=children.indexOf(before);children.splice(target<0?children.length:target,0,node);refresh();}};refresh();
- const originalQuery=f.context.appEl.querySelector.bind(f.context.appEl);
- f.doc.createElement=()=>({attributes:new Map(),children:[],parentElement:null,nextElementSibling:null,setAttribute(name,value){this.attributes.set(name,value);},replaceChildren(){for(const child of this.children)child.isConnected=false;this.children=[];if(f.doc.activeElement===control)f.doc.activeElement=f.doc.body;}});
- f.context.appEl.querySelector=selector=>selector==='[data-game-shell-root]'?shell:selector==='[data-incoming-narration-root]'?children.find(node=>node.attributes?.has('data-incoming-narration-root'))??null:selector===':scope > [data-incoming-narration-root]'?null:originalQuery(selector);
- const root=syncIncomingNarrationRoot(f.context.appEl,'<button>Show previous turn</button>',host=>{host.children=[control];});
- assert.deepEqual(children,[header,root,shell]);assert.equal(root.children[0],control);
- f.doc.activeElement=control;f.c.retire();
- assert.deepEqual(root.children,[],'retirement removes stale incoming controls before another view can observe them');
- assert.equal(control.isConnected,false);assert.equal(f.doc.activeElement,f.doc.body);
 });
 test('actual queued dismissal reaches informational Board guidance and loses to a later native outside focus',async t=>{
  const f=fixture(t);f.c.receive({message:{text:'Observer context'}},f.meta());const key=f.c.store.channel('piece').key;
@@ -258,33 +243,6 @@ for(const interruption of ['none','outside-focus','new-intent'])test(`incoming h
  p.restoreIncomingFocus(token);await Promise.resolve();
  assert.equal(f.doc.activeElement,interruption==='none'?replacement:interruption==='outside-focus'?f.board:f.doc.body);
  assert.equal(f.reveals.length,0,'fixed incoming host never triggers a Board-page scroll reveal');
-});
-
-test('a matching synchronous incoming toggle replacement remains owned through a following render',async t=>{
- const f=fixture(t),p=f.context.presentation;
- f.button.dataset={action:'toggle-incoming-narration',boardContextKey:'accepted-turn'};
- f.button.closest=selector=>selector==='[data-incoming-context]'?{}:null;f.button.focus();
- const token=p.captureIncomingFocus();assert(token);f.button.isConnected=false;f.doc.activeElement=f.doc.body;
- const first={isConnected:true,disabled:false,dataset:{...f.button.dataset},closest:selector=>selector==='[data-incoming-context]'?{}:null,focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
- first.focus();assert.equal(f.doc.activeElement,first,'the synchronous handler focuses its first replacement');
- first.isConnected=false;f.doc.activeElement=f.doc.body;
- const settled={...first,isConnected:true,focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
- f.context.appEl.querySelectorAll=()=>[settled];p.restoreIncomingFocus(token);await Promise.resolve();
- assert.equal(f.doc.activeElement,settled,'the following committed render retains the same owned toggle focus');
- assert.equal(f.reveals.length,0);
-});
-
-for(const cancellation of [null,'outside-pointer'])test(`a deferred native toggle restores after its owned render: ${cancellation??'current intent'}`,t=>{
- const f=fixture(t),p=f.context.presentation;
- f.button.dataset={action:'toggle-incoming-narration',boardContextKey:'accepted-turn'};
- f.button.closest=selector=>selector==='[data-incoming-context]'?{}:null;f.button.focus();
- const token=p.captureIncomingFocus();assert(token);f.doc.activeElement=f.doc.body;
- const replacement={isConnected:true,disabled:false,dataset:{...f.button.dataset},closest:selector=>selector==='[data-incoming-context]'?{}:null,focus(){f.doc.activeElement=this;f.doc.fire('focusin',{target:this});}};
- f.context.appEl.querySelectorAll=()=>[replacement];
- if(cancellation)f.doc.fire('pointerdown',{target:{}});
- p.restoreIncomingFocus(token,{afterOwnedRender:true});
- assert.equal(f.doc.activeElement,cancellation?f.doc.body:replacement);
- assert.equal(f.reveals.length,0);
 });
 
 test('hidden Board detail never consumes an announcement ahead of the actual visible incoming host',async t=>{

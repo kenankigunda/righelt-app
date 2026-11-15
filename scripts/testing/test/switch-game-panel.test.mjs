@@ -24,8 +24,8 @@ function fixture({selected=false,layout='narrow',incomingExpanded=false}={}) {
 test('switching panels refreshes the real reveal even while an expanded bar is about to hide',async()=>{
   const f=fixture();await f.switchPanel(f.page,'players');assert.deepEqual(f.calls,['reveal','target']);
 });
-test('expanded incoming narration is collapsed before revealing and selecting mobile navigation',async()=>{
-  const f=fixture({incomingExpanded:true});await f.switchPanel(f.page,'history');assert.deepEqual(f.calls,['incoming','reveal','target']);
+test('removed incoming narration does not intercept mobile navigation',async()=>{
+  const f=fixture({incomingExpanded:true});await f.switchPanel(f.page,'history');assert.deepEqual(f.calls,['reveal','target']);
 });
 test('an already selected panel does not reveal or click navigation',async()=>{
   const f=fixture({selected:true});await f.switchPanel(f.page,'board');assert.deepEqual(f.calls,[]);

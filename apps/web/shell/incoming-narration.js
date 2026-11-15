@@ -10,66 +10,13 @@ export function incomingNarrationContext(contexts, gameId) {
 
 const supported = context => [BOARD_CONTEXT_PURPOSE.INCOMING,BOARD_CONTEXT_PURPOSE.SEQUENCE].includes(context?.purpose);
 
-const episode = context => context.replay
-  ? JSON.stringify([context.gameId, context.replay.turnIndex, context.replay.moveIds])
-  : context.key;
-
-// This owns presentation only. Expanding or reading narration never reports a
-// seen move, changes History selection, or admits a game/replay command.
-export function createIncomingNarrationState() {
-  let current = null, identity = null, expanded = true;
-  return {
-    observe(context) {
-      if (!supported(context)) {
-        current = null; identity = null; expanded = true;
-        return {context:null, expanded:false, arrival:false, episode:null};
-      }
-      const next = episode(context), arrival = next !== identity;
-      if (arrival) expanded = true;
-      current = context; identity = next;
-      return {context, expanded, arrival, episode:identity};
-    },
-    toggle(key) {
-      if (!current || current.key !== key) return false;
-      expanded = !expanded;
-      return true;
-    },
-    retire() {current = null; identity = null; expanded = true;},
-  };
-}
-
-// The narrow flyout paints at the bottom of the viewport, but its native
-// controls must precede the live Board controls in document order. Mount it
-// between the page header and game shell so focus traverses forward to Pass
-// without wrapping through the Board's cell buttons.
-export function syncIncomingNarrationRoot(app, html, patch) {
-  let host = app.querySelector('[data-incoming-narration-root]');
-  if (!host && html) {
-    host = app.ownerDocument.createElement('div');
-    host.setAttribute('data-incoming-narration-root', '');
-  }
-  if (!host) return null;
-  const gameShell = app.querySelector('[data-game-shell-root]');
-  const parent = gameShell?.parentElement ?? app;
-  const anchor = gameShell ?? app.firstElementChild;
-  if (host.parentElement !== parent || host.nextElementSibling !== anchor) parent.insertBefore(host, anchor);
-  patch(host, html);
-  return host;
-}
-
-export function renderIncomingNarration(context, {layout, expanded = true, replayEnabled = false} = {}) {
-  if (!supported(context) || !['wide','narrow'].includes(layout)) return '';
+export function renderIncomingNarration(context, {layout, replayEnabled = false} = {}) {
+  if (!supported(context) || layout !== 'wide') return '';
   const side = context.actorSide === 'P1' ? 'p1' : context.actorSide === 'P2' ? 'p2' : 'neutral';
   const key = escape(context.key), body = {...context.message};
   delete body.action; delete body.actions; delete body.context;
   const copy = `<div class="incoming-narration-copy">${renderBoardMessageHtml(body)}</div>`;
   const replay = context.replay ? `<button type="button" class="secondary incoming-narration-replay" data-action="replay-board-context" data-board-context-key="${key}"${replayEnabled?'':' disabled'}>${icon('rematch')}Show me again</button>` : '';
   const attrs = `data-board-context="${key}" data-incoming-context data-context-active-host="true" data-key="incoming:${key}" aria-live="off"`;
-  if (layout === 'wide') return `<div class="history-incoming incoming-owner-${side}" ${attrs}>${copy}${replay}</div>`;
-  const localSequence=context.purpose===BOARD_CONTEXT_PURPOSE.SEQUENCE;
-  const label=localSequence?'push sequence':'previous turn';
-  return `<aside class="incoming-move-flyout incoming-owner-${side}" ${attrs} aria-label="${localSequence?'Push sequence':'Previous turn'}" data-expanded="${expanded}">
-    ${expanded?`<div id="shell-incoming-move-body" class="incoming-narration-content">${copy}${replay}</div>`:''}
-    <button type="button" class="secondary incoming-narration-toggle" data-key="incoming-toggle:${escape(context.gameId)}" data-action="toggle-incoming-narration" data-board-context-key="${key}" aria-expanded="${expanded}"${expanded?' aria-controls="shell-incoming-move-body"':''}>${expanded?`Hide ${label}`:`Show ${label}`}${icon(expanded?'down':'up')}</button>
-  </aside>`;
+  return `<div class="history-incoming incoming-owner-${side}" ${attrs}>${copy}${replay}</div>`;
 }

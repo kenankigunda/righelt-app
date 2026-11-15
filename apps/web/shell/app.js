@@ -2,9 +2,8 @@ import {createPanelTransitionPreparation} from './panel-transition-preparation.j
 import {revertRequestKey,activeRevertRequest,activePendingRevertRequest} from './undo-request-presentation.js';
 import {createDisplayedReplayStarter} from './displayed-replay-starter.js';
 import {renderBoardContextDetails} from './board-context.js';
-import {BOARD_CONTEXT_PURPOSE} from './board-context-purpose.js';
 import {createBoardContextPresentation} from './board-context-presentation.js';
-import {incomingNarrationContext,createIncomingNarrationState,renderIncomingNarration,syncIncomingNarrationRoot} from './incoming-narration.js';
+import {incomingNarrationContext,renderIncomingNarration} from './incoming-narration.js';
 import {createConfirmedRemovalPresentation,presentRemovalTransportChange} from './removal-presentation.js';
 import {createRecoveryPresentation} from './recovery-presentation.js';
 import {mountRenderGestureOwner} from './render-gesture-owner.js';
@@ -190,12 +189,10 @@ mountLoadingEdges(document);
 void fetch("/deploy-meta.json", { cache: "no-store", signal: AbortSignal.timeout(5000) }).then(response => response.json()).then(meta => { globalThis.__righeltObservedDeploymentSha = meta.sha ?? meta.commitSha ?? "unavailable"; }).catch(() => {});
 const appEl = document.getElementById("app");
 const documentIcon=createDocumentIconOwner({documentObject:document});
-const incomingNarrationState=createIncomingNarrationState();
-let pendingIncomingToggleFocus=null;
 let boardContextVisit=0;
 const boardContextPresentation=createBoardContextPresentation({appEl,document,getDependencies:()=>({
- transport,viewingScope,boardContextVisit,currentRoute,getBoardGame,getCurrentViewedGameId,incomingNarrationState,replayRequests,replayController,
- renderGesture,updateMountedHeader,syncRenderedMarkupSnapshot,renderHistoryPanel,patchToolHtml,syncIncomingNarrationHost,syncBoardContextDetails,syncRecoverySpace,
+ transport,viewingScope,boardContextVisit,currentRoute,getBoardGame,getCurrentViewedGameId,replayRequests,replayController,
+ renderGesture,updateMountedHeader,syncRenderedMarkupSnapshot,renderHistoryPanel,patchToolHtml,syncBoardContextDetails,syncRecoverySpace,
  forcedFollowWorking,confirmedPlayback,notificationStack,startComputerReplay,routeHydrated,getGamePanel,mountedBoardGameId,getShellLayoutMode,navigateTo,buildGameHash,getCurrentGameHashState,
 })});
 const boardContexts=boardContextPresentation.store,boardContextLayout=boardContextPresentation.layout,boardContextOwner=boardContextPresentation.owner,boardContextFocus=boardContextPresentation.focus,contextAnnouncement=boardContextPresentation.announcement,boardContextState=boardContextPresentation.state;
@@ -2228,17 +2225,12 @@ const revealSelectedHistory = () => {
 
 const readIncomingNarration = game => {
   boardContextScope();
-  return incomingNarrationState.observe(incomingNarrationContext(boardContexts.items(game.id),game.id));
+  return incomingNarrationContext(boardContexts.items(game.id),game.id);
 };
 const renderIncomingNarrationHost = (game, layout) => {
   if(getShellLayoutMode()!==layout)return '';
-  const state=readIncomingNarration(game);
-  mobileNavigation?.incoming(layout==='narrow'&&state.context?state.episode:null);
-  return renderIncomingNarration(state.context,{layout,expanded:state.expanded,replayEnabled:contextReplayEnabled(state.context?.replay)});
-};
-const syncIncomingNarrationHost = game => {
-  const html=renderIncomingNarrationHost(game,'narrow');
-  syncIncomingNarrationRoot(appEl,html,patchToolHtml);
+  const context=readIncomingNarration(game);
+  return renderIncomingNarration(context,{layout,replayEnabled:contextReplayEnabled(context?.replay)});
 };
 const renderHistoryPanel = (game) => {
   if (game.positionOnly && game.positionHistoryPending) return renderHistorySlots({ rows: '', extra: `<p class="small" role="status">${game.positionError ? 'Game history could not finish loading. Try loading play again.' : 'Loading game history'}</p>` });
@@ -2715,7 +2707,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
     historySelectionTransition.present(historyTransition);
     revealSelectedHistory();
   }
-  syncIncomingNarrationHost(game);syncBoardContextDetails(game);boardContextPresentation.restoreIncomingFocus(incomingFocus);
+  syncBoardContextDetails(game);boardContextPresentation.restoreIncomingFocus(incomingFocus);
   if (includeBoard || mountedBoardGameId === game.id || !document.querySelector("#shell-board .cell")) {
     mountBoardForGame(game);
   }
@@ -3352,9 +3344,6 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   }
   joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });
   pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });
-  const incomingToggleFocus=pendingIncomingToggleFocus;
-  pendingIncomingToggleFocus=null;
-  boardContextPresentation.restoreIncomingFocus(incomingToggleFocus,{afterOwnedRender:true});
   resumeBoardContextReplay();
   return true;
 };
@@ -4864,19 +4853,6 @@ appEl.addEventListener("click", async (event) => {
     return;
   }
 
-  if(action==='toggle-incoming-narration'){
-    const context=boardContexts.channel('acknowledged');
-    if(context?.purpose!==BOARD_CONTEXT_PURPOSE.INCOMING||context.gameId!==getCurrentViewedGameId()||context.key!==actionEl.dataset.boardContextKey)return;
-    const restoreToggleFocus=document.activeElement===actionEl;
-    const committed=incomingNarrationState.toggle(context.key)?render({animatePanels:false,includeBoard:false}):true;
-    if(restoreToggleFocus&&committed===false){
-      pendingIncomingToggleFocus?.owner.release();
-      pendingIncomingToggleFocus=boardContextPresentation.captureIncomingFocus();
-    }
-    const replacement=[...appEl.querySelectorAll('[data-action="toggle-incoming-narration"]')].find(button=>button.dataset.boardContextKey===context.key);
-    if(restoreToggleFocus&&committed!==false&&replacement?.isConnected&&!replacement.disabled&&!replacement.closest('[inert]'))replacement.focus({preventScroll:true});
-    return;
-  }
   if(action==='replay-board-context'){boardContextPresentation.replayAction(actionEl);return;}
   if(action==='dismiss-board-context'){boardContextPresentation.dismiss(actionEl);return;}
   if (action === "cycle-game-alert-stack") {

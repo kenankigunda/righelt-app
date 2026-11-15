@@ -17,8 +17,8 @@ export function createBoardContextPresentation({appEl,document,getDependencies,c
   const {transport,viewingScope,boardContextVisit,currentRoute}=getDependencies(),game=displayedReplayFrame();
   return {owner:transport,key:JSON.stringify([viewingScope(),boardContextVisit,currentRoute.name,currentRoute.gameId,game?.inHistoryMode?[game.historyIndex,game.historyTurnIndex]:'live'])};
  },onRetire:()=>{
-  const {incomingNarrationState,replayRequests,replayController}=getDependencies();
-  activeDisplayedReplay=null;cancelPendingBoardContextReplay();boardContextFocus.retire();incomingNarrationState.retire();appEl.querySelector('[data-incoming-narration-root]')?.replaceChildren();contextAnnouncement.textContent='';
+  const {replayRequests,replayController}=getDependencies();
+  activeDisplayedReplay=null;cancelPendingBoardContextReplay();boardContextFocus.retire();contextAnnouncement.textContent='';
   replayRequests.cancel();replayController?.stop('view-changed');
  },onIntentChange:()=>{
   const {replayRequests,replayController}=getDependencies();
@@ -59,7 +59,7 @@ export function createBoardContextPresentation({appEl,document,getDependencies,c
    if(!game||appEl.querySelector('[data-game-shell-root]')?.dataset.gameId!==gameId){incomingFocus?.owner.release();return;}
    if(d.updateMountedHeader())d.syncRenderedMarkupSnapshot();
    const history=appEl.querySelector('[data-game-panel="history"]');if(history)d.patchToolHtml(history,d.renderHistoryPanel(game));
-   d.syncIncomingNarrationHost(game);d.syncBoardContextDetails?.(game);restoreIncomingFocus(incomingFocus);
+   d.syncBoardContextDetails?.(game);restoreIncomingFocus(incomingFocus);
    d.syncRecoverySpace(appEl);boardContextLayout.sync();
    const active=[...appEl.querySelectorAll('[data-alert-stack-card].is-active [data-board-context],[data-context-active-host="true"]')].find(host=>!host.closest('[inert],[hidden],[aria-hidden="true"]'));
    const text=active&&boardContexts.takeAnnouncement(active.dataset.boardContext);if(text)contextAnnouncement.textContent=text;

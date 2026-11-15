@@ -61,9 +61,7 @@ export function createBoardContextLayout(doc=document) {
    const viewport=win.visualViewport,viewportTop=Number.isFinite(viewport?.offsetTop)?viewport.offsetTop:0;
    const viewportBottom=viewportTop+(Number.isFinite(viewport?.height)?viewport.height:win.innerHeight);
    const top=Math.max(viewportTop,notice?.getBoundingClientRect().bottom??0),navRect=nav?.getBoundingClientRect();
-   const incoming=app.querySelector('.incoming-move-flyout');
-   const incomingRect=incoming&&!incoming.closest?.('[inert],[hidden],[aria-hidden="true"]')?incoming.getBoundingClientRect():null;
-   const bottom=Math.min(viewportBottom,navRect?.height?navRect.top:viewportBottom,incomingRect?.height?incomingRect.top:viewportBottom),rect=original.getBoundingClientRect();
+   const bottom=Math.min(viewportBottom,navRect?.height?navRect.top:viewportBottom),rect=original.getBoundingClientRect();
    if(rect.top>=top+8&&rect.bottom<=bottom-8)return;
    // Native window scrolling may round to whole CSS pixels. Round the needed
    // distance outward so a fractional control edge still clears the full 8px.
