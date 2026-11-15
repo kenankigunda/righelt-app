@@ -49,6 +49,15 @@ test('actual defeat causes remain distinct and legacy push results are interpret
  const watch={...captured,computer:{seats:{p1:'tau',p2:'horus'},manual:false}};assert.equal(getGameResult(watch,'red').tone,'neutral');
 });
 
+test('unknown terminal provenance keeps the result without inventing a generic reason',()=>{
+ const unknown={...game('p1_win'),board:{state:{outcome:{status:'p1_win',reason:'legacy_unknown'}}}};
+ const result=getGameResult(unknown,'red');
+ assert.equal(result.title,'You won');
+ assert.equal(result.reason,'');
+ assert.deepEqual(result.reasonParts,[]);
+ assert.equal(renderHistoryResult(unknown,'red').includes('The game has finished.'),false);
+});
+
 
 test("cancelled rematch gate cannot create or close a reopened dialog", async () => {
   let click, release, created = 0;

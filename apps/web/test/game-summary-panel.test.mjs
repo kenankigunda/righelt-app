@@ -43,6 +43,14 @@ test('Game summary renders its saved role through the participant contract',()=>
   });
   assert.match(summary,/Role: <strong class="player-tone-p1"[^>]*><bdi dir="auto">Kenan<\/bdi><\/strong>/);
   assert.doesNotMatch(summary,/Role:\s*Player 1/);
+  assert.doesNotMatch(summary,/Latest:\s*Ready/);
+  assert.equal((summary.match(/<p class="small"/g)||[]).length,3);
+});
+
+test('Game summary suppresses only idle Ready while retaining meaningful Latest events',()=>{
+  const base={id:'latest',createdAt:'date',myRole:'Player 1',player1:{identityId:'owner'},player2:{identityId:'other'},currentTurn:null};
+  assert.doesNotMatch(render({...base,notifications:['Ready']}),/Latest:/);
+  assert.match(render({...base,notifications:['Undo applied']}),/Latest: Move undone/);
 });
 
 test('Game summary escapes dates and arbitrary notification text',()=>{

@@ -37,7 +37,9 @@ export const getGameResult = (game, identityId) => {
   const legacy = Array.isArray(game.board.state.pieces) && ['both_commanders_unsupplied','p1_commander_unsupplied','p2_commander_unsupplied'].includes(outcome.reason) ? commanderOutcome(game.board.state.pieces) : null;
   const reason = legacy?.status === outcome.status ? legacy.reason : outcome.reason;
   const tone = !winner ? 'draw' : !side ? 'neutral' : both || winner === side ? 'victory' : 'defeat';
-  const reasonParts=reasons[reason] ?? [{text:'The game has finished.'}];
+  // An unproven terminal cause is still a truthful result, but it is not a
+  // reason. The result heading carries the known outcome without filler copy.
+  const reasonParts=reasons[reason] ?? [];
   return { title, titleParts, side, winner, tone, controlsBothSides: both, reason: reasonParts.map(part=>part.text).join(''), reasonParts, opponent: game.computer?.seats?.p1 || game.computer?.seats?.p2 || game.player1?.computerProfile || game.player2?.computerProfile || (game.selfPlayMode ? "self" : "friend"), rematchSide: side === "p1" ? "p2" : "p1" };
 };
 

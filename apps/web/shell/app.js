@@ -2059,7 +2059,6 @@ const renderHomeSectionSkeleton = (title, { showStartButton = false, sectionKey 
     <div class="home-games-section-header" data-home-header-has-action="${showStartButton ? "true" : "false"}" data-home-header-paging="false">
       <div class="home-games-section-heading">
         <h2>${escapeHtml(title)}</h2>
-        <p class="small">Games</p>
       </div>
       <div class="home-games-section-header-center"></div>
       <div class="home-games-section-header-actions">

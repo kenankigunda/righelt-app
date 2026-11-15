@@ -49,6 +49,12 @@ Before implementation starts, UX-sensitive tickets should make these items expli
 
 If the current spec or eng plan cannot support automation of a UX goal, Tester should flag that gap during planning instead of waiting until final validation.
 
+## Copy review and regression scope
+
+Apply the [Approachable Copy Principle](../UX_PRINCIPLES.md#approachable-copy-principle) to affected current surfaces and future features. Identify the copy to remove, the friendly or meaningful copy to retain, and how the interface communicates the remaining state. Do not turn copy review into a blanket shortest-text rule.
+
+For affected surfaces, verify actual rendered behavior rather than source-string containment. Check the approved removal and nearby keep examples: meaningful Latest events remain when idle Ready disappears, proven result causes remain when the generic fallback disappears, invitation identity/side/actions remain when redundant kickers disappear, and loading semantics remain when filler disappears. Keep Home atmosphere, friendly clipboard success and current readiness feedback. Reuse existing focused proof and add only affected regression cases. Native focus, accessible announcements, mobile wrapping and reduced motion need proof where the change affects those contracts. This guidance does not require a new full-product campaign for each wording change.
+
 ## Recommended Automation Patterns
 
 - Prefer Playwright user-visible assertions first.
