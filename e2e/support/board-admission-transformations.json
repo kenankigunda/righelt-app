@@ -337,8 +337,8 @@
   },
   "/shell/app.js": {
     "file": "apps/web/shell/app.js",
-    "sourceSha256": "96e31a566d0aa886d277d62537a91b80e507a3ba215800a6e23d87328b0f2535",
-    "outputSha256": "6445f719d315d4b424789272f011dda0c7f9d069739b35eab2208419cc71e987",
+    "sourceSha256": "f465178058ef9453c833dd953f86a8783ffc1a9fb6c909f371e6daaab41a9e3b",
+    "outputSha256": "540bbc71f990ff6b39911cb71412c2de379bde30eec2ac80388e7fccbdf10edf",
     "operations": [
       {
         "start": 162882,
@@ -373,8 +373,8 @@
         "anchorCount": 1
       },
       {
-        "start": 290842,
-        "end": 290842,
+        "start": 290880,
+        "end": 290880,
         "before": "",
         "after": "    boardAdmissionProbe(\"shell-release-bounce\", () => ({connected:Boolean(pressedControlEl.isConnected)}), pressedControlEl);\n",
         "anchor": "\n  if (pressedControlEl instanceof HTMLElement) {\n    playControlReleaseBounce(pressedControlEl);\n  ",
