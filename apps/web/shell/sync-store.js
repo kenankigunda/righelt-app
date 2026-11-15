@@ -67,6 +67,23 @@ const createRollbackFailureHandle = (game, failureNotice = "") => {
   };
 };
 
+// History hydration is a fenced read, not an optimistic mutation. Its handle
+// gives selection choreography one settlement promise without influencing the
+// mutation manager's local-game hydration shortcut.
+const createReadSettlementHandle = ({id,gameId,read,pendingResult}) => {
+  if(!read?.then){
+    const committed=Promise.resolve(read);
+    return {id,gameId,status:'committed',result:read,committed,error:null};
+  }
+  const handle={id,gameId,status:'pending',result:pendingResult,committed:null,error:null};
+  handle.committed=Promise.resolve(read).then(value=>{
+    handle.status='committed';handle.result=value;return value;
+  },error=>{
+    handle.status='failed';handle.error=error;throw error;
+  });
+  return handle;
+};
+
 const createSessionId = () => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -1615,10 +1632,11 @@ export const createSyncStore = ({
       if (outcome?.outcome === "rejected") operationManager.fail(handle.id, createOperationError(outcome.reason));
       return handle;
     },
-    selectHistoryMove: ({ gameId, moveIndex, moveId = null }) => operationManager.createCommitted({
-      id: `history:${gameId}:${moveIndex}:${Date.now()}`, gameId,
-      result: transport.selectHistoryMove({ gameId, moveIndex, moveId }),
-    }),
+    selectHistoryMove: ({ gameId, moveIndex, moveId = null }) => {
+      const id=`history:${gameId}:${moveIndex}:${Date.now()}`;
+      const read=transport.selectHistoryMove({gameId,moveIndex,moveId});
+      return createReadSettlementHandle({id,gameId,read,pendingResult:transport.getGameViewModel(gameId)});
+    },
     returnToLive: ({ gameId }) => operationManager.createCommitted({
       id: `live:${gameId}:${Date.now()}`, gameId,
       result: transport.returnToLive({ gameId }),

@@ -1,4 +1,4 @@
-import {confirmedPlaybackMessage,playbackTurnIndicator,contextReplayAvailable,refreshFollowControls} from '../shell/playback-presentation.js';
+import {confirmedPlaybackMessage,displayedReplayMessage,playbackTurnIndicator,contextReplayAvailable,refreshFollowControls} from '../shell/playback-presentation.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {captureDisplayedReplay,displayedReplayIsCurrent,replayArchiveMatches} from '../shell/displayed-replay.js';
@@ -34,9 +34,16 @@ test('push replay frames preserve recorded numbering and narration identity with
  current.moves[0].displayMoveNumber=99;assert.equal(payload.frames[0].recordedMove.displayMoveNumber,17);
 });
 
-test('every new playback primary prompt remains inside the finite sizing grammar',()=>{
- for(const text of ['Following the push','Babs needs help','Babs is making their move'])assert(isMappedBoardPromptHtml(renderBoardMessageHtml({text})),text);
+test('recovery playback prompts remain inside the finite sizing grammar while recorded steps replace replay chrome',()=>{
+ for(const text of ['Babs needs help','Babs is making their move'])assert(isMappedBoardPromptHtml(renderBoardMessageHtml({text})),text);
  assert(isMappedBoardPromptHtml(renderBoardMessageHtml({text:'Babs needs help',actorName:'Babs',action:{id:'retry-confirmed-playback',label:'Retry'}})));
+ const record={...game().moves[0],action:{type:'rush',from:{row:1,col:0},to:{row:1,col:1}}},view={...game(),inHistoryMode:false,moves:[record,...game().moves.slice(1)]};
+ const automatic=displayedReplayMessage(view,{playing:true,manual:false,recordedMove:record},null,{identityId:'human'});
+ assert.match(automatic.text,/You rushed/);assert.equal(automatic.action,undefined);
+ const manual=displayedReplayMessage(view,{playing:true,manual:true,recordedMove:record},null,{identityId:'human'});
+ assert.equal(manual.action.label,'Next');assert.doesNotMatch(JSON.stringify(manual),/Watch replay|Stop replay|Replay ·/);
+ assert.equal(displayedReplayMessage(view,null,{gameId:'g',phase:'loading'},{identityId:'human'}),null);
+ assert.deepEqual(displayedReplayMessage(view,null,{gameId:'g',phase:'error',actionId:'replay-push-sequence'},{identityId:'human'}),{text:'Replay unavailable',action:{id:'replay-computer',label:'Try again'}});
 });
 
 test('automatic confirmed frames use the exact visible record and fold adjacent closure without another step',async()=>{
@@ -67,7 +74,7 @@ test('production automatic presentation publishes the recorded step and exact ca
  const game={id:'g',moves:[record],computer:{seats:{p1:'babs',p2:'tau'}},player1:{computerProfile:'tau'},player2:{computerProfile:'tau'},confirmedPlayback:{playing:true}},published=[];
  const context={game,selectedHistoryPresentation,recordedActorSide,playerDisplayName,COMPUTER_PROFILES,boardContextScope(){},activeDisplayedReplay:null,getBoardGame:value=>value,transport:{getGameViewModel:()=>game,getIdentityId:()=> 'human'},replayController:null,replayRequests:{snapshot:()=>null},computerSession:{snapshot:()=>({phase:'computing',profile:'tau'})},confirmedPlayback:{snapshot:()=>({current:{move:record,frame:{recordedMove:record,moveNumber:17}}})},forcedFollowWorking:()=>false,viewingScope:()=> 'scope',document:{getElementById:()=>({parentElement:{querySelector:()=>null}})},updateComputerBoardLoading(){},boardTurnCaption:()=>({text:'Live'}),acknowledgedBoardMessage:(_view,_status,options)=>published.push(options.presentationMove)};
  assert.deepEqual(playbackTurnIndicator(game,{},{step:context.confirmedPlayback.snapshot().current,identityId:'human'}),{text:'Move 17',side:'P1'});
- const message=confirmedPlaybackMessage(game,context.computerSession.snapshot(),{step:context.confirmedPlayback.snapshot().current,identityId:'human',onRecorded:context.acknowledgedBoardMessage});assert.equal(message.text,'Babs is making their move');assert.equal(published[0],record);assert(isMappedBoardPromptHtml(renderBoardMessageHtml(message)));
+ const message=confirmedPlaybackMessage(game,context.computerSession.snapshot(),{step:context.confirmedPlayback.snapshot().current,identityId:'human',onRecorded:context.acknowledgedBoardMessage});assert.equal(message.text,'Babs rushed from (1, 2) to (2, 2)');assert.equal(published[0],record);
 });
 
 

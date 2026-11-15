@@ -149,6 +149,7 @@ For explicitly disposable local development fixtures, prefer a scoped reset over
 - Use this hierarchy: **You > PlayerName > Guest (one guest) > Guest 1 / Guest 2 (multiple guests)**.
 - Refer to the viewer as "You" (or "you" within a sentence). Otherwise use the player's displayed name, including named guests and computer players. Use the Guest fallback only when no player name is available.
 - In self-play, keep viewer-relative naming and identify the side with "as Red" or "as Blue" where needed. Example: "You won as Red in 12 moves after you retreated as Blue."
+- Color every structured user-facing player identity to its known role. Preserve a non-color and screen-reader attribution. In History and replay self-play narration, show the actor visibly as "You" without a parenthetical color and retain "You, Red" or "You, Blue" in the accessible name. Never infer identity or role by matching display-name text.
 
 ## 6) Communication Expectations
 

@@ -39,6 +39,15 @@ test('selected move is inert while individual actions remain buttons and preview
  assert.match(html,/data-action="revert-to-move"/);assert.match(html,/data-action="launch-history-branch"/);
  assert.match(html,/data-preview-mode="recorded-action"/);
 });
+test('requested History targets pulse separately while the last accepted move and preview remain selected',()=>{
+ const movePending=context.render({...game,inHistoryMode:true,historyIndex:0,historyLoading:true,historyLoadIndex:1});
+ assert.match(movePending,/class="history-item player-tone-P2 history-selection-pending"[^>]*data-move-id="b"[^>]*aria-busy="true"/);
+ assert.match(movePending,/class="history-item player-tone-P1 is-selected[^"]*"[^>]*data-move-id="a"/);
+ assert.match(movePending,/data-preview-mode="recorded-action"/);
+ const turnPending=context.render({...game,inHistoryMode:true,historyIndex:0,historyLoading:true,historyLoadIndex:2,historyLoadTurnIndex:1});
+ assert.match(turnPending,/class="history-turn player-tone-P2 history-selection-pending"[^>]*aria-busy="true"/);
+ assert.match(turnPending,/class="history-turn-heading"[^>]*>Turn 2/);
+});
 test('imported lineage is collapsed, source-linked, and branchable but never undoable',()=>{
  const imported=moves.slice(0,2).map((move,index)=>({...move,importedFrom:{gameId:'source-game',decisionId:move.moveId,gameplayRevision:7},displayMoveNumber:index+1}));
  const branched={...game,moves:[...imported,{...moves[2],index:2,displayMoveNumber:3}],importedHistory:{version:1,complete:true,moveCount:2,sources:[{gameId:'source-game',gameplayRevision:7,moveCount:2}]}};

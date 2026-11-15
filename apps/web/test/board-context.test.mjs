@@ -65,7 +65,8 @@ test('explicit piece preference respects focused and urgent notices and explicit
 });
 test('sizing grammar includes native recovery controls, obligations and actual coordinate width',()=>{
  const models=boardPromptSizingModels({boardSize:1000}),html=models.map(m=>renderBoardMessageHtml(m,{sizing:true})).join('');
- for(const label of ['Cancel replay','Try again','Dismiss','Stop replay','End turn','Obligatory','Babs is saving their move','Horus needs a hand','999'])assert(html.includes(label));
+ for(const label of ['Cancel replay','Try again','Stop replay','End turn','Obligatory','Babs is saving their move','Horus needs a hand','999'])assert(html.includes(label));
+ assert(!html.includes('Dismiss'));
  assert(html.includes('Confirm <strong>move commander to'));assert(!html.includes('data-board-message-action='));
 });
 

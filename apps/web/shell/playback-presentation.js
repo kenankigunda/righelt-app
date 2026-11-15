@@ -3,7 +3,7 @@ import {acknowledgedContextPurpose} from './board-context-purpose.js';
 import {updateComputerBoardLoading} from './board-message-layout.js';
 import {selectedHistoryPresentation,historyBoardMessage} from './history-narration.js';
 import {recordedActorSide} from './recorded-narration.js';
-import {boardTurnCaption,playerDisplayName,recordedActorIdentity,recordedReplayLabel} from './perspective-labels.js';
+import {boardTurnCaption,playerDisplayName} from './perspective-labels.js';
 import {COMPUTER_PROFILES} from '../generated/packages/shared-types/src/computer-play.js';
 import {withPushSequenceMessage} from './push-sequence-replay.js';
 import {opponentBoardMessage} from './opponent-narration.js';
@@ -18,7 +18,7 @@ if(view?.confirmedPlayback){
             const actorName=recordedPresentation?.message.actorName??playerDisplayName(view,actor);
             if(view.confirmedPlayback.error)return {text:`${actorName} needs help`,actorName,action:{id:'retry-confirmed-playback',label:'Retry'}};
             if(status?.activity?.needsHelp){const helpName=COMPUTER_PROFILES[status.profile]?.name??actorName;return {text:`${helpName} needs help`,actorName:helpName};}
-            if(record && recordedActorIdentity(view,record,{identityId}).owned)return {text:BOARD_PROMPT.replay,actorName,context:{kind:'replay-progress',message:{rows:[recordedPresentation.message,{text:recordedReplayLabel(view,record,{identityId})}]}}};
+            if(recordedPresentation?.message)return recordedPresentation.message;
             return {text:`${actorName} is making their move`,actorName};
           }
  return null;
@@ -35,6 +35,18 @@ export const contextReplayAvailable=({descriptor,followWorking,playbackPlaying,r
 export function historyBoardRuntimeMessage(view,selection={},options={}) {
  if(!view?.inHistoryMode||selection.selectedPieceId||selection.inspection)return null;
  return historyBoardMessage(view,options);
+}
+
+export function displayedReplayMessage(view,replay,replayFeedback,{identityId,episodeKey}={}) {
+ if(replayFeedback?.gameId===view?.id&&replayFeedback.phase==='error')return {
+  text:BOARD_PROMPT.failedReplay,
+  action:{id:'replay-computer',label:'Try again'},
+ };
+ if(!replay?.playing)return null;
+ const explanation=selectedHistoryPresentation({...view,inHistoryMode:true,historyTurnIndex:null,inspectedDecision:replay.recordedMove},{identityId})?.message
+  ??{text:'Historical move details unavailable'};
+ const contentHeightOwner=typeof episodeKey==='string'&&episodeKey.length?`replay:${episodeKey}`:null;
+ return replay.manual?{...explanation,contentHeightOwner,action:{id:'replay-next',label:'Next'}}:{...explanation,contentHeightOwner};
 }
 export function refreshFollowControls({boardRuntime,followWorking,replayPlaying,playbackPlaying,refreshContext}) {
  boardRuntime?.setInteractionBlocked(Boolean(followWorking||replayPlaying||playbackPlaying));
@@ -58,9 +70,9 @@ export function publishAcknowledgedBoardMessage(view,status,options,{boardContex
 }
 
 // Keep loading ownership and confirmed-frame copy in the same production boundary.
-export function presentPlaybackBoardMessage(view,status,{activityHost,selection={},followWorking,replay,replayFeedback,scope,...options}={}) {
+export function presentPlaybackBoardMessage(view,status,{activityHost,selection={},replay,replayFeedback,loadingKey=null,scope,...options}={}) {
  updateComputerBoardLoading(activityHost,view,status,{
-  replaying:Boolean(view?.confirmedPlayback||followWorking||replay?.playing||replayFeedback?.gameId===view?.id),
+  replaying:Boolean(view?.confirmedPlayback||replay?.playing),loadingKey,
   inspecting:Boolean(selection.selectedPieceId||selection.inspection),scope,
  });
  if(view?.positionOnly)return {text:view.positionLoading?'Loading play':'Play could not finish loading'};

@@ -19,7 +19,7 @@ export function createMessageHeightController(label) {
  const slot=label?.closest?.('.board-message-slot'),doc=label?.ownerDocument,win=doc?.defaultView;
  if(!slot||!win?.ResizeObserver||!win?.MutationObserver)return {destroy(){}};
  const live=slot.querySelector('.board-message-live'),replicas=[...slot.querySelectorAll('.board-message-sizing')];
- let disposed=false,frame=null,animation=null,initial=true,metricChange=true,pointer=false,key=false,lastTarget=null,lastWidth=null,lastFont=null,pressedControl=null,pendingContent=null,publishingContent=false;
+ let disposed=false,frame=null,animation=null,initial=true,metricChange=true,pointer=false,key=false,lastTarget=null,lastWidth=null,lastFont=null,pressedControl=null,pendingContent=null,publishingContent=false,contentHeightOwner=null,contentHeightFloor=0;
  const measure=(forceSnap=false)=>{
   if(forceSnap&&frame!==null)win.cancelAnimationFrame(frame);
   frame=null;if(disposed||!slot.isConnected)return;
@@ -45,7 +45,8 @@ export function createMessageHeightController(label) {
   if(reservation!==null&&primary>reservation+.1)slot.dataset.promptPrimaryUnderreserved='true';else delete slot.dataset.promptPrimaryUnderreserved;
   const grammar=Math.max(reservation??0,messageHeightTarget({primaryRoutine:primary,fallbackRoutine:fallback}));
   const natural=live.getBoundingClientRect().height;
-  let required=natural;
+  if(contentHeightOwner)contentHeightFloor=Math.max(contentHeightFloor,natural);
+  let required=Math.max(natural,contentHeightFloor);
   const active=doc.activeElement;
   if(active?.matches?.('button')&&live.contains(active)){
    const rect=active.getBoundingClientRect(),box=slot.getBoundingClientRect(),style=win.getComputedStyle?.(active);
@@ -88,6 +89,12 @@ export function createMessageHeightController(label) {
  const motion=win.matchMedia('(prefers-reduced-motion: reduce)');motion.addEventListener?.('change',metrics);
  measure();
  return {
+ setContentHeightOwner(owner){
+  const next=typeof owner==='string'&&owner.length?owner:null;
+  if(next===contentHeightOwner)return;
+  contentHeightOwner=next;contentHeightFloor=0;lastTarget=null;
+ },
+ captureContentHeight(){measure(true);},
  deferContent(html,publish){
   if(publishingContent)return false;
   const active=doc.activeElement;
@@ -121,5 +128,5 @@ export function createMessageHeightController(label) {
   }finally{publishingContent=false;}
   return true;
  },
- destroy(){disposed=true;pendingContent=null;pressedControl=null;if(frame!==null)win.cancelAnimationFrame(frame);animation?.cancel();resize.disconnect();mutations.disconnect();doc.removeEventListener('pointerdown',starts,true);doc.removeEventListener('keydown',starts,true);for(const type of ['pointerup','pointercancel','keyup'])doc.removeEventListener(type,ends,true);win.removeEventListener('resize',metrics);win.removeEventListener('blur',retirePress);doc.removeEventListener('visibilitychange',retirePress);doc.fonts?.removeEventListener?.('loadingdone',metrics);motion.removeEventListener?.('change',metrics);slot.style.removeProperty('height');delete slot.dataset.heightManaged;delete slot.dataset.promptOverflow;delete slot.dataset.promptReservationUnsupported;delete slot.dataset.promptPrimaryUnderreserved;}};
+ destroy(){disposed=true;pendingContent=null;pressedControl=null;contentHeightOwner=null;contentHeightFloor=0;if(frame!==null)win.cancelAnimationFrame(frame);animation?.cancel();resize.disconnect();mutations.disconnect();doc.removeEventListener('pointerdown',starts,true);doc.removeEventListener('keydown',starts,true);for(const type of ['pointerup','pointercancel','keyup'])doc.removeEventListener(type,ends,true);win.removeEventListener('resize',metrics);win.removeEventListener('blur',retirePress);doc.removeEventListener('visibilitychange',retirePress);doc.fonts?.removeEventListener?.('loadingdone',metrics);motion.removeEventListener?.('change',metrics);slot.style.removeProperty('height');delete slot.dataset.heightManaged;delete slot.dataset.promptOverflow;delete slot.dataset.promptReservationUnsupported;delete slot.dataset.promptPrimaryUnderreserved;}};
 }
