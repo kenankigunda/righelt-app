@@ -117,6 +117,7 @@ body {display:flow-root;}
   justify-content:flex-end;
 }
 .previous-turn-key-host[hidden] {display:none;}
+.board-message-live:has(> .previous-turn-key-host:not([hidden])) {padding-block-end:calc(var(--board-action-hit-inset) + 8px);}
 .previous-turn-key {
   display:inline-flex;
   min-height:44px;
@@ -126,17 +127,20 @@ body {display:flow-root;}
   padding:0;
   border:0;
   background:transparent;
-  color:var(--previous-turn-color);
+  color:color-mix(in srgb,var(--previous-turn-color) 95%,white);
   font:inherit;
+  font-weight:400;
   line-height:1.5;
   text-align:left;
   cursor:pointer;
 }
 .previous-turn-key > span {overflow-wrap:anywhere;}
 .previous-turn-key:focus-visible {outline:2px solid var(--ink);outline-offset:2px;}
-#app[data-hover-capability="hover"] .previous-turn-key:not([data-hover-retired="true"]):hover > span,
-.previous-turn-key:is(:focus-visible,[aria-pressed="true"]) > span {text-decoration:underline;text-underline-offset:.18em;}
-@media(forced-colors:active){.previous-turn-key{color:ButtonText;}.previous-turn-key:focus-visible{outline-color:Highlight;}}
+html[data-hover-capability="hover"] .previous-turn-key:not([data-hover-retired="true"]):hover,
+.previous-turn-key:is(:focus-visible,[aria-pressed="true"]) {color:var(--previous-turn-color);}
+html[data-hover-capability="hover"] .previous-turn-key:not([data-hover-retired="true"]):hover .previous-turn-key-swatch,
+.previous-turn-key:is(:focus-visible,[aria-pressed="true"]) .previous-turn-key-swatch {outline:2px solid var(--previous-turn-color);outline-offset:-3px;}
+@media(forced-colors:active){.previous-turn-key{color:ButtonText;}.previous-turn-key:focus-visible{outline-color:Highlight;}html[data-hover-capability="hover"] .previous-turn-key:not([data-hover-retired="true"]):hover,.previous-turn-key:is(:focus-visible,[aria-pressed="true"]){color:LinkText;}.previous-turn-key-swatch{outline-color:Highlight!important;}}
 .history-inline-preview { width:min(100%, 360px); margin:8px auto; pointer-events:none; }
 .history-inline-preview .mini-board-preview-surface { width:100%; }
 .computer-recovery-area:empty { display:none; }
