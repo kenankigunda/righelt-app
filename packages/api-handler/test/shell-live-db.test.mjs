@@ -135,6 +135,20 @@ test("inspection snapshot is additive, round-trips when valid, and invalid legac
   assert.equal(projection.game.moves[1].inspectionSnapshot,undefined);
 });
 
+test("destruction presentation metadata round-trips only when its additive values are valid", async () => {
+  const record={position:{row:3,col:6},ownerSeat:"p1",supplied:false,commanded:false,reason:"loss_of_supply"};
+  const valid={...modernMoveWithDestroyedPieces([{...record,removalPhase:"turn_settlement",causalMoveId:"cut-1"}]),moveId:"valid-attribution"};
+  const invalid={...modernMoveWithDestroyedPieces([{...record,removalPhase:"later",causalMoveId:""}]),moveId:"invalid-attribution"};
+  const env=makeEnv(),game=makeGameWithMoves([valid,invalid]);
+  await persistGameState(env,game,1);
+  const projection=await loadGameProjection(env,game.id);
+  assert.equal(projection.kind,"ok");
+  assert.equal(projection.game.moves[0].destroyedPieces[0].removalPhase,"turn_settlement");
+  assert.equal(projection.game.moves[0].destroyedPieces[0].causalMoveId,"cut-1");
+  assert.equal(projection.game.moves[1].destroyedPieces[0].removalPhase,undefined);
+  assert.equal(projection.game.moves[1].destroyedPieces[0].causalMoveId,undefined);
+});
+
 test("U-09c: normalizeMoves — multiple destroyedPieces records preserved exactly", async () => {
   const destroyedPieces = [
     { position: { row: 3, col: 6 }, ownerSeat: "p1", reason: "commander_unsupplied" },

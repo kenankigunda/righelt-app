@@ -661,7 +661,29 @@ const normalizeMoves = (value: unknown, mismatches: PersistedGameMismatch[]): Li
         activeMoveCounter += 1;
       }
       const destroyedPieces: DestroyedPieceRecord[] = Array.isArray(move.destroyedPieces)
-        ? (move.destroyedPieces as DestroyedPieceRecord[])
+        ? move.destroyedPieces.map((record, recordIndex) => {
+            if (!isRecord(record)) return record as DestroyedPieceRecord;
+            const { removalPhase, causalMoveId, ...persistedRecord } = record;
+            const validPhase = removalPhase === "immediate" || removalPhase === "turn_settlement"
+              ? removalPhase
+              : undefined;
+            const validCausalMoveId = typeof causalMoveId === "string" && causalMoveId.length > 0
+              ? causalMoveId
+              : undefined;
+            if (removalPhase !== undefined && validPhase === undefined) {
+              recordMismatch(mismatches, `moves[${index}].destroyedPieces[${recordIndex}].removalPhase`,
+                '"immediate" | "turn_settlement"', removalPhase, "dropped_invalid_removal_phase");
+            }
+            if (causalMoveId !== undefined && validCausalMoveId === undefined) {
+              recordMismatch(mismatches, `moves[${index}].destroyedPieces[${recordIndex}].causalMoveId`,
+                "non-empty string", causalMoveId, "dropped_invalid_causal_move_id");
+            }
+            return {
+              ...persistedRecord,
+              ...(validPhase ? { removalPhase: validPhase } : {}),
+              ...(validCausalMoveId ? { causalMoveId: validCausalMoveId } : {}),
+            } as DestroyedPieceRecord;
+          })
         : [];
       if (!Array.isArray(move.destroyedPieces)) {
         recordMismatch(

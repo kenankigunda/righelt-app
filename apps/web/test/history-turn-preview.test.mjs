@@ -69,6 +69,18 @@ test('causal move inspection keeps the casualty present while completed turn ins
  assert.deepEqual(presentationDestroyedPiecesForMove(close,[cut,close]),[]);
 });
 
+test('partial retained context keeps unresolved causal destruction on its durable removal move',()=>{
+ const close=move(3,'move',{row:2,col:1},{row:2,col:2});
+ close.destroyedPieces=[{pieceId:'casualty',position:{row:4,col:4},ownerSeat:'p2',reason:'loss_of_supply',
+  removalPhase:'turn_settlement',causalMoveId:'unavailable-cut'}];
+ assert.deepEqual(presentationDestroyedPiecesForMove(close,[close]),close.destroyedPieces);
+
+ const cut=move(0,'project',{row:1,col:1},{row:1,col:2});
+ cut.clientCommandId='unavailable-cut';
+ assert.deepEqual(presentationDestroyedPiecesForMove(cut,[cut,close]),close.destroyedPieces);
+ assert.deepEqual(presentationDestroyedPiecesForMove(close,[cut,close]),[]);
+});
+
 
 test('History opts into endpoint roles while replay and live summary callers retain their appearance',()=>{
  const a={row:2,col:2},b={row:2,col:3},c={row:3,col:3};

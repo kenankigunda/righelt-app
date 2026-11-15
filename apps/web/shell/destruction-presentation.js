@@ -2,8 +2,10 @@ const active = moves => (moves ?? []).filter(move => move && move.undone !== tru
 
 /** Redistribute destruction evidence for narration only; durable records stay on their removal move. */
 export const presentationDestroyedPiecesForMove = (move, moves = []) => {
-  const records=active(moves).flatMap(owner => (owner.destroyedPieces ?? [])
-    .filter(record => record.causalMoveId
+  const context=active(moves);
+  const availableMoveIds=new Set(context.flatMap(entry=>[entry.moveId,entry.clientCommandId].filter(Boolean)));
+  const records=context.flatMap(owner => (owner.destroyedPieces ?? [])
+    .filter(record => availableMoveIds.has(record.causalMoveId)
       ? record.causalMoveId === move?.clientCommandId || record.causalMoveId === move?.moveId
       : owner.moveId === move?.moveId)
     .map(record=>[
