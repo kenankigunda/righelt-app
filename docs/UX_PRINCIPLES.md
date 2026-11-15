@@ -47,7 +47,11 @@ External references that informed these principles include Apple Human Interface
 ## Approachable Copy Principle
 
 - Write all user-facing text as if speaking to a first-time player who just wants to play. Technical accuracy is not an excuse for jargon.
-- Prefer showing state through UI treatment (color, position, icons, visual hierarchy) over telling the player about state in text. If the UI already communicates something, the text is redundant — remove it.
+- Prefer interaction design, position, icons and visual hierarchy to explain routine interface states. Remove neutral copy that merely repeats an evident state or a stronger message. Preserve meaningful status, action, authority, error, recovery and accessibility context. Color or animation alone cannot carry essential meaning.
+- Friendly copy and brand atmosphere are useful product content. Keep all three Home lines: "Take your seat", "Start something new", and "A familiar rival, or a new challenge? You decide." Keep "Link copied! Ready to share." Brevity alone is not a reason to remove warmth.
+- Judge copy in context. "Game finished" above the result heading is redundant. A finish notification during deliberate History review communicates a new event and must retain the approved result information. Keep useful screen-reader context without repeating the focused heading.
+- Keep the current "Preparing your opponent" to "Ready to play" sequence and the friendly "Your game is ready" acknowledgement. T-190 separately explores preparation inside the Play button, transitioning smoothly to "Play <Computer>" after confirmed readiness. Do not remove readiness feedback before its replacement is delivered.
+- Suppress idle "Latest: Ready", not meaningful Latest events. Preserve approved causes, player identity, required instructions and useful empty states. For changed surfaces, review both removals and the approved copy that must remain. The backlog T-191 handoff records the bounded cleanup and T-188/T-130/T-190 ownership.
 - Use natural, first-person phrasing ("You are Player 1") over label-colon-value patterns ("Role: Player 1"). The player is a person in a game, not a row in a database.
 - Hide empty optional lists. Explicit audience state is an exception: Viewers uses None when empty, as specified in the [Players contract](ai/PLAYERS_CARD_CONTRACT.md).
 - Error and recovery messages should describe what is happening for the player, not what the system is doing internally. Avoid words like "sync," "optimistic," "authoritative," "server," "route," "snapshot," or "live state" in routine messages. Technical details belong in the optional, privacy-filtered [Details disclosure](ai/GAME_RECOVERY.md#presentation-and-diagnostics) and debug report, rather than the main message.
@@ -55,7 +59,7 @@ External references that informed these principles include Apple Human Interface
 - Section headings should feel like natural wayfinding, not database table names. Use Players with a subordinate Viewers section, as specified in the [Players contract](ai/PLAYERS_CARD_CONTRACT.md).
 - Use human-readable names in player-facing controls and messages. Do not substitute raw device or operation IDs when a friendly name is unavailable. Optional diagnostic reports may include only the identifiers allowed by the recovery privacy contract.
 
-Examples illustrating the spirit:
+Examples illustrating the spirit, not authorization to remove established role, turn or recovery information. Apply current surface contracts and explicit approvals before changing existing copy:
 
 | Before | After | Why |
 |---|---|---|
@@ -263,7 +267,7 @@ Distinct physical cues: light lift/tick for selection; softer tick for preview; 
 - Artwork belongs to its component: use true transparent negative space or an exactly matched plain surface, preserve intentional crisp edges, and avoid rectangular backgrounds or feathered disguises. Apply this consistently across every opponent, scene and choice illustration.
 - Use angular clipped corners prominently on cards and sections, selectively accented in red/blue. Colored accents meet the component edges. Soft primary buttons and restrained modal surfaces provide contrast without nested boxes.
 - The aligned background grid recedes with distance from the logo. Preserve the approved wordmark itself.
-- Remove implementation language and raw identifiers from normal play. Keep only copy that helps players choose, understand waiting, or recover. Explain consequences, not internal mechanisms.
+- Remove implementation language and raw identifiers from normal play. Keep copy that helps players choose, understand waiting or recover, or adds friendly brand atmosphere. Explain consequences, not internal mechanisms.
 - Audio follows the visible action immediately, including local placement before server acknowledgement. Deduplicate by action identity; rejection remains visibly recoverable. Preserve deliberate mute, silent replay/background behavior, and silent hover. Built-in-speaker timing is the review baseline.
 - Invitations state their recipient purpose: red/blue for an open playing seat, purple for viewing. Merge players and invitation actions. Friend creation opens a dismissible Invite modal; copy confirms success without closing it. Recipient intent never replaces server authorization.
 - Introduction scenes rotate every three seconds; hover/focus stay silent and do not pause, manual carets or deliberate keyboard actions stop cycling for the visit, and reduced motion stays manual.

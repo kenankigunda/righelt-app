@@ -10,6 +10,8 @@ If implementation behavior conflicts with this spec, this spec wins.
 
 Requirements state intended behavior. Approval, implementation, merge and deployment are separate facts. The [decision index](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index) identifies final approvals and superseded guidance. It does not certify a deployed build. [History presentation](ai/HISTORY_PRESENTATION.md), [recovery](ai/GAME_RECOVERY.md), and [the rules spec](RIGHELT_RULES_SPEC.md) own their detailed contracts.
 
+For new and existing surfaces, apply the [Approachable Copy Principle](UX_PRINCIPLES.md#approachable-copy-principle): remove neutral repetition of evident interface states while preserving friendly brand atmosphere and meaningful action, status, authority, error, recovery and accessible context. Copy cleanup must preserve approved keep examples and surface-specific contracts. T-191 records the approved cleanup, with result-card removal owned by T-188, invitations by T-130 and future Play-button preparation by T-190.
+
 ## 1. Core Concepts
 
 - `Game`: A single Righelt match and its associated participants and move history.

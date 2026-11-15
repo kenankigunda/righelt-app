@@ -25,3 +25,7 @@ Follow `docs/ai/VALIDATION_EVIDENCE_POLICY.md` in the pinned released tools. Ins
 ## Durable behavioral proof
 
 Follow the durable testing standard in `docs/ai/TESTING_STRATEGY.md` in the pinned released tools. Test executed production behavior with independent expected answers. Migrate new and affected source-dependent assertions without expanding the frozen legacy inventory. Show targeted negative proof for migrated regressions, retain focused app wiring proof, and use native browser proof for native contracts. Run `check:test-durability` before slower checks. Leave unrelated legacy migration to T-136.
+
+## Product copy
+
+Implement user-facing copy under the [Approachable Copy Principle](../../docs/UX_PRINCIPLES.md#approachable-copy-principle). Remove neutral repetition of evident interface states while preserving friendly atmosphere and meaningful action, authority, error, recovery and accessible context. Record both removal and keep examples for affected existing surfaces. Follow the [copy regression guidance](../../docs/ai/UX_VALIDATION_WORKFLOW.md#copy-review-and-regression-scope) using proportionate executed-behavior proof. T-191 owns the approved cleanup, with T-188/T-130/T-190 retaining their distinct scopes.
