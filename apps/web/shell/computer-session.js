@@ -459,7 +459,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   };
   return {
     tick, analyze, cancelAnalysis, getUndoWaitAdmission,
-    withMutation: (work, { undoAdmission = null } = {}) => {
+    withMutation: (work, { completedUndo = false, undoAdmission = null } = {}) => {
       if (undoAdmission) {
         const admission = getUndoWaitAdmission(undoAdmission.gameId);
         if (!admission || !sameOwnerScope(undoAdmission, current()) || admission.leaseWork !== undoAdmission.leaseWork
@@ -474,13 +474,20 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
         let context = current();
         const mayMutate = value => sameOwnerScope(ownerScope(original), value) && value.authenticated && value.game?.computer?.ownerId === value.transport.getIdentityId();
         if (!mayMutate(context)) return false;
+        // A completed game cannot hold or acquire the ongoing-game computer
+        // lease. History Undo is the one explicit mutation that may reopen it,
+        // so admit only the exact terminal revision and control generation the
+        // owner activated. The durable revert command remains authoritative;
+        // this path does not change the terminal projection locally.
+        const completedUndoIsCurrent = completedUndo && isCompletedGame(original.game)
+          && isCompletedGame(context.game) && context.key === original.key;
         if (undoAdmission) {
           const game = context.transport.getGameViewModel(context.game.id);
           if (game?.sharedMutationsBlocked || game?.gameplayRevision !== undoAdmission.renewal.revision
             || game?.computer?.generation !== undoAdmission.renewal.generation || !ownLease(context.game)) return false;
         }
         try {
-          if (!ownLease(context.game)) {
+          if (!completedUndoIsCurrent && !ownLease(context.game)) {
             // Undo is explicit owner intent. Claim its serialized lease before
             // pausing, while ordinary ticks continue to respect another device.
             const foreignLease = context.game.computer.lease?.expiresAt > clock();
