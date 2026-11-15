@@ -45,16 +45,16 @@ test('replay separates causal move narration from the later authoritative remova
 });
 
 function fixture({manual=true,throwRender=false,withTokens=false,baseTransform='none',holdFinal=false,automatic=false,blocksInput=true}={}) {
-  const handlers=new Map(),events=[],renders=[],timers=new Map(),motions=[],ghosts=[]; let nextTimer=0,destroyed=0,tokens=[];
+  const handlers=new Map(),events=[],renders=[],timers=new Map(),motions=[],ghosts=[],displayed=[]; let nextTimer=0,destroyed=0,tokens=[];
   const doc={hidden:false,addEventListener:(key,fn)=>handlers.set(key,fn),removeEventListener:key=>handlers.delete(key),defaultView:{getComputedStyle:()=>({transform:baseTransform}),addEventListener:(key,fn)=>handlers.set(key,fn),removeEventListener:key=>handlers.delete(key)}};
   const element=()=>({ownerDocument:doc,style:{},children:[],setAttribute(){},addEventListener(){},appendChild(child){child.parent=this;this.children.push(child);},getBoundingClientRect:()=>({left:0,top:0}),querySelector(){return null;},querySelectorAll(){return tokens;},remove(){this.removed=true;}});
   doc.createElement=element; const rootEl=element();
   const updateTokens = frame => {
     if (!withTokens) return;
-    tokens=(frame.snapshot.pieces ?? []).map(piece=>({getAttribute:()=>piece.id,classList:{contains:()=>false,add(){}},getBoundingClientRect:()=>({left:piece.position.col*10,top:piece.position.row*10,width:10,height:10}),cloneNode:()=>{const ghost={style:{transform:baseTransform},setAttribute(){},remove(){},animate:()=>({cancel(){},finished:Promise.resolve()})};ghosts.push(ghost);return ghost;},animate:frames=>{motions.push({id:piece.id,frames});return {cancel(){},finished:Promise.resolve()};}}));
+    tokens=(frame.snapshot.pieces ?? []).map(piece=>({getAttribute:()=>piece.id,classList:{contains:()=>false,add(){}},getBoundingClientRect:()=>({left:piece.position.col*10,top:piece.position.row*10,width:10,height:10}),cloneNode:()=>{const ghost={style:{transform:baseTransform},setAttribute(){},remove(){},animate:()=>({cancel(){},finished:Promise.resolve()})};ghosts.push(ghost);return ghost;},animate:(frames,options)=>{motions.push({id:piece.id,frames,options});return {cancel(){},finished:Promise.resolve()};}}));
   };
-  const replay=createComputerReplay({rootEl,holdFinal,automatic,blocksInput,onChange:status=>events.push(status),onFinish:event=>events.push(event),reducedMotion:()=>manual,createPreview:({preview})=>{if(throwRender)throw Error('render failed');renders.push(preview);updateTokens(preview);return {update:frame=>{renders.push(frame);updateTokens(frame);},destroy:()=>{destroyed++;}};},setTimer:(fn,ms)=>{timers.set(++nextTimer,{fn,ms});return nextTimer;},clearTimer:id=>timers.delete(id)});
-  return {replay,rootEl,doc,handlers,events,renders,timers,motions,ghosts,get destroyed(){return destroyed;},tick(){const [id,timer]=timers.entries().next().value;timers.delete(id);timer.fn();}};
+  const replay=createComputerReplay({rootEl,holdFinal,automatic,blocksInput,onChange:status=>events.push(status),onFinish:event=>events.push(event),onFrame:frame=>displayed.push(frame),reducedMotion:()=>manual,createPreview:({preview})=>{if(throwRender)throw Error('render failed');renders.push(preview);updateTokens(preview);return {update:frame=>{renders.push(frame);updateTokens(frame);},destroy:()=>{destroyed++;}};},setTimer:(fn,ms)=>{timers.set(++nextTimer,{fn,ms});return nextTimer;},clearTimer:id=>timers.delete(id)});
+  return {replay,rootEl,doc,handlers,events,renders,timers,motions,ghosts,displayed,get destroyed(){return destroyed;},tick(){const [id,timer]=timers.entries().next().value;timers.delete(id);timer.fn();}};
 }
 
 test('reduced motion advances manually and owns no gameplay interfaces',async()=>{
@@ -155,12 +155,46 @@ test('automatic confirmed playback respects reduced motion without requiring man
 });
 
 test('automatic live playback shows its first confirmed frame without a lead wait and owns only meaningful motion time',async()=>{
- const f=fixture({manual:false,automatic:true}),input=payload();input.frames=input.frames.slice(0,1);
+ const f=fixture({manual:false,automatic:true,withTokens:true}),input=payload();input.frames=input.frames.slice(0,1);
  const work=f.replay.play(input);await Promise.resolve();
  assert.equal(f.replay.snapshot().step,1,'the confirmed frame is visible immediately');
- assert.deepEqual([...f.timers.values()].map(timer=>timer.ms),[520],'there is no separate lead or trailing hold');
+ assert.deepEqual([...f.timers.values()].map(timer=>timer.ms),[120],'there is no separate lead or trailing hold');
+ assert.equal(f.motions[0].options.duration,120,'the visible Web Animation uses the calibrated duration');
  f.tick();await work;
  assert.equal(f.replay.snapshot().playing,false);assert.equal(f.timers.size,0);
+});
+
+test('automatic live playback renders and publishes a no-motion action without owning a timer',async()=>{
+ const f=fixture({manual:false,automatic:true,withTokens:true}),still=state(3);
+ const frame={decisionId:'pass',before:still,after:structuredClone(still),action:{type:'pass'},recordedMove:{moveId:'pass'}};
+ await f.replay.play({gameId:'game',frames:[frame]});
+ assert.equal(f.timers.size,0);
+ assert.deepEqual(f.displayed.map(item=>item.decisionId),['pass'],'the cue/history publication callback still runs');
+ assert.equal(f.renders.some(item=>item.previewKey?.endsWith(':after')),true,'the acknowledged frame still renders');
+ assert.equal(f.events.at(-1).reason,'completed');
+});
+
+test('automatic live playback skips only an empty movement wait before animated settlement',async()=>{
+ const f=fixture({manual:false,automatic:true,withTokens:true}),still=state(3);
+ const work=f.replay.play({gameId:'game',frames:[{decisionId:'end',before:still,after:structuredClone(still),settledAfter:{pieces:[]},action:{type:'end_turn'}}]});
+ await Promise.resolve();await Promise.resolve();
+ assert.deepEqual([...f.timers.values()].map(timer=>timer.ms),[120],'only the removal animation owns time');
+ assert.equal(f.displayed.length,2,'both acknowledged movement and settlement stages publish');
+ assert.equal(f.ghosts.length,1,'settlement removal is still animated');
+ f.tick();await work;
+});
+
+test('automatic live playback preserves movement before settlement and times each visible stage',async()=>{
+ const f=fixture({manual:false,automatic:true,withTokens:true});
+ const work=f.replay.play({gameId:'game',frames:[{decisionId:'move-and-remove',before:state(3),after:state(4),settledAfter:{pieces:[]},action:{type:'move'}}]});
+ await Promise.resolve();
+ assert.deepEqual([...f.timers.values()].map(timer=>timer.ms),[120]);
+ assert.equal(f.ghosts.length,0,'settlement has not started during movement');
+ f.tick();await Promise.resolve();
+ assert.deepEqual([...f.timers.values()].map(timer=>timer.ms),[120]);
+ assert.equal(f.ghosts.length,1,'settlement starts only after movement completes');
+ assert.equal(f.displayed.length,2);
+ f.tick();await work;
 });
 
 test('requested replay keeps its deliberate lead and between-frame pacing',async()=>{
