@@ -40,6 +40,7 @@
 !tools/ai-benchmark/search-proof.mjs
 !tools/hosted-compute/
 !tools/hosted-compute/worker.mjs
+!tools/hosted-compute/runtime.mjs
 !tools/hosted-compute/client.mjs
 !tools/hosted-compute/result.mjs
 !tools/hosted-compute/policy.mjs
