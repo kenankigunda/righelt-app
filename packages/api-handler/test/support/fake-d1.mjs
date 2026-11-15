@@ -89,6 +89,20 @@ export const createFakeD1 = () => {
       executeRun() {
         writes.push({ query: normalized, params: [...params] });
 
+        if (normalized.startsWith("INSERT INTO account_transaction_guards") && normalized.includes("FROM live_games WHERE game_id=?2 AND event_seq=?3")) {
+          const [, gameId, eventSeq, revision, ownership] = params;
+          const row = shellGames.get(gameId);
+          const actualOwnership = row?.ownership_mode ?? (row ? JSON.parse(row.state_json).ownershipMode : null) ?? "legacy_guest";
+          if (!row || row.event_seq !== eventSeq || row.gameplay_revision !== revision || actualOwnership !== ownership) throw Error("CHECK constraint failed: valid = 1");
+          return { success: true };
+        }
+        if (normalized.startsWith("DELETE FROM account_transaction_guards WHERE guard_id=?1")) return { success: true };
+        if (normalized === "UPDATE live_games SET commit_base_event_seq=NULL WHERE game_id=?1") {
+          const row = shellGames.get(params[0]);
+          if (row) row.commit_base_event_seq = null;
+          return { success: true };
+        }
+
         if (normalized.startsWith('INSERT INTO live_decision_archive')) {
           const [game_id, decision_id, event_seq, event_ordinal, gameplay_revision, payload_json] = params, key = JSON.stringify([game_id, decision_id]);
           if (archive.has(key)) throw new Error('UNIQUE constraint failed: live_decision_archive');
