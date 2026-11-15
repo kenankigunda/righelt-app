@@ -19,6 +19,7 @@ const undoHarness = () => {
   const game = { gameplayRevision: 1, moves: [{moveId:'move',undone:false}], computer: {manual:true}, canControlComputer:true };
   const context = vm.createContext({
     pendingUndoAdmissions:new Map(),applySharedMutationGates:()=>{},
+    isCompletedGame:()=>false,
     action:'undo-last-move',actionEl:{getAttribute:name=>name==='data-game-id'?'original':'move'},
     account:{snapshot:()=>({generation:context.generation})},generation:1,
     viewedGame:'original',getCurrentViewedGameId:()=>context.viewedGame,
@@ -94,6 +95,7 @@ for (const boundary of ['mutation', 'pause', 'committed', 'acquire']) {
       const transport = { getGameViewModel: () => game, requestRevertToMove: () => { calls.push('revert'); return { committed: wait('committed') }; } };
       const context = vm.createContext({
         pendingUndoAdmissions:new Map(),applySharedMutationGates:()=>{},
+        isCompletedGame:()=>false,
         action: 'undo-last-move', actionEl: { getAttribute: name => name === 'data-game-id' ? 'original' : 'move' },
         transport, account: { snapshot: () => ({ generation: context.generation }) }, generation: 1,
         viewedGame: 'original', getCurrentViewedGameId: () => context.viewedGame,

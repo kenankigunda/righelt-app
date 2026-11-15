@@ -947,6 +947,42 @@ for(const status of ['p1_win','p2_win','draw'])test(`completed ${status} starts 
  for(const action of ['retry','pause','resume','step','switch','takeover','manual'])await f.session.action(action);
  assert.deepEqual(f.controls,[]);
 });
+for(const status of ['p1_win','p2_win','draw'])test(`explicit History Undo reopens completed ${status} without fabricating computer authority`,async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());
+ const terminalOutcome={commit:{eventSeq:9,gameplayRevision:0,clientCommandId:'v2:terminal'}};
+ f.game().board.state.outcome={status};f.game().terminalOutcome=terminalOutcome;
+ await f.session.tick();let mutations=0;
+ const reverted=await f.session.withMutation(async()=>{
+  mutations++;
+  assert.deepEqual(f.game().terminalOutcome,terminalOutcome,'terminal provenance remains authoritative until the durable Undo settles');
+  await f.session.action('pause');
+  f.game().board.state=createInitialState();delete f.game().terminalOutcome;
+  f.game().gameplayRevision++;f.game().computer.generation++;f.game().computer.lease=null;
+  return true;
+ },{completedUndo:true});
+ assert.equal(reverted,true);assert.equal(mutations,1);assert.deepEqual(f.controls,[],'completed Undo does not claim an impossible ongoing-game lease');
+ await f.session.tick();await f.session.action('resume');
+ assert.deepEqual(f.controls.map(request=>request.action),['acquire','resume']);
+ assert.equal(f.game().board.state.outcome.status,'ongoing');assert.equal(f.game().computer.paused,false);
+});
+test('completed History Undo retains its owner fence',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());f.game().board.state.outcome={status:'p1_win'};
+ let mutations=0;f.game().computer.ownerId='another-owner';
+ assert.equal(await f.session.withMutation(async()=>{mutations++;},{completedUndo:true}),false);
+ assert.equal(mutations,0);assert.deepEqual(f.controls,[]);
+});
+test('completed History Undo cannot cross a newer terminal revision while control settles',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());let release,started,mutations=0;
+ const held=new Promise(resolve=>{release=resolve;}),sent=new Promise(resolve=>{started=resolve;});
+ const control=f.transport.computerControl;
+ f.transport.computerControl=async(...args)=>{if(args[1].action==='acquire'){started();await held;}return control(...args);};
+ const acquisition=f.session.tick();await sent;
+ f.game().board.state.outcome={status:'draw'};
+ const mutation=f.session.withMutation(async()=>{mutations++;},{completedUndo:true});
+ f.game().gameplayRevision++;release();await acquisition;
+ await assert.rejects(mutation,/computer_control_changed/);
+ assert.equal(mutations,0);assert.deepEqual(f.controls.map(request=>request.action),['acquire']);
+});
 test('completion after acquiring control stops renewal without issuing a release command',async t=>{
  const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();assert.equal(f.controls.length,1);
  f.game().board.state.outcome={status:'p1_win'};f.setTime(20000);await f.session.tick();const cancellations=f.cancellations();

@@ -4725,7 +4725,7 @@ appEl.addEventListener("click", async (event) => {
       // Keep automatic control work fenced until the undo response is applied;
       // the server drops its lease before that acknowledgement reaches us.
       let reverted;
-      try { reverted = computerUndo ? await computerSession.withMutation(revert, { undoAdmission }) : await revert(); }
+      try { reverted = computerUndo ? await computerSession.withMutation(revert, { completedUndo: isCompletedGame(game), undoAdmission }) : await revert(); }
       catch {
         viewingIntent.cancelUndo(gameId, undoToken);
         if (undoScopeIsCurrent()) setUndoRequestFeedback(gameId, "Undo could not finish");
