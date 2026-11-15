@@ -1126,6 +1126,28 @@ test('next calculation may overlap saving but only matching acknowledged authori
  f.game().board.state=expected;f.game().gameplayRevision=1;await f.session.tick();acknowledge();await first;await f.session.tick();
  assert.equal(f.computations(),2);assert.equal(f.saved.length,2);assert.equal(admissions,2);assert.deepEqual(f.saved[1].attempt.state,expected);assert.notEqual(f.saved[1].attemptId,f.saved[0].attemptId);
 });
+test('authoritative parent settlement wakes the next eligible admission once without an explicit tick',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());f.game().computer.seats.p2='babs';
+ let acknowledge,releaseRenewal,renewalStarted,admissions=0;
+ const receipt=new Promise(resolve=>acknowledge=resolve),renewalGate=new Promise(resolve=>releaseRenewal=resolve),renewalSent=new Promise(resolve=>renewalStarted=resolve),expected=structuredClone(f.game().board.state);expected.sideToMove='P2';expected.turnIndex=1;
+ const control=f.transport.computerControl;
+ f.transport.computerControl=async(id,request)=>{if(request.action==='renew'){renewalStarted();await renewalGate;await control(id,request);return {ok:true};}return control(id,request);};
+ f.transport.applyGameAction=async()=>({committed:++admissions===1?receipt:Promise.resolve(),...(admissions===1?{state:expected}:{})});
+ await f.session.tick();const first=f.session.tick();
+ assert.equal(f.computations(),1);
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.computations(),2,'speculation may prepare the exact next position while the first receipt is pending');
+ f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await new Promise(resolve=>setImmediate(resolve));
+ f.setTime(100+COMPUTER_TIMING.renewAfterMs+1);await f.session.tick();await renewalSent;
+ f.game().board.state=expected;f.game().gameplayRevision=1;
+ releaseRenewal();acknowledge();
+ await first;await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.controls.filter(value=>value.action==='renew').length,1);
+ assert.equal(f.computations(),2,'concurrent successful wakes cannot duplicate the prepared next calculation');
+ assert.equal(f.saved.length,2,'concurrent successful wakes cannot duplicate evidence');
+ assert.equal(admissions,2,'the authoritative next command is admitted once without an interval or explicit tick');
+ assert.deepEqual(f.saved[1].attempt.state,expected);
+});
 for(const change of ['position','generation','model','account'])test(`speculation is discarded on mismatched ${change} before another command is admitted`,async t=>{
  const f=fixture();t.after(()=>f.session.destroy());f.game().computer.seats.p2='babs';await f.session.tick();
  let acknowledge,admissions=0;const expected=structuredClone(f.game().board.state);expected.sideToMove='P2';expected.turnIndex=1;
