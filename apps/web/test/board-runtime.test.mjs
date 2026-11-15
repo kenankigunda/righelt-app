@@ -3522,6 +3522,108 @@ test("U-11: history destruction transition settles into overlay state and clears
   }
 });
 
+test("deliberate completed-turn selection animates every settlement casualty together and settles them static", async () => {
+  const renderCalls = [];
+  const scheduledTimers = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalDateNow = Date.now;
+  let now = 7000;
+  globalThis.setTimeout = (fn, delay) => { const handle = { fn, delay }; scheduledTimers.push(handle); return handle; };
+  globalThis.clearTimeout = () => {};
+  Date.now = () => now;
+  try {
+    const runtime = createBoardRuntime({
+      boardAdapter: { mount: noop, render: payload => renderCalls.push(payload), getSelectedPieceSummary: () => null, getPieceById: () => null, getPieceAt: () => null,
+        nextSelectionForCell: () => ({selection:{selectedPieceId:null,source:null,target:null},nextActionType:'pass'}) },
+      host: { applyAction: async () => ({accepted:false}), loadInitialState: async () => ({state:null,legalActions:[]}), loadLegalActions: async () => ({state:null,legalActions:[]}), loadPieceMoves: async () => ({state:null,actions:[],previewActions:[]}) },
+    });
+    runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null,boardTurnIndicatorEl:null});
+    const records = Array.from({length:9},(_,index)=>({row:index,col:7,ownerSeat:'p2',kind:'unit',piece:{id:`lost-${index+1}`,owner:'P2',kind:'unit',position:{row:index,col:7}}}));
+    await runtime.loadSnapshot({sideToMove:'P2',turnIndex:64,continuation:null,outcome:{status:'p1_win'},pieces:[]},{
+      legalActions:[],overlayMode:'recorded-turn',destroyedPieces:records,animatedDestroyedPieces:records,staticDestroyedPieces:[],animateHistoryDestruction:true,
+    });
+    const animated = renderCalls.find(payload=>payload.removalEffects?.length===9);
+    assert.ok(animated);
+    assert.deepEqual(animated.removalEffects.map(effect=>effect.piece.id),records.map(record=>record.piece.id));
+    assert.deepEqual(new Set(animated.removalEffects.map(effect=>effect.startedAt)),new Set([7000]));
+    assert.deepEqual(animated.overlay.destroyedPieces,[]);
+    assert.equal(scheduledTimers.length,1);
+    now += scheduledTimers[0].delay;
+    scheduledTimers[0].fn();
+    assert.deepEqual(runtime.getOverlay().destroyedPieces,records);
+    assert.deepEqual(renderCalls.at(-1).removalEffects,[]);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    Date.now = originalDateNow;
+  }
+});
+
+test("quiet completed-turn refresh stays static and does not replay destruction", async () => {
+  const renderCalls = [];
+  const scheduledTimers = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const originalDateNow = Date.now;
+  let now = 8000;
+  globalThis.setTimeout = (fn, delay) => { const handle={fn,delay}; scheduledTimers.push(handle); return handle; };
+  globalThis.clearTimeout = () => {};
+  Date.now = () => now;
+  try {
+    const runtime = createBoardRuntime({boardAdapter:{mount:noop,render:payload=>renderCalls.push(payload),getSelectedPieceSummary:()=>null,getPieceById:()=>null,getPieceAt:()=>null,
+      nextSelectionForCell:()=>({selection:{selectedPieceId:null,source:null,target:null},nextActionType:'pass'})},host:{canInteract:()=>false}});
+    runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null,boardTurnIndicatorEl:null});
+    const record={row:5,col:5,ownerSeat:'p2',kind:'unit',piece:{id:'lost',owner:'P2',kind:'unit',position:{row:5,col:5}}};
+    const snapshot={sideToMove:'P2',turnIndex:64,continuation:null,outcome:{status:'p1_win'},pieces:[]};
+    await runtime.loadSnapshot(snapshot,{legalActions:[],overlayMode:'recorded-turn',destroyedPieces:[record],animatedDestroyedPieces:[record],staticDestroyedPieces:[],animateHistoryDestruction:true});
+    assert.equal(scheduledTimers.length,1);
+    now+=scheduledTimers[0].delay;
+    scheduledTimers[0].fn();
+    const animatedRenderCount=renderCalls.filter(payload=>payload.removalEffects?.length).length;
+    await runtime.loadSnapshot(snapshot,{legalActions:[],overlayMode:'recorded-turn',destroyedPieces:[record],animatedDestroyedPieces:[record],staticDestroyedPieces:[],animateHistoryDestruction:false});
+    assert.equal(scheduledTimers.length,1);
+    assert.equal(renderCalls.filter(payload=>payload.removalEffects?.length).length,animatedRenderCount);
+    assert.deepEqual(renderCalls.at(-1).removalEffects,[]);
+    assert.deepEqual(runtime.getOverlay().destroyedPieces,[record]);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+    Date.now = originalDateNow;
+  }
+});
+
+test("move selection animates immediate removal while settlement casualties remain static", async () => {
+  const renderCalls=[];
+  const scheduledTimers=[];
+  const originalSetTimeout=globalThis.setTimeout;
+  const originalClearTimeout=globalThis.clearTimeout;
+  const originalDateNow=Date.now;
+  let now=9000;
+  globalThis.setTimeout=(fn,delay)=>{const handle={fn,delay};scheduledTimers.push(handle);return handle;};
+  globalThis.clearTimeout=()=>{};
+  Date.now=()=>now;
+  try{
+    const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:payload=>renderCalls.push(payload),getSelectedPieceSummary:()=>null,getPieceById:()=>null,getPieceAt:()=>null,
+      nextSelectionForCell:()=>({selection:{selectedPieceId:null,source:null,target:null},nextActionType:'pass'})},host:{canInteract:()=>false}});
+    runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:null,boardTurnIndicatorEl:null});
+    const immediate={row:3,col:3,ownerSeat:'p2',piece:{id:'immediate',owner:'P2',kind:'unit',position:{row:3,col:3}}};
+    const settlement={row:4,col:4,ownerSeat:'p2',piece:{id:'settlement',owner:'P2',kind:'unit',position:{row:4,col:4}}};
+    await runtime.loadSnapshot({sideToMove:'P1',turnIndex:2,continuation:null,outcome:null,pieces:[]},{legalActions:[],overlayMode:'recorded-action',
+      destroyedPieces:[immediate,settlement],animatedDestroyedPieces:[immediate],staticDestroyedPieces:[settlement],animateHistoryDestruction:true});
+    const animated=renderCalls.find(payload=>payload.removalEffects?.length===1);
+    assert.equal(animated.removalEffects[0].piece.id,'immediate');
+    assert.deepEqual(animated.overlay.destroyedPieces,[settlement]);
+    now+=scheduledTimers[0].delay;
+    scheduledTimers[0].fn();
+    assert.deepEqual(runtime.getOverlay().destroyedPieces,[immediate,settlement]);
+  }finally{
+    globalThis.setTimeout=originalSetTimeout;
+    globalThis.clearTimeout=originalClearTimeout;
+    Date.now=originalDateNow;
+  }
+});
+
 test("reduced motion settles history destruction immediately without a transient effect", async () => {
   const renderCalls = [];
   const scheduledTimers = [];
