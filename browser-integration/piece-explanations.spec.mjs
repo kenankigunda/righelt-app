@@ -140,6 +140,65 @@ for (const width of [320, 390]) test(`selection guidance owns one accessible Boa
   await page.screenshot({path:info.outputPath(`rush-source-${width}-200.png`)});
 });
 
+test('Joined guidance keeps one focus-safe responsive height owner across native modes',async({page,browserName},info)=>{
+  await page.emulateMedia({reducedMotion:'no-preference',forcedColors:'none'});
+  await page.setViewportSize({width:390,height:1000});
+  await page.goto('/browser-integration/support/board-message.html');
+  await page.waitForFunction(()=>window.fixtureReady);
+  await page.evaluate(async()=>{
+    await window.boardFixture.setup('rush',false);
+    const piece={id:'A',owner:'P1',kind:'unit',position:{row:4,col:2},supplied:true,commanded:true,displayCommanded:false};
+    const state={boardSize:10,sideToMove:'P1',turnIndex:0,outcome:{status:'ongoing'},pieces:[piece],continuation:{type:'rush',owner:'P1',rushChainPieceIds:[],rushedPieceIds:[],frozenPieceStatesById:{A:{supplied:true,commanded:false}}}};
+    await window.boardFixture.configure(state,[{type:'end_turn'}],{selectionState:{selectedPieceId:'A',source:{row:4,col:2},target:null}});
+    await document.fonts.ready;
+  });
+  await settledMessage(page);
+  const slot=page.locator('.board-message-slot'),toggle=page.locator('[data-board-message-action="toggle-board-explanation"]'),detail=page.locator('#board-guidance-detail');
+  const collapsed=await measureSemanticGeometry(page);
+  const inline=await toggle.evaluate(button=>{
+    const rect=button.getBoundingClientRect(),pseudo=getComputedStyle(button,'::before');
+    const text=button.previousSibling,range=document.createRange();range.setStart(text,Math.max(0,text.length-5));range.setEnd(text,text.length);
+    const words=range.getBoundingClientRect(),hit={x:rect.left+rect.width/2,y:rect.top+rect.height/2-parseFloat(pseudo.height)/2+1};
+    return {display:getComputedStyle(button).display,parent:button.parentElement.id,baselineDelta:Math.abs(words.bottom-rect.bottom),pseudoHeight:parseFloat(pseudo.height),hit,hitOwns:document.elementFromPoint(hit.x,hit.y)?.closest('[data-board-message-action="toggle-board-explanation"]')===button};
+  });
+  expect(inline).toMatchObject({display:'inline',parent:'preview',hitOwns:true});
+  expect(inline.baselineDelta).toBeLessThanOrEqual(4);expect(inline.pseudoHeight).toBeGreaterThanOrEqual(44);
+  await slot.evaluate(node=>{const animate=node.animate;window.__guidanceAnimations=[];node.animate=function(frames,options){window.__guidanceAnimations.push({frames,options});return Reflect.apply(animate,this,[frames,options]);};});
+  await page.mouse.click(inline.hit.x,inline.hit.y);
+  await expect(toggle).toHaveAttribute('aria-expanded','true');await expect(detail).toBeVisible();
+  await expect.poll(()=>page.evaluate(()=>window.__guidanceAnimations.length)).toBeGreaterThan(0);
+  expect(await page.evaluate(()=>window.__guidanceAnimations.at(-1).options)).toMatchObject({duration:260,easing:'cubic-bezier(.22,.72,.2,1)'});
+  await settledMessage(page);const expanded=await measureSemanticGeometry(page);expect(expanded.slot.height).toBeGreaterThan(collapsed.slot.height);
+  const adjacency=await page.evaluate(()=>{const button=document.querySelector('[data-board-message-action="toggle-board-explanation"]'),detail=document.querySelector('#board-guidance-detail'),preview=document.querySelector('#preview'),style=getComputedStyle(detail);const b=button.getBoundingClientRect(),d=detail.getBoundingClientRect(),p=preview.getBoundingClientRect();return{gap:d.top-b.bottom,margin:parseFloat(style.marginBlockStart),inside:d.left>=p.left&&d.right<=p.right,overflow:document.documentElement.scrollWidth>innerWidth};});
+  expect(adjacency.inside).toBe(true);expect(adjacency.overflow).toBe(false);expect(adjacency.gap).toBeGreaterThanOrEqual(adjacency.margin-.5);expect(adjacency.gap).toBeLessThan(40);
+
+  await toggle.focus();await expect(toggle).toBeFocused();
+  await toggle.evaluate(button=>{button.click();button.click();button.click();});
+  await expect(toggle).toHaveAttribute('aria-expanded','false');await expect(toggle).toBeFocused();
+  await settledMessage(page);
+  await toggle.evaluate(button=>{button.click();button.click();button.click();});
+  await expect(toggle).toHaveAttribute('aria-expanded','true');await expect(toggle).toBeFocused();await settledMessage(page);
+
+  await page.setViewportSize({width:1200,height:1000});
+  await page.evaluate(async()=>{document.documentElement.dir='rtl';document.documentElement.style.fontFamily='serif';await document.fonts.ready;});
+  await settledMessage(page);await expect(detail).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  const desktop=await measureSemanticGeometry(page);expect(desktop.slot.height).toBeGreaterThan(0);
+  await page.emulateMedia({forcedColors:'active'});await page.evaluate(()=>{document.body.tabIndex=-1;document.body.focus();document.body.removeAttribute('tabindex');});await page.keyboard.press(browserName==='webkit'?'Alt+Tab':'Tab');await expect(toggle).toBeFocused();
+  const forced=await page.evaluate(()=>{const button=document.activeElement,detail=document.querySelector('#board-guidance-detail'),slot=button.closest('.board-message-slot'),b=button.getBoundingClientRect(),s=slot.getBoundingClientRect(),style=getComputedStyle(button),ring=parseFloat(style.outlineWidth)+Math.max(0,parseFloat(style.outlineOffset));return{focused:button.matches('[data-board-message-action="toggle-board-explanation"]'),outline:style.outlineStyle,border:getComputedStyle(detail).borderTopStyle,fit:b.top-ring>=s.top&&b.bottom+ring<=s.bottom};});
+  expect(forced).toMatchObject({focused:true,fit:true});expect(forced.outline).not.toBe('none');expect(forced.border).not.toBe('none');
+
+  await page.emulateMedia({reducedMotion:'reduce',forcedColors:'none'});
+  const animationCount=await page.evaluate(()=>window.__guidanceAnimations.length);
+  await toggle.click();await expect(toggle).toHaveAttribute('aria-expanded','false');
+  expect(await slot.evaluate(node=>node.getAnimations().filter(animation=>animation.playState==='running').length)).toBe(0);
+  await toggle.click();await expect(toggle).toHaveAttribute('aria-expanded','true');
+  expect(await slot.evaluate(node=>node.getAnimations().filter(animation=>animation.playState==='running').length)).toBe(0);
+  expect(await page.evaluate(()=>window.__guidanceAnimations.length)).toBe(animationCount);
+  await settledMessage(page);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:info.outputPath('joined-guidance-desktop-rtl-forced-reduced.png')});
+});
+
 test('named computer phases keep one colored cue and stable board position without a timer', async ({page}) => {
   await page.setViewportSize({width:390,height:1000});
   await page.goto('/browser-integration/support/board-message.html');

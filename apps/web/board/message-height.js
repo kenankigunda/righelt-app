@@ -61,7 +61,7 @@ export function createMessageHeightController(label) {
   const target=Math.max(grammar,overflow?required:0)+outerPadding;
   if(target===lastTarget&&!metricChange&&!forceSnap)return;
   const from=slot.getBoundingClientRect().height;
-  const change=messageHeightTransition({from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key});
+  const change=messageHeightTransition({from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key,contentChange:contentHeightOwner?.startsWith('board-guidance:')===true});
   if(change.kind==='defer')return;
   animation?.cancel();animation=null;slot.dataset.heightManaged='true';slot.style.height=`${target}px`;lastTarget=target;
   if(change.kind==='animate'&&slot.animate)animation=slot.animate([{height:`${from}px`},{height:`${target}px`}],{duration:change.duration,easing:change.easing});

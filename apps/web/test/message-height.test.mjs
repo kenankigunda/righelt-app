@@ -85,6 +85,16 @@ test('one replay episode keeps its longest explanation height and a new episode 
  f.controller.setContentHeightOwner(null);f.controller.destroy();
 });
 
+test('Board guidance expansion and collapse share the measured owner and animate only content changes',()=>{
+ const f=fixture(4);f.controller.setContentHeightOwner('board-guidance:selection:false');
+ f.setCurrent(40);f.setRendered(83);f.change(40,83);assert.equal(f.animations.length,0);
+ f.controller.setContentHeightOwner('board-guidance:selection:true');f.setCurrent(160);f.setRendered(83);f.change(160,83);
+ assert.deepEqual(f.animations.at(-1).options,{duration:260,easing:'cubic-bezier(.22,.72,.2,1)'});
+ f.controller.setContentHeightOwner('board-guidance:selection:false');f.setCurrent(40);f.setRendered(168);f.change(40,168);
+ assert.deepEqual(f.animations.at(-1).options,{duration:260,easing:'cubic-bezier(.22,.72,.2,1)'});
+ assert.equal(f.animations.length,2);f.controller.destroy();
+});
+
 test('reduced motion replay height settles synchronously without animating',()=>{
  const f=fixture(4);f.motion.matches=true;f.controller.setContentHeightOwner('replay:reduced');
  f.setCurrent(160);f.controller.captureContentHeight();
