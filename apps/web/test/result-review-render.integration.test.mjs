@@ -134,6 +134,8 @@ test("optimistic terminal state cannot expose a result or open it before confirm
   confirmed=optimistic;
   assert.equal(resultOwner.observe(confirmed).becameTerminal,true);
   assert.match(context.result(optimistic).replace(/<[^>]*>/g,''),/You won/);
+  assert.doesNotMatch(context.result(optimistic).replace(/<[^>]*>/g,''),/Game finished/);
+  assert.match(context.result(optimistic),/aria-label="Game result"/);
   assert.match(context.result(optimistic),/<a[^>]+href="#\/">[\s\S]*?<svg[^>]+aria-hidden="true"[^>]+focusable="false"[\s\S]*?<\/svg>Home<\/a>/);
   assert.match(context.history(optimistic),/data-action="view-result"/);
   assert.equal(resultOwner.present('g'),true);
@@ -178,6 +180,7 @@ test('actual result renderer affiliates victory with the authoritative winning s
   runWithHistoryRendering(`const renderResult=game=>renderResultPanel(game,{transport,escapeHtml,formatDisplayGameId});;globalThis.output=renderResult(game);`,Object.assign(context,{publishAcknowledgedBoardMessage,renderResultPanel}));
   assert.match(context.output,new RegExp(`data-result-tone="victory" data-winner="${winner}"`));
   assert.match(context.output.replace(/<[^>]*>/g,''),/You won/);assert.match(context.output,new RegExp(`${playerDisplayName(game,winner==='p1'?'p2':'p1')}’s commander`));
+  assert.doesNotMatch(context.output.replace(/<[^>]*>/g,''),/Game finished/);assert.match(context.output,/aria-label="Game result"/);
   const actions=[...context.output.matchAll(/<button([^>]*)data-action="(analysis|rematch)"[^>]*>/g)];
   assert.equal(actions.length,2);for(const action of actions)assert.doesNotMatch(action[1],/secondary/);
   assert.equal(getGameResult(game,identity).rematchSide,winner==='p1'?'p2':'p1');

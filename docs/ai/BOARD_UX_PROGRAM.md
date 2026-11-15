@@ -79,7 +79,7 @@ The221 illustration inventory,14 approved asset source bindings,32-view/60-row m
 ## Game results
 
 - A commander removed during a push is described as destroyed, separately from an existing commander losing supply. Old terminal snapshots retain their original stored data; presentation derives the precise cause from that saved position.
-- Result naming follows the [current identity and perspective contract](PLAYERS_CARD_CONTRACT.md). Draws retain Draw. The You won commander image and animated fragments use the winning user’s actual side color, red for Red and blue for Blue. Images, finite motion and sound follow the result perspective, sound preferences and reduced motion. Only an observed live finish starts the effect. History, reload and manual result opening remain quiet. Enlarged text keeps words intact and actions reachable.
+- Result naming follows the [current identity and perspective contract](PLAYERS_CARD_CONTRACT.md). Draws retain Draw. The You won commander image and animated fragments use the winning user’s actual side color, red for Red and blue for Blue. Images, finite motion and sound follow the result perspective, sound preferences and reduced motion. Only an observed live finish makes automatic entry eligible. Cold completed hydration, reload and Board replay remain quiet. Explicit View result intentionally replays the result presentation and cue. Enlarged text keeps words intact and actions reachable.
 
 ## Validation and release
 

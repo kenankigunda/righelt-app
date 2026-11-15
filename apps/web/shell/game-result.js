@@ -55,6 +55,14 @@ const escapeResult = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&am
 export const renderResultText = (result,field) => (result?.[`${field}Parts`] ?? [{text:result?.[field] ?? ''}]).map(part=>
   part.side ? `<span class="player-tone-${part.side}">${part.colorNamed?'':`<span class="sr-only">${sideColorName(part.side)}: </span>`}<bdi dir="auto">${escapeResult(part.text)}</bdi></span>` : escapeResult(part.text)
 ).join('');
+export const getResultNotice = (game,identityId) => {
+  const result=getGameResult(game,identityId);
+  if(!result)return null;
+  const turnIndex=game?.terminalOutcome?.decisive?.turnIndex;
+  const suffix=Number.isSafeInteger(turnIndex)?` on Turn ${turnIndex+1}`:'';
+  return {text:`${result.title}${suffix}`,parts:[...result.titleParts,{text:suffix}]};
+};
+export const renderResultNoticeText = notice => renderResultText({noticeParts:notice?.parts,notice:notice?.text},'notice');
 export const renderHistoryResult = (game,identityId,{includeRematch=false}={}) => {
   const result=getGameResult(game,identityId);
   if(!result)return '';

@@ -52,7 +52,7 @@ test('a legal optimistic win cannot open result or completed review before autho
   const {gate,submission}=await openFixture(page,context,baseURL);
   try{
     gate.release();await submission;
-    const result=page.getByTestId('game-result');await expect(result).toHaveCount(1);await expect(result).toBeVisible();await expect(result.getByRole('heading')).toContainText('You won');
+    const result=page.getByTestId('game-result');await expect(result).toHaveCount(1);await expect(result).toBeVisible();await expect(result).toHaveAccessibleName('Game result');await expect(result).not.toContainText('Game finished');await expect(result.getByRole('heading')).toContainText('You won');
     await page.evaluate(()=>window.dispatchEvent(new Event('online')));await expect(result).toHaveCount(1);await expect(result).toBeVisible();
   }finally{gate.release();}
 });
@@ -63,7 +63,7 @@ test('deliberate History keeps its selected move through confirmation and offers
     const row=page.getByTestId('history-move-item').first(),hit=row.locator(':scope > .history-move-hit');
     const moveId=await row.getAttribute('data-move-id');expect(moveId).toBeTruthy();await hit.click();await expect(row).toHaveAttribute('aria-current','true');
     gate.release();await submission;
-    const notice=page.getByTestId('confirmed-result-notice');await expect(notice).toBeVisible();await expect(page.getByTestId('game-result')).toHaveCount(0);
+    const notice=page.getByTestId('confirmed-result-notice');await expect(notice).toBeVisible();await expect(notice).toContainText(`You won on Turn ${finalMove.turnIndex+1}`);await expect(notice).not.toContainText('Game finished');await expect(page.getByTestId('game-result')).toHaveCount(0);
     await expect(page.locator(`[data-testid="history-move-item"][data-move-id="${moveId}"]`)).toHaveAttribute('aria-current','true');
     await notice.getByRole('button',{name:'View result',exact:true}).click();const result=page.getByTestId('game-result');await expect(result).toBeVisible();await expect(result.getByRole('heading')).toBeFocused();
     await expect(result).toHaveCount(1);
