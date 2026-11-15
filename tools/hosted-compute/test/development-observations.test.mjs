@@ -13,7 +13,7 @@ const verification=packet=>({schema:1,sourceFamily:'S11',sourceRevision:packet.s
 
 test('versioned observation adapter keeps explicit family, actor and unverified effects separate',()=>{
  const cases=adaptDevelopmentObservations(fixture,verification(fixture));
- assert.deepEqual(cases.map(c=>c.id),['S11-20','S11-70','S11-77']);
+ assert.deepEqual(cases.map(c=>c.id),['fixture-20','fixture-70','fixture-77']);
  assert.equal(cases[0].sourceFamily,'S11');assert.equal(cases[0].actorProvenance.kind,'computer');assert.equal(cases[2].actorProvenance.kind,'human');
  assert.equal(cases[0].scopedRequests[0].actions[0].type,'project');
  assert.equal(cases[0].scopedRequests[0].referenceOnly.verified,false);assert.equal(cases[0].scopedRequests[0].referenceOnly.claims.redCommanded,8);
@@ -31,8 +31,8 @@ test('preparation executes supplied engine lines without admitting S11 finality 
  try{
   await write(fixture);const result=await prepareDevelopment(directory,{sourceRevision,milliseconds:5000,maxOperations:10000});
   assert.equal(result.receipt.cases.length,3);assert.equal(result.receipt.trainingAuthorized,false);
-  const repair=result.receipt.cases.find(c=>c.id==='S11-20');assert.equal(repair.witnesses[0].disposition,'complete');assert.equal(repair.witnesses[0].completedActions,1);assert.equal(repair.witnesses[0].outcome,'ongoing');
-  const guard=result.receipt.cases.find(c=>c.id==='S11-70');assert(guard.witnesses.some(w=>w.outcome==='p2_win'&&w.completedActions===2));
+  const repair=result.receipt.cases.find(c=>c.id==='fixture-20');assert.equal(repair.witnesses[0].disposition,'complete');assert.equal(repair.witnesses[0].completedActions,1);assert.equal(repair.witnesses[0].outcome,'ongoing');
+  const guard=result.receipt.cases.find(c=>c.id==='fixture-70');assert(guard.witnesses.some(w=>w.outcome==='p2_win'&&w.completedActions===2));
   for(const c of result.receipt.cases){
    assert.equal(c.sourceFamily,'S11');assert.equal(c.terminalBoundary,'quarantined');assert.equal(c.sourceHistoryFinalityVerified,false);
    assert.equal(c.policyTargetAdmitted,false);assert.equal(c.observedValueTargetAdmitted,false);assert.equal(c.competitiveScoreEligible,false);
@@ -46,7 +46,7 @@ test('preparation executes supplied engine lines without admitting S11 finality 
   const packetBytes=encode(canonical(referenced));await fs.writeFile(path.join(directory,'development-cases.json'),packetBytes);
   await fs.writeFile(path.join(directory,'verification.json'),canonical({...verification(referenced),packetSha256:await sha256(packetBytes),replyCertificateSha256:await sha256(certificateBytes)}));
   const referenceResult=await prepareDevelopment(directory,{sourceRevision});
-  const referencedCase=referenceResult.receipt.cases.find(c=>c.id==='S11-70');assert.equal(referencedCase.defense,null);assert.equal(referencedCase.referenceCertificates[0].replayed,false);assert.equal(referencedCase.referenceCertificates[0].disposition,'reference-only');
+  const referencedCase=referenceResult.receipt.cases.find(c=>c.id==='fixture-70');assert.equal(referencedCase.defense,null);assert.equal(referencedCase.referenceCertificates[0].replayed,false);assert.equal(referencedCase.referenceCertificates[0].disposition,'reference-only');
   const invalid=structuredClone(fixture);invalid.cases[0].alternatives[0].line[0].actorId='not-a-piece';await write(invalid);
   await assert.rejects(prepareDevelopment(directory,{sourceRevision}),/zero executable witness/);
   await write(fixture);await assert.rejects(prepareDevelopment(directory,{sourceRevision,maxOperations:1}),/zero executable witness/);
@@ -77,4 +77,12 @@ test('sanitized inventory keeps actual file identities separate from original ev
   }
   await save(inventory);await fs.writeFile(path.join(directory,'retained-verification.json'),encode('{}'));await assert.rejects(prepareDevelopment(directory,{sourceRevision}),/identity mismatch/);
  }finally{await fs.rm(directory,{recursive:true,force:true});}
+});
+
+test('canonical source IDs survive display aliases with roots, actors and scoped claims intact',()=>{
+ const packet=structuredClone(fixture);packet.cases.forEach((c,i)=>c.id=`dev-source-${i+1}`);
+ const cases=adaptDevelopmentObservations(packet,verification(packet));
+ assert.deepEqual(cases.map(c=>c.id),['dev-source-1','dev-source-2','dev-source-3']);assert.deepEqual(cases.map(c=>c.sourceDisplay),[20,70,77]);
+ cases.forEach((c,i)=>{assert.equal(c.stateHash,packet.cases[i].rootStateHash);assert.deepEqual(c.state,packet.cases[i].rootState);assert.equal(c.actorProvenance.kind,packet.cases[i].actorProvenance);assert.equal(c.scope,packet.cases[i].scope);});
+ for(const mutate of [p=>p.cases[1].id=p.cases[0].id,p=>p.cases[0].id='',p=>delete p.cases[0].id,p=>p.cases[0].id='x'.repeat(129),p=>p.cases[1].display=p.cases[0].display,p=>{delete p.cases[1].id;p.cases[0].id='S11-70';}]){const bad=structuredClone(packet);mutate(bad);assert.throws(()=>adaptDevelopmentObservations(bad,verification(bad)),/unique/);}
 });

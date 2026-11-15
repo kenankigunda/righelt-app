@@ -81,3 +81,18 @@ test('native step bridge binds chosen action, applied profile, legal policy and 
  await assert.rejects(assessmentBridge({...job,answer:{...answer,searchIdentity:{...answer.searchIdentity,requestedProfile:{...profile,simulations:2}}}}),/search identity differs/);
  await assert.rejects(assessmentBridge({...job,bounds:{...job.bounds,maxOperations:1}}),/budget exhausted/);
 });
+
+test('approved retained-prepared input keeps physical identity distinct from original source ancestry',async()=>{
+ const f=await setup(),index=structuredClone(f.index);
+ index.packets[0].sourcePacketSha256=index.packets[0].preparedSha256;
+ const coverage={...f.coverage,packets:[{id:'canonical',sourcePacketSha256:index.packets[0].sourcePacketSha256}]};index.coverageSha256=await f.put(coverage);
+ const validated=await validateDevelopmentSuite(index,{read:f.read});
+ assert.deepEqual(validated.packetAncestry.get('canonical'),{mode:'retained-prepared',approvedInputSha256:index.packets[0].sourcePacketSha256,preparedArtifactSha256:index.packets[0].preparedSha256,sourceAncestrySha256:'a'.repeat(64)});
+ const packet=JSON.parse(new TextDecoder().decode(f.objects.get(index.packets[0].preparedSha256))),receipt=JSON.parse(new TextDecoder().decode(f.objects.get(index.packets[0].preparationSha256)));
+ for(const mutate of [x=>x.sourcePacketSha256='0'.repeat(64),x=>x.packetSha256='0'.repeat(64)]){
+  const changed=structuredClone(receipt);mutate(changed);const bad=structuredClone(index);bad.packets[0].preparationSha256=await f.put(changed);await assert.rejects(validateDevelopmentSuite(bad,{read:f.read}),/ancestry/);
+ }
+ const changed={...packet,sourcePacketSha256:'0'.repeat(64)},mixed=structuredClone(index);mixed.packets[0].preparedSha256=await f.put(changed);await assert.rejects(validateDevelopmentSuite(mixed,{read:f.read}),/ancestry/);
+ // Derived-from-source form still requires the approved exact parent.
+ const derived=structuredClone(f.index);derived.packets[0].preparedSha256=await f.put(changed);derived.packets[0].preparationSha256=await f.put({...receipt,sourcePacketSha256:changed.sourcePacketSha256,packetSha256:derived.packets[0].preparedSha256});await assert.rejects(validateDevelopmentSuite(derived,{read:f.read}),/ancestry/);
+});
