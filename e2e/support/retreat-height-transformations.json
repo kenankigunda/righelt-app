@@ -1,7 +1,7 @@
 {
   "/board-adapters/engine-board-adapter.js": {
     "file": "apps/web/board-adapters/engine-board-adapter.js",
-    "sourceSha256": "162d95a906f4d244eb61b0e787539f27cc3c3a7347d2850ae541aad95517b73c",
+    "sourceSha256": "15f83f2d1aea4ca428107f80a9f19a29b321e89e8d5b0705cc7b7b1035782095",
     "prefix": "const __retreatHeightProbe=(event,data,owner)=>{try{const sink=globalThis.__retreatHeightRecord;if(typeof sink==='function')sink(event,typeof data==='function'?data():data,owner);}catch{}};\nconst __retreatHeightValue=(event,value,data=null,owner=null)=>{__retreatHeightProbe(event,data??(()=>({value})),owner);return value;};\n",
     "operations": [
       {
@@ -21,7 +21,7 @@
         "anchorCount": 1
       }
     ],
-    "outputSha256": "17e2cfd72610574ce16f4036985ae59020f2ce330385250ee3221b3a94190204"
+    "outputSha256": "20f57b2df4d597f3fff9b8121a9440244d3d70714679058e363623477867c9e5"
   },
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",
@@ -73,20 +73,20 @@
   },
   "/board/message-height.js": {
     "file": "apps/web/board/message-height.js",
-    "sourceSha256": "8cdddc71569e2d77f7622d32f9e17c87cbf897d1459634be1481966dae50a0e9",
+    "sourceSha256": "78e8ce14305324a8015ae5e8c105d8cbd8c6ff94e35f2a8ac050c37af084d0c0",
     "prefix": "const __retreatHeightProbe=(event,data,owner)=>{try{const sink=globalThis.__retreatHeightRecord;if(typeof sink==='function')sink(event,typeof data==='function'?data():data,owner);}catch{}};\nconst __retreatHeightValue=(event,value,data=null,owner=null)=>{__retreatHeightProbe(event,data??(()=>({value})),owner);return value;};\n",
     "operations": [
       {
-        "start": 2189,
-        "end": 2236,
+        "start": 2216,
+        "end": 2263,
         "before": "const width=slot.getBoundingClientRect().width;",
         "after": "const width=__retreatHeightValue('height-width',slot.getBoundingClientRect().width,null,slot);",
         "anchor": "const width=slot.getBoundingClientRect().width;",
         "anchorCount": 1
       },
       {
-        "start": 3592,
-        "end": 3702,
+        "start": 3619,
+        "end": 3729,
         "before": "const grammar=Math.max(reservation??0,messageHeightTarget({primaryRoutine:primary,fallbackRoutine:fallback}));",
         "after": "const grammar=__retreatHeightValue('height-grammar',Math.max(reservation??0,messageHeightTarget({primaryRoutine:primary,fallbackRoutine:fallback})),null,slot);",
         "anchor": "const grammar=Math.max(reservation??0,messageHeightTarget({primaryRoutine:primary,fallbackRoutine:fallback}));",
@@ -97,50 +97,50 @@
         "after": "const target=__retreatHeightValue('height-target',Math.max(grammar,overflow?required:0)+outerPadding,null,slot);",
         "anchor": "const target=Math.max(grammar,overflow?required:0)+outerPadding;",
         "anchorCount": 1,
-        "start": 4690,
-        "end": 4754
+        "start": 4717,
+        "end": 4781
       },
       {
-        "start": 4817,
-        "end": 4864,
+        "start": 4873,
+        "end": 4920,
         "before": "const from=slot.getBoundingClientRect().height;",
         "after": "const from=__retreatHeightValue('height-from',slot.getBoundingClientRect().height,null,slot);",
         "anchor": "const from=slot.getBoundingClientRect().height;",
         "anchorCount": 1
       },
       {
-        "start": 4867,
-        "end": 5133,
-        "before": "const change=messageHeightTransition({from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key,contentChange:contentHeightOwner?.startsWith('board-guidance:')===true});",
-        "after": "const change=messageHeightTransition(__retreatHeightValue('height-input',{from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key,contentChange:contentHeightOwner?.startsWith('board-guidance:')===true},null,slot));",
-        "anchor": "const change=messageHeightTransition({from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key,contentChange:contentHeightOwner?.startsWith('board-guidance:')===true});",
+        "start": 4923,
+        "end": 5211,
+        "before": "const change=messageHeightTransition({from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key,contentChange:contentHeightOwner?.startsWith('board-guidance:')===true||transitioningContent});",
+        "after": "const change=messageHeightTransition(__retreatHeightValue('height-input',{from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key,contentChange:contentHeightOwner?.startsWith('board-guidance:')===true||transitioningContent},null,slot));",
+        "anchor": "const change=messageHeightTransition({from,to:target,initial,metricChange:metricChange||forceSnap,reducedMotion:win.matchMedia('(prefers-reduced-motion: reduce)').matches,pressing:pointer||key,contentChange:contentHeightOwner?.startsWith('board-guidance:')===true||transitioningContent});",
         "anchorCount": 1
       },
       {
-        "start": 5136,
-        "end": 5168,
+        "start": 5214,
+        "end": 5246,
         "before": "if(change.kind==='defer')return;",
         "after": "if(__retreatHeightValue('height-kind',change.kind,null,slot)==='defer')return;",
         "anchor": "if(change.kind==='defer')return;",
         "anchorCount": 1
       },
       {
-        "start": 5171,
-        "end": 5290,
+        "start": 5279,
+        "end": 5398,
         "before": "animation?.cancel();animation=null;slot.dataset.heightManaged='true';slot.style.height=`${target}px`;lastTarget=target;",
         "after": "__retreatHeightProbe('height-write',()=>({from,to:target}),slot);\n  animation?.cancel();animation=null;slot.dataset.heightManaged='true';slot.style.height=`${target}px`;lastTarget=target;",
         "anchor": "animation?.cancel();animation=null;slot.dataset.heightManaged='true';slot.style.height=`${target}px`;lastTarget=target;",
         "anchorCount": 1
       },
       {
-        "start": 5293,
-        "end": 5452,
+        "start": 5401,
+        "end": 5560,
         "before": "if(change.kind==='animate'&&slot.animate)animation=slot.animate([{height:`${from}px`},{height:`${target}px`}],{duration:change.duration,easing:change.easing});",
         "after": "if(__retreatHeightValue('height-animation-kind',change.kind,null,slot)==='animate'&&slot.animate)animation=__retreatHeightValue('animation-created',slot.animate([{height:`${from}px`},{height:`${target}px`}],{duration:change.duration,easing:change.easing}),()=>({}),slot);",
         "anchor": "if(change.kind==='animate'&&slot.animate)animation=slot.animate([{height:`${from}px`},{height:`${target}px`}],{duration:change.duration,easing:change.easing});",
         "anchorCount": 1
       }
     ],
-    "outputSha256": "23eb7a2c665d6c0a0921602020b8f48705c2830cd0094531e96b958c2155a3b0"
+    "outputSha256": "9ee9cfbfd7379627d6a19621800d760a263f5e5abc1928fd67819f6bb5670518"
   }
 }
