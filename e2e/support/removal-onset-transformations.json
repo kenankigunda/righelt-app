@@ -1,12 +1,12 @@
 {
   "/shell/app.js": {
     "file": "apps/web/shell/app.js",
-    "sourceSha256": "147085edc63b2e443704515bf523e63dea28ea2018e6d359af79525b97cfef1a",
-    "outputSha256": "394f2ff9cab820b4b02f6f1b7cdd46e82529443b29a922a05e5621750abbfc1f",
+    "sourceSha256": "f71c572d287e708346e64e4e27a50b9a3979abb2ca8df194615944c8babb1267",
+    "outputSha256": "6e294aad5a83cf05de547d31cfcba070a05b392a1ae540dabefd23a44e70ef8c",
     "operations": [
       {
-        "start": 230542,
-        "end": 230601,
+        "start": 230865,
+        "end": 230924,
         "before": "  if(change?.type==='authoritative_update'&&change.gameId){",
         "after": "  if(change?.type==='authoritative_update'&&change.gameId){\n    try{globalThis.__righeltRemovalTraceMark?.('authoritative-subscriber',{gameplayRevision:transport.getAuthoritativeGame(change.gameId)?.gameplayRevision,eventSeq:transport.getLastEventSeq(change.gameId)});}catch{}",
         "anchor": "  if(change?.type==='authoritative_update'&&change.gameId){",
