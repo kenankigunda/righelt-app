@@ -94,6 +94,7 @@ function fixture() {
     currentRoute: { name: 'home' }, startGameEntryRouteTransition() {},
     buildGameHash: id => `#/game/${id}`, getCurrentFlyoutState: () => ({}),
     navigateTo(hash) { context.window.location.hash = hash; }, openFriendInvite() {},
+    resumePendingResult() {},
     routeHydrated: true, accountStartupError: '', render() {}, syncLiveChannels() {},
     syncScenarioCatalog: async () => {}, startRouteSync() { routeSyncs++; },
   };
