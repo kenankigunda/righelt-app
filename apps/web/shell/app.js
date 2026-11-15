@@ -982,6 +982,7 @@ const historySelectionTransition = createHistorySelectionTransition({ reducedMot
 const historySelectionActions = createHistorySelectionActions({
   transition: historySelectionTransition,
   playSound: cue => gameSound.play(cue),
+  onPresentationReady: () => render({ animatePanels: false, includeBoard: true }),
   onPendingChange: episode => {
     boardRuntime?.refreshStatus();
     if (episode) return;

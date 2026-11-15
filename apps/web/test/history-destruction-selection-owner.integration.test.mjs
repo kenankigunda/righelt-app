@@ -13,8 +13,18 @@ const deferred = () => {
 test('accepted socket-backed turn selection remains claimable until one matching render consumes it',async()=>{
   const transition=createHistorySelectionTransition({reducedMotion:()=>true});
   const pendingChanges=[];
-  const actions=createHistorySelectionActions({transition,onPendingChange:episode=>pendingChanges.push(episode?.key??null)});
   const animation=createHistoryDestructionAnimationOwner();
+  const claims=[];
+  let actions;
+  actions=createHistorySelectionActions({
+    transition,
+    onPendingChange:episode=>pendingChanges.push(episode?.key??null),
+    onPresentationReady:episode=>{
+      const claimed=animation.claim(game,episode,true);
+      claims.push(claimed);
+      if(claimed)actions.consumePresentation(episode.key);
+    },
+  });
   const transport=deferred();
   const game={id:'game',inHistoryMode:true,historyTurnIndex:16};
 
@@ -24,16 +34,15 @@ test('accepted socket-backed turn selection remains claimable until one matching
     accepted:()=>game.historyTurnIndex===17,
   });
   game.historyTurnIndex=17;
+  assert.equal(actions.presentation(),null,'the matching transport render is not authoritative before acceptance');
+  assert.equal(animation.claim(game,actions.presentation(),true),false);
   transport.resolve({accepted:true});
   assert.deepEqual(await selection,{accepted:true,value:{accepted:true}});
   assert.deepEqual(pendingChanges.map(value=>value===null?null:value.replace(/^history-selection:\d+:/,'history-selection:N:')),[
     'history-selection:N:game:turn:17',null,
   ]);
 
-  const episode=actions.presentation();
-  assert.equal(episode.scope,'game:turn:17','transport settlement cannot retire the deliberate presentation before render');
-  assert.equal(animation.claim(game,episode,true),true);
-  assert.equal(actions.consumePresentation(episode.key),true);
+  assert.deepEqual(claims,[true]);
   assert.equal(actions.presentation(),null);
   assert.equal(animation.claim(game,actions.presentation(),true),false,'quiet refresh cannot replay the consumed episode');
 });
@@ -49,8 +58,7 @@ test('superseded selections stay silent and a same-turn deliberate reselection c
   const current=run(second,18);
   game.historyTurnIndex=17;first.resolve('stale');
   assert.deepEqual(await stale,{accepted:false,value:'stale'});
-  assert.equal(actions.presentation().scope,'game:turn:18','the stale settlement cannot replace the newer pending owner');
-  assert.equal(createHistoryDestructionAnimationOwner().claim(game,actions.presentation(),true),false,'the newer owner cannot animate stale selected state');
+  assert.equal(actions.presentation(),null,'neither stale nor newer pending intent is animation authority');
   game.historyTurnIndex=18;second.resolve('current');
   assert.deepEqual(await current,{accepted:true,value:'current'});
   const original=actions.presentation();
@@ -63,4 +71,19 @@ test('superseded selections stay silent and a same-turn deliberate reselection c
   assert.notEqual(actions.presentation().key,original.key);
   actions.retire();
   assert.equal(actions.presentation(),null,'navigation or background retirement cannot leave a latent replay owner');
+});
+
+test('rejected same-turn pending selection cannot animate an intervening matching render',async()=>{
+  const transition=createHistorySelectionTransition({reducedMotion:()=>true});
+  const actions=createHistorySelectionActions({transition});
+  const animation=createHistoryDestructionAnimationOwner();
+  const transport=deferred();
+  const game={id:'game',inHistoryMode:true,historyTurnIndex:17};
+  const selection=actions.run({scope:'game:turn:17',select:()=>transport.promise,accepted:()=>false});
+
+  assert.equal(actions.presentation(),null);
+  assert.equal(animation.claim(game,actions.presentation(),true),false,'same-turn render while pending remains silent');
+  transport.resolve('rejected');
+  assert.deepEqual(await selection,{accepted:false,value:'rejected'});
+  assert.equal(actions.presentation(),null,'rejection cannot retain the unaccepted intent');
 });

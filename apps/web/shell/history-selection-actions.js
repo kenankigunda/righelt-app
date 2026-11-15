@@ -1,4 +1,4 @@
-export function createHistorySelectionActions({ transition, playSound = () => {}, onPendingChange = () => {} }) {
+export function createHistorySelectionActions({ transition, playSound = () => {}, onPendingChange = () => {}, onPresentationReady = () => {} }) {
   if (!transition || typeof transition.run !== 'function' || typeof transition.version !== 'function') {
     throw new TypeError('History selection actions require one transition owner');
   }
@@ -21,7 +21,7 @@ export function createHistorySelectionActions({ transition, playSound = () => {}
     const actionGeneration = ++generation;
     const pendingOwner = `${actionGeneration}:${scope}`;
     acceptedPresentation = null;
-    active = {generation:actionGeneration,scope,key:`history-selection:${pendingOwner}`,presentationClaimed:false};
+    active = {generation:actionGeneration,scope,key:`history-selection:${pendingOwner}`};
     onPendingChange(publicEpisode(active));
     if (trigger?.isConnected) {
       trigger.classList?.add('history-selection-pending');
@@ -64,26 +64,28 @@ export function createHistorySelectionActions({ transition, playSound = () => {}
       if (isCurrent()) after({ accepted: false, value });
       return { accepted: false, value };
     }
-    if (active?.generation === actionGeneration && !active.presentationClaimed) {
+    if (active?.generation === actionGeneration) {
       acceptedPresentation = publicEpisode(active);
     }
     clearPending(actionGeneration);
+    const readyPresentation = publicEpisode(acceptedPresentation);
+    if (readyPresentation && isCurrent()) {
+      try {
+        onPresentationReady(readyPresentation);
+      } catch (error) {
+        if (acceptedPresentation?.key === readyPresentation.key) acceptedPresentation = null;
+        throw error;
+      }
+    }
     if (sound && isCurrent()) playSound(sound);
     if (!isCurrent()) return { accepted: false, value };
     after({ accepted: true, value });
     return { accepted: isCurrent(), value };
   };
 
-  const presentation = () => {
-    if (active && !active.presentationClaimed) return publicEpisode(active);
-    return publicEpisode(acceptedPresentation);
-  };
+  const presentation = () => publicEpisode(acceptedPresentation);
   const consumePresentation = key => {
     if (typeof key !== 'string') return false;
-    if (active?.key === key && !active.presentationClaimed) {
-      active.presentationClaimed = true;
-      return true;
-    }
     if (acceptedPresentation?.key !== key) return false;
     acceptedPresentation = null;
     return true;

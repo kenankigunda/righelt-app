@@ -81,6 +81,22 @@ function armNoRemovalCommitWitness(key){
 }
 const readNoRemovalCommitWitness=(page,key)=>page.evaluate(key=>structuredClone(window.noRemovalCommitWitnesses[key].records),key);
 const disposeNoRemovalCommitWitness=(page,key)=>page.evaluate(key=>window.noRemovalCommitWitnesses[key].dispose(),key);
+function armHistorySelectionClaimWitness(key){
+ const record={episodes:[],samples:[]};let visible=false;
+ const inspect=source=>{
+  const count=document.querySelectorAll('#shell-board .removal-piece').length;
+  const pending=Boolean(document.querySelector('[data-history-selection-episode-pending="true"]'));
+  record.samples.push({source,count,pending});
+  if(count>0&&!visible)record.episodes.push({count,pending});
+  visible=count>0;
+ };
+ const observer=new MutationObserver(()=>inspect('mutation'));
+ observer.observe(document.documentElement,{childList:true,subtree:true});
+ (window.historySelectionClaimWitnesses??={})[key]={record,dispose:()=>observer.disconnect()};
+ inspect('armed');
+}
+const readHistorySelectionClaimWitness=(page,key)=>page.evaluate(key=>structuredClone(window.historySelectionClaimWitnesses[key].record),key);
+const disposeHistorySelectionClaimWitness=(page,key)=>page.evaluate(key=>window.historySelectionClaimWitnesses[key].dispose(),key);
 
 for (const mobile of [false,true]) test(`turn-end losses animate once for player and viewer and persist in history (${mobile?'phone':'desktop'})`,async({createOwnedContext,baseURL},testInfo)=>{
  const owner=await createOwnedContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1100},hasTouch:mobile});
@@ -142,6 +158,58 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
   const witness=retainedMotionWitness??await page.evaluate(()=>window.destructionMotionWitness??null).catch(error=>({readError:String(error)}));
   await testInfo.attach('destruction-motion-witness',{body:JSON.stringify(witness,null,2),contentType:'application/json'});
  }
+});
+
+test('accepted-only History selection claim survives transport settlement and stays single-use',async({page,baseURL})=>{
+ await importScenarioGame(page,{...scenario,id:'129bbc34-1f60-4d7d-8f5b-45d8ec88a7b1'},baseURL);
+ await switchGamePanel(page,'board');
+ await submitPlayableAction(page,fixture.action);
+ const end=page.locator('[data-board-preview-action="end-turn"]');
+ await expect(end).toBeVisible();await end.click();
+ await expect(page.getByTestId('history-destruction-item')).toHaveCount(2);
+ await expect(page.locator('#shell-board .removal-piece')).toHaveCount(0,{timeout:5000});
+ await switchGamePanel(page,'history');
+ const turnHit=()=>page.getByTestId('history-turn').filter({hasText:'Turn 1'}).locator(':scope > .history-turn-hit');
+
+ await page.evaluate(armHistorySelectionClaimWitness,'accepted');
+ await turnHit().click();
+ await expect(page.locator('#shell-board .removal-piece')).toHaveCount(2);
+ await expect(page.locator('#shell-board .removal-piece')).toHaveCount(0,{timeout:5000});
+ await expect(page.locator('#shell-board .history-destruction-piece')).toHaveCount(2);
+ const accepted=await readHistorySelectionClaimWitness(page,'accepted');
+ expect(accepted.episodes).toEqual([{count:2,pending:false}]);
+ await page.evaluate(()=>window.dispatchEvent(new Event('resize')));
+ await page.waitForTimeout(250);
+ expect((await readHistorySelectionClaimWitness(page,'accepted')).episodes).toEqual([{count:2,pending:false}]);
+ await disposeHistorySelectionClaimWitness(page,'accepted');
+
+ await page.getByTestId('history-return-live').click();
+ await expect(page.getByTestId('history-return-live')).toHaveCount(0);
+ await page.evaluate(armHistorySelectionClaimWitness,'superseded');
+ await page.evaluate(()=>{
+  const hit=document.querySelector('[data-testid="history-turn"] .history-turn-hit');
+  if(!(hit instanceof HTMLElement))throw Error('Missing turn target');
+  hit.click();
+  if(hit.isConnected)hit.click();
+  else document.querySelector('[data-testid="history-turn"] .history-turn-hit')?.click();
+ });
+ await expect(page.locator('#shell-board .removal-piece')).toHaveCount(2);
+ await expect(page.locator('#shell-board .removal-piece')).toHaveCount(0,{timeout:5000});
+ expect((await readHistorySelectionClaimWitness(page,'superseded')).episodes).toEqual([{count:2,pending:false}]);
+ await disposeHistorySelectionClaimWitness(page,'superseded');
+
+ await page.getByTestId('history-return-live').click();
+ await expect(page.getByTestId('history-return-live')).toHaveCount(0);
+ await page.evaluate(armHistorySelectionClaimWitness,'lifecycle');
+ await page.evaluate(()=>{
+  const hit=document.querySelector('[data-testid="history-turn"] .history-turn-hit');
+  if(!(hit instanceof HTMLElement))throw Error('Missing turn target');
+  hit.click();window.dispatchEvent(new PageTransitionEvent('pagehide'));
+ });
+ await page.waitForTimeout(500);
+ await expect(page.locator('#shell-board .removal-piece')).toHaveCount(0);
+ expect((await readHistorySelectionClaimWitness(page,'lifecycle')).episodes).toEqual([]);
+ await disposeHistorySelectionClaimWitness(page,'lifecycle');
 });
 
 test('reduced motion never commits removal frames and settles active effects and History promptly',async({page,baseURL})=>{
