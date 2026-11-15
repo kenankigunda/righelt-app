@@ -9,7 +9,7 @@ test('piece explanations and blocked causes precede the unchanged coordinate chi
  const point={row:4,col:2};
  const variants=[...SELECTED_PIECE_EXPLANATIONS.map(explanation=>({explanation,expected:explanation})),
   {owner:'P2',expected:'Opponent’s supply and command lines'}, {expected:'No moves'},
-  ...[['SUPPLY_DESTINATION_UNSUPPLIED','Destination would have no supply'],['PUSH_STRENGTH_TOO_WEAK','Group too weak to push'],['UNKNOWN_PRIVATE_RULE','Move unavailable']].map(([reason,expected])=>({reason,expected}))];
+  ...[['SUPPLY_DESTINATION_UNSUPPLIED','Destination would have no supply'],['PUSH_STRENGTH_TOO_WEAK','Your group isn’t strong enough to push here.'],['UNKNOWN_PRIVATE_RULE','Move unavailable']].map(([reason,expected])=>({reason,expected}))];
  for(const variant of variants){
   let html='',context=null;const label={dataset:{},hidden:false,addEventListener:noop,removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
   const piece={id:'A',owner:variant.owner??'P1',kind:'unit',position:point,supplied:true,commanded:true};
@@ -19,12 +19,38 @@ test('piece explanations and blocked causes precede the unchanged coordinate chi
   runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
   await runtime.loadSnapshot(state,{legalActions:[],selectionState:{selectedPieceId:'A',source:point,target:preview?.to??null}});
   await new Promise(setImmediate);
-  assert.ok(context||variant.owner==='P2',JSON.stringify(variant));
+  assert.ok(context||html,JSON.stringify(variant));
   const contextHtml=context?renderBoardMessageHtml(context.message):html,text=contextHtml.replace(/<[^>]+>/g,'');
-  assert.equal(text,`${variant.expected} for piece at 4, 2`,JSON.stringify(variant));
-  assert.match(contextHtml,/board-preview-coordinate-chip/);if(context){assert.ok(!html.includes(variant.expected),'explanation stays outside the finite primary');assert.equal(label.hidden,true,'semantic context owns the Board message without a generic prompt');}
+  if(variant.reason==='PUSH_STRENGTH_TOO_WEAK'){
+    assert.match(text,/Your group isn’t strong enough to push here\. Why\?/);
+    assert.match(contextHtml,/Your group must be stronger than the defending group/);
+  }else{
+    assert.equal(text,`${variant.expected} for piece at 4, 2`,JSON.stringify(variant));
+    assert.match(contextHtml,/board-preview-coordinate-chip/);
+  }
+  if(context){assert.ok(!html.includes(variant.expected),'read-only context stays outside the primary');assert.equal(label.hidden,true,'semantic context owns the Board message without a generic prompt');}
+  else if(variant.owner!=='P2')assert.doesNotMatch(html,/Select a piece|Select a rush|End turn/,'specific selected guidance is the sole primary message');
   assert.doesNotMatch(contextHtml,/data-board-preview-action/);destroyUninitializedNodeRuntime(runtime);
  }
+});
+
+test('Joined-stone detail survives quiet redraw and retires with the snapshot intent',async()=>{
+ const point={row:4,col:2},target={row:4,col:3},piece={id:'A',owner:'P1',kind:'unit',position:point,supplied:true,commanded:true};
+ const preview={type:'push',actorId:'A',from:point,to:target,legal:false,blockedReason:'PUSH_STRENGTH_TOO_WEAK'};
+ let html='',clickHandler;
+ const label={dataset:{},hidden:false,addEventListener:(type,handler)=>{if(type==='click')clickHandler=handler;},removeEventListener:noop,get innerHTML(){return html},set innerHTML(value){html=value},get textContent(){return html},set textContent(value){html=value}};
+ const runtime=createBoardRuntime({boardAdapter:{mount:noop,render:noop,getPieceById:(snapshot,id)=>snapshot.pieces.find(value=>value.id===id),getSelectedPieceSummary:()=>({details:{owner:'P1'}})},host:{canInteract:()=>true,loadPieceMoves:async()=>({actions:[],previewActions:[preview]})}});
+ runtime.bindElements({boardEl:{},overlayLinesEl:{},boardPreviewLabelEl:label});
+ const snapshot={sideToMove:'P1',turnIndex:0,continuation:null,pieces:[piece]};
+ await runtime.loadSnapshot(snapshot,{legalActions:[],selectionState:{selectedPieceId:'A',source:point,target}});await new Promise(setImmediate);
+ assert.match(html,/aria-expanded="false"[^>]*>Why\?/);assert.match(html,/board-guidance-detail" hidden/);
+ const button={getAttribute:()=> 'toggle-board-explanation'};
+ clickHandler({target:{closest:selector=>selector==='[data-board-message-action]'?button:null}});
+ assert.match(html,/aria-expanded="true"[^>]*>Less/);assert.doesNotMatch(html,/board-guidance-detail" hidden/);
+ runtime.refreshStatus();assert.match(html,/aria-expanded="true"[^>]*>Less/,'quiet redraw preserves the exact disclosure intent');
+ await runtime.loadSnapshot({...snapshot,turnIndex:1},{legalActions:[],selectionState:{selectedPieceId:'A',source:point,target}});await new Promise(setImmediate);
+ assert.match(html,/aria-expanded="false"[^>]*>Why\?/,'a new snapshot retires the old disclosure intent');
+ destroyUninitializedNodeRuntime(runtime);
 });
 const noop = () => {};
 
@@ -624,10 +650,8 @@ test("board runtime omits end-turn CTA when the rush chain is not yet closable",
 
   assert.doesNotMatch(previewHtml, /data-board-(?:preview|message)-action="end-turn"/);
   assert.match(previewHtml,/Select a rush to restore supply/);assert.match(previewHtml,/Obligatory/);
-  assert.equal(context.mandatory,true);
-  const contextHtml=renderBoardMessageHtml(context.message);
-  assert.match(contextHtml,/restore supply for piece at/);
-  assert.match(contextHtml,/board-preview-coordinate-chip-rush-blocker/);assert.match(contextHtml,/>4, 3</);
+  assert.equal(context,null,'the primary message owns required guidance');
+  assert.match(previewHtml,/board-preview-coordinate-chip-rush-blocker/);assert.match(previewHtml,/>4, 3</);
 });
 
 test("board runtime rush blocker prompt prefers the most recently rushed unsupplied piece", async () => {
@@ -706,9 +730,9 @@ test("board runtime rush blocker prompt prefers the most recently rushed unsuppl
   );
 
   assert.match(previewHtml,/Select a rush to restore supply/);assert.match(previewHtml,/Obligatory/);
-  assert.equal(context.mandatory,true);
-  assert.match(renderBoardMessageHtml(context.message),/board-preview-coordinate-chip-rush-blocker/);
-  assert.match(renderBoardMessageHtml(context.message),/>5, 1</);
+  assert.equal(context,null,'the primary message owns required guidance');
+  assert.match(previewHtml,/board-preview-coordinate-chip-rush-blocker/);
+  assert.match(previewHtml,/>5, 1</);
 });
 
 test("board runtime falls back to generic rush prompt when blocker lookup yields no piece", async () => {

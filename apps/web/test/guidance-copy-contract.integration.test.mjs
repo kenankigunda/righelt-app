@@ -31,16 +31,17 @@ test('all28 guidance inventory rows retain their actual finite, context, accessi
  for(const [row,reason]of [[8,'SUPPLY_DESTINATION_UNSUPPLIED'],[9,'PUSH_STRENGTH_TOO_WEAK'],[10,'UNKNOWN_PRIVATE_RULE']])results.set(row,await ordinary({reason}));
  const state={continuation:{type:'rush'},pieces:[{id:'A',position:{row:4,col:2}}]};
  const required=requiredRushContext(state,{interactive:true,canPresentActions:()=>undefined,getUnsuppliedPieceIds:()=>['A'],getPieceById:()=>state.pieces[0],formatCoordinate:point=>`${point.row}, ${point.col}`});
- assert.equal(required.mandatory,true);assert.equal(required.kind,'required-rush');assert.equal(BOARD_PROMPT.requiredRush,'Select a rush to restore supply');assert.match(renderBoardMessageHtml(required.message),/Rush to restore supply.*4, 2/);results.set(11,null);
+ assert.equal(required.mandatory,true);assert.equal(required.kind,'required-rush');assert.equal(BOARD_PROMPT.requiredRush,'Select a rush to restore supply');assert.match(renderBoardMessageHtml(required.message),/Select a rush to restore supply.*4, 2/);results.set(11,null);
  results.set(12,SELECTED_CONTINUATION_LABELS.rushBlocker+' 9, 9');
  let accessible;annotateRushSourceCells({actions:[{action:{actorId:'A'}}],findPieceById:()=>state.pieces[0],snapshot:state,cells:new Map([['4,2',{classList:{add:noop},setAttribute:(name,value)=>{assert.equal(name,'aria-label');accessible=value;}}]]),coordKey:point=>`${point.row},${point.col}`});results.set(13,accessible);
  for(const [row,reason]of [[14,'loss_of_supply'],[15,'no_retreat']]){const transitions=createDestructionTransitions();transitions.update({id:'g',moves:[]});const record={eventId:'e',pieceId:'A',position:{row:4,col:2},reason,piece:state.pieces[0]};const effect=transitions.update({id:'g',moves:[{clientCommandId:'c',destroyedPieces:[record]}]}).effects[0];assert.equal(effect.eventId,'e');assert.equal(effect.reason,reason);results.set(row,effect.message);}
  results.set(16,buildHistoryRemovalEffects([{row:4,col:2}])[0].message);
  for(let row=17;row<=28;row++){const name=inventory.rows[row-1].case,frozen=name.startsWith('Frozen'),type=name.toLowerCase().includes('rush')?'rush':'push',missing=name.split('missing ')[1],supplied=missing==='command',commanded=missing==='supply';const piece={id:'A',supplied,commanded};const snapshot={continuation:{type,...(frozen?{frozenPieceStatesById:{A:{supplied,commanded}}}:{})}};results.set(row,getSelectedPieceExplanation(frozen?{...piece,displaySupplied:true,displayCommanded:true}:piece,snapshot)+' for piece at 4, 2');}
- assert.equal(results.size,28);for(const [row,result]of results){if(row===11)continue;assert.equal(text(result),text(inventory.rows[row-1].after),`inventory row${row}: ${inventory.rows[row-1].case}`);}
+ assert.match(results.get(9),/Your group isn’t strong enough to push here\./);assert.match(results.get(9),/Your group must be stronger than the defending group\. Equal strength isn’t enough\./);
+ assert.equal(results.size,28);for(const [row,result]of results){if(row===9||row===11)continue;assert.equal(text(result),text(inventory.rows[row-1].after),`inventory row${row}: ${inventory.rows[row-1].case}`);}
  // Context explanations retain real chips, while the ordinary opponent primary
  // remains the current finite/context architecture's existing placement.
- for(const row of [1,5,7,8,9,10])assert.match(results.get(row),/board-preview-coordinate-chip/);
+ for(const row of [1,5,7,8,10])assert.match(results.get(row),/board-preview-coordinate-chip/);
 });
 
 

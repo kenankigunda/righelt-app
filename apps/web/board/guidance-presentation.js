@@ -12,7 +12,7 @@ export const getPushRetreatPrompt = (snapshot, currentPieceId, renderBoardPrevie
 export const requiredRushContext = (state,{interactive,canPresentActions,getUnsuppliedPieceIds,getPieceById,formatCoordinate}) => {
   if(!state||!interactive||state.continuation?.type!=='rush'||canPresentActions()===false)return null;
   const points=getUnsuppliedPieceIds().map(id=>getPieceById(id)?.position).filter(Boolean).sort((a,b)=>a.row-b.row||a.col-b.col).map(point=>({...point,chipClass:'board-preview-coordinate-chip-rush-blocker'}));
-  return points.length?{kind:'required-rush',mandatory:true,message:{text:`Rush to restore supply for ${points.length===1?'piece':'pieces'} at ${points.map(formatCoordinate).join(', ')}`,coordinates:points}}:null;
+  return points.length?{kind:'required-rush',mandatory:true,message:{text:`Select a rush to restore supply for ${points.length===1?'piece':'pieces'} at ${points.map(formatCoordinate).join(', ')}`,coordinates:points,badge:'Obligatory'}}:null;
 };
 export const opponentInspectionPrompt = (point,renderCoordinate) => point
   ? `Opponent’s supply and command lines for piece at ${renderCoordinate(point)}`
