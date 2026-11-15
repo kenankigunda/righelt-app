@@ -53,7 +53,7 @@ test('No moves appears only after the complete empty result is known',async()=>{
  const f=fixture(),loading=f.selected([]);
  assert.doesNotMatch(f.label.innerHTML,/No moves/);assert.doesNotMatch(f.contextHtml,/No moves/);
  f.finish([]);await loading;
- assert.match(f.contextHtml,/No moves/);assert.doesNotMatch(f.label.innerHTML,/No moves/);
+ assert.match(f.label.innerHTML,/No moves/);assert.doesNotMatch(f.contextHtml,/No moves/);
 });
 
 test('a native piece click starts one preview query and repeated reloads share it',async()=>{
@@ -100,7 +100,7 @@ test('changed authoritative inputs fence pending results and completed preview r
  f.queries[0].resolve({state:f.state,actions:[f.move],previewActions:[f.move]});await loading;
  assert.deepEqual(f.views.at(-1).selectedPieceMovePreviews,[]);
  f.queries[1].resolve({state:changed,actions:[],previewActions:[]});await next;
- assert.match(f.contextHtml,/No moves/);assert.doesNotMatch(f.label.innerHTML,/No moves/);
+ assert.match(f.label.innerHTML,/No moves/);assert.doesNotMatch(f.contextHtml,/No moves/);
 });
 
 test('changed legality invalidates a completed preview even at the same position',async()=>{
@@ -108,7 +108,7 @@ test('changed legality invalidates a completed preview even at the same position
  const next=f.runtime.loadSnapshot(f.state,{legalActions:[f.move],resetSelection:false,selectionState:{selectedPieceId:'A',source:f.piece.position,target:null}});
  assert.equal(f.queries.length,2);
  f.queries[1].resolve({state:f.state,actions:[],previewActions:[]});await next;
- assert.match(f.contextHtml,/No moves/);assert.doesNotMatch(f.label.innerHTML,/No moves/);
+ assert.match(f.label.innerHTML,/No moves/);assert.doesNotMatch(f.contextHtml,/No moves/);
 });
 
 test('changing the selected actor fences the previous actor result',async()=>{

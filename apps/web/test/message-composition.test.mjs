@@ -21,11 +21,14 @@ test('fixed prompt height uses both fonts and ignores changing context content',
  assert.equal(messageHeightTarget({primaryRoutine:70,fallbackRoutine:75,current:160}),75);
  assert.equal(messageHeightTarget({primaryRoutine:70,fallbackRoutine:75,current:40}),75);
 });
-test('height has no content animation and defers metric changes during native presses',async()=>{
+test('height animates only owned Board guidance content and defers changes during native presses',async()=>{
  const {messageHeightTransition:transition}=await import('../board/message-composition.js');
  assert.deepEqual(transition({from:83,to:140}),{kind:'snap',height:140});
  assert.deepEqual(transition({from:113,to:75}),{kind:'snap',height:75});
+ assert.deepEqual(transition({from:83,to:140,contentChange:true}),{kind:'animate',height:140,duration:260,easing:'cubic-bezier(.22,.72,.2,1)'});
  for(const flag of ['initial','metricChange','reducedMotion'])assert.deepEqual(transition({from:83,to:140,[flag]:true}),{kind:'snap',height:140});
+ for(const flag of ['initial','metricChange','reducedMotion'])assert.deepEqual(transition({from:83,to:140,contentChange:true,[flag]:true}),{kind:'snap',height:140});
  assert.deepEqual(transition({from:83,to:140,pressing:true}),{kind:'defer',height:83,target:140});
+ assert.deepEqual(transition({from:83,to:140,pressing:true,contentChange:true}),{kind:'defer',height:83,target:140});
  assert.deepEqual(transition({from:83,to:83,pressing:true}),{kind:'snap',height:83});
 });

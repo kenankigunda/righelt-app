@@ -2,11 +2,11 @@
   "schema": 1,
   "file": "apps/web/board/message-height.js",
   "servedPath": "/apps/web/board/message-height.js",
-  "sourceSha256": "4d1ecd27303502029dfd7595cebff82ec4681b7581c2160e2e17de50ae85cca9",
-  "outputSha256": "bab05da4ee3059a7320c709644760039182337162042247e47c8b82b0833cded",
+  "sourceSha256": "8cdddc71569e2d77f7622d32f9e17c87cbf897d1459634be1481966dae50a0e9",
+  "outputSha256": "bbfe0f3d2395b417728b40e7c69b9442372e319bcb0483bedf8810b638cebe19",
   "operation": {
-    "start": 5169,
-    "end": 5219,
+    "start": 5240,
+    "end": 5290,
     "before": "slot.style.height=`${target}px`;lastTarget=target;",
     "after": "slot.style.height=`${target}px`;lastTarget=target;try{const probe=Object.getOwnPropertyDescriptor(globalThis,'__heightPublication')?.value;if(typeof probe?.record==='function')probe.record(slot,target,fontKey,width);}catch{}"
   }

@@ -24,6 +24,18 @@ export function getSelectedPieceExplanation(piece, snapshot) {
   return `No ${missing} connection`;
 }
 
+export function getSelectedPieceGuidance(piece, snapshot) {
+  const condition=getSelectedPieceCondition(piece,snapshot);
+  if(!condition)return null;
+  if(condition.type!=='frozen')return {text:getSelectedPieceExplanation(piece,snapshot)};
+  const missing=!condition.supplied&&!condition.commanded?'command or supply'
+    :!condition.supplied?'supply':'command';
+  return {
+    text:`This piece can't move during this ${condition.sequence}.`,
+    detail:`It had no ${missing} connection when this ${condition.sequence} began. Reconnecting it may let it move on future turns, but not this turn.`,
+  };
+}
+
 // Finite real presentation variants let the board reserve its final message height.
 export const SELECTED_PIECE_EXPLANATIONS = Object.freeze([
   ...[false, true].flatMap(supplied => [false, true].flatMap(commanded => {
