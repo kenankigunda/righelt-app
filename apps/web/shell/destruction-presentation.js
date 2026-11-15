@@ -1,8 +1,25 @@
-const active = moves => (moves ?? []).filter(move => move && move.undone !== true);
+const sameMove = (left,right) => left === right || Boolean(left && right
+  && ((left.moveId && left.moveId === right.moveId)
+    || (left.clientCommandId && left.clientCommandId === right.clientCommandId)));
+
+const presentationContext = (move,moves) => {
+  const source=(moves ?? []).filter(Boolean);
+  if(move?.undone!==true)return source.filter(entry=>entry.undone!==true);
+  if(Number.isSafeInteger(move.undoEventSeq)&&move.undoEventSeq>0){
+    return source.filter(entry=>entry.undone===true&&entry.undoEventSeq===move.undoEventSeq);
+  }
+  if(typeof move.pendingUndoRequestId==='string'&&move.pendingUndoRequestId){
+    return source.filter(entry=>entry.undone===true&&entry.pendingUndoRequestId===move.pendingUndoRequestId);
+  }
+  // Legacy or conflicted Undo records cannot prove a shared operation. Keep the
+  // durable owner's evidence without allowing one unknown lineage to move it
+  // onto another undone row.
+  return source.filter(entry=>sameMove(entry,move));
+};
 
 /** Redistribute destruction evidence for narration only; durable records stay on their removal move. */
 export const presentationDestroyedPiecesForMove = (move, moves = []) => {
-  const context=active(moves);
+  const context=presentationContext(move,moves);
   const availableMoveIds=new Set(context.flatMap(entry=>[entry.moveId,entry.clientCommandId].filter(Boolean)));
   const records=context.flatMap(owner => (owner.destroyedPieces ?? [])
     .filter(record => availableMoveIds.has(record.causalMoveId)
@@ -16,7 +33,7 @@ export const presentationDestroyedPiecesForMove = (move, moves = []) => {
 };
 
 export const withCausalDestructionPresentation = moves => {
-  const source = active(moves);
+  const source = (moves ?? []).filter(Boolean);
   return source.map(move => ({
     ...move,
     destroyedPieces: presentationDestroyedPiecesForMove(move, source),
