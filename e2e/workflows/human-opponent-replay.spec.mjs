@@ -76,18 +76,18 @@ for(const width of [1440])replayTest(`human opponent replay preserves authority 
   // An inactive seated player can still inspect a piece and its command lines.
   const saved=await projected(owner,gameId),piece=saved.board.state.pieces.find(piece=>piece.owner==='P1');
   const cell=(page,point)=>page.locator(`[data-testid="game-board"] .cell[data-row="${point.row}"][data-col="${point.col}"]`);
-  expect(piece.kind).toBe('commander');await cell(owner,piece.position).click();await expect(label(owner)).toHaveText('Waiting for your opponent');
+  expect(piece.kind).toBe('commander');await cell(owner,piece.position).click();await expect(label(owner)).toBeHidden();
   const explanation=owner.getByRole('region',{name:'Board explanation',exact:true});
   await expect(explanation).toHaveCount(1);await expect(explanation).toContainText('Commander at');await expect(explanation).toContainText('has a supply line but no connected units.');await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
-  await owner.locator('[data-board-inspection="command"]').click();await expect(label(owner)).toHaveText('Waiting for your opponent');await expect(explanation).toHaveCount(1);await expect(explanation).toContainText('Commander at');await expect(explanation).toContainText('has no connections.');await expect(owner.locator('#shell-overlay-lines [data-legend-kind="supply"]')).toHaveCount(0);await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
+  await owner.locator('[data-board-inspection="command"]').click();await expect(label(owner)).toBeHidden();await expect(explanation).toHaveCount(1);await expect(explanation).toContainText('Commander at');await expect(explanation).toContainText('has no connections.');await expect(owner.locator('#shell-overlay-lines [data-legend-kind="supply"]')).toHaveCount(0);await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
   const writes=[];const listen=request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/'))writes.push({method:request.method(),path:new URL(request.url()).pathname});};opponent.on('request',listen);
   const before=await projected(opponent,gameId);
   await opponent.emulateMedia({reducedMotion:'reduce'});await replayButton(opponent).click();await expect(opponent.locator('.computer-replay')).toBeVisible();await expect(label(opponent).getByRole('button',{name:'Next',exact:true})).toBeVisible();
   await opponent.screenshot({path:info.outputPath('human-replay-manual.png')});
-  await label(opponent).getByRole('button',{name:'Next',exact:true}).click();await expect(opponent.locator('.computer-replay')).toHaveCount(0);
-  await replayButton(opponent).click();const stopReplay=label(opponent).getByRole('button',{name:'Stop replay',exact:true});await stopReplay.focus();await expect(stopReplay).toBeFocused();await stopReplay.press('Enter');await expect(opponent.locator('.computer-replay')).toHaveCount(0);
-  const postStopFocus=await replayButton(opponent).evaluate(button=>{const active=document.activeElement;return {replayFocused:active===button,activeTag:active?.tagName??null,activeAction:active?.dataset?.action??active?.dataset?.boardMessageAction??null,activeText:active?.textContent?.trim().slice(0,80)??null,activeConnected:active?.isConnected??false,replayConnected:button.isConnected};});
-  await info.attach('Native focus immediately after Stop replay',{body:JSON.stringify(postStopFocus),contentType:'application/json'});expect(postStopFocus,JSON.stringify(postStopFocus)).toMatchObject({replayFocused:true});
+  const opponentNext=label(opponent).getByRole('button',{name:'Next',exact:true});
+  for(let step=0;step<20&&await opponent.locator('.computer-replay').count();step++){await expect(opponentNext).toBeVisible();await opponentNext.focus();await opponentNext.press('Enter');}
+  await expect(opponent.locator('.computer-replay')).toHaveCount(0);await expect(replayButton(opponent)).toBeFocused();
+  await expect(label(opponent).getByRole('button',{name:'Stop replay',exact:true})).toHaveCount(0);
   await opponent.emulateMedia({reducedMotion:'no-preference'});await replayButton(opponent).click();await expect(opponent.locator('.computer-replay')).toBeVisible();await expect(opponent.locator('.computer-replay')).toHaveCount(0);
   assertUnchanged(before,await projected(opponent,gameId));expect(writes).toEqual([]);opponent.off('request',listen);
   // A real new revision from the active player cancels a spectator's visual replay.
@@ -105,7 +105,8 @@ for(const width of [1440])replayTest(`human opponent replay preserves authority 
   await replayButton(viewer).click();
   await expect(viewer.locator('.computer-replay')).toBeVisible();
   if(width===390)await expect(viewer.locator('[data-mobile-panel="board"]')).toHaveAttribute('data-active','true');
-  await label(viewer).getByRole('button',{name:'Stop replay',exact:true}).click();await expect(viewer.locator('.computer-replay')).toHaveCount(0);
+  const viewerNext=label(viewer).getByRole('button',{name:'Next',exact:true});await expect(viewerNext).toBeVisible();
+  for(let step=0;step<20&&await viewer.locator('.computer-replay').count();step++){await expect(viewerNext).toBeVisible();await viewerNext.click();}await expect(viewer.locator('.computer-replay')).toHaveCount(0);
 
 
 });
