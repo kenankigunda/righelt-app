@@ -73,7 +73,7 @@ test('unseen update chime stays pending through History and Players and stops af
   const hit=row.locator(':scope > .history-move-hit');await expect(row).toHaveAttribute('data-move-id',recorded.moveId);await expect(hit).toHaveAttribute('data-action','jump-history');await expect(hit).toHaveAttribute('data-game-id',game.id);await expect(hit).toHaveAttribute('data-move-index',String(recorded.index));
   await hit.click();await expect(row).toHaveAttribute('aria-current','true');await expect(row).toHaveClass(/is-selected/);await page.evaluate(()=>window.moveNotes=[]);
   release();await expect.poll(async()=> (await notes(460)).length,{timeout:15000}).toBe(1);await expect.poll(async()=>(await notes(690)).length).toBe(1);expect(await notes(820)).toHaveLength(0);await expect(page.locator('.computer-replay')).toHaveCount(0);await expect(row).toHaveClass(/is-selected/);
-  await page.getByRole('button',{name:'Hide previous turn',exact:true}).click();await switchGamePanel(page,'players');expect(await notes(460)).toHaveLength(1);await expect.poll(async()=> (await notes(460)).length,{timeout:65000}).toBe(2);expect(await notes(820)).toHaveLength(0);
+  await switchGamePanel(page,'players');expect(await notes(460)).toHaveLength(1);await expect.poll(async()=> (await notes(460)).length,{timeout:65000}).toBe(2);expect(await notes(820)).toHaveLength(0);
   await switchGamePanel(page,'board');await expect(page.locator('.computer-replay')).toHaveCount(0);const seen=await notes(460);await page.waitForTimeout(61000);expect(await notes(460)).toHaveLength(seen.length);expect(await notes(820)).toHaveLength(0);
   await info.attach('unseen-update-notes',{body:JSON.stringify(await page.evaluate(()=>window.moveNotes)),contentType:'application/json'});await page.screenshot({path:info.outputPath('unseen-update-seen-live.png')});
  }finally{release();}
@@ -129,8 +129,10 @@ test('lean confirmed frames recover automatically with foreground grace and no f
   expect(retryState.cardKey).toBe(`confirmed-playback-recovery:${game.id}`);expect(retryState.activeCardKey).toBe(retryState.cardKey);
   await info.attach('confirmed-playback-retry-ready',{body:JSON.stringify({...retryState,firstConfirmedAt,foregroundWaitMs:retryState.at-firstConfirmedAt}),contentType:'application/json'});
   await page.screenshot({path:info.outputPath('confirmed-playback-retry-ready.png')});
-  blocked=false;await expect(page.locator('.computer-replay')).toBeVisible({timeout:10000});await expect(page.locator('.computer-replay')).toHaveCount(0);await expect(notice).toHaveCount(0);await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toBeEnabled();
-  await info.attach('confirmed-frame-read-recovery',{body:JSON.stringify({reads,firstReadDelayMs:firstReadAt-firstConfirmedAt,foregroundWaitMs:Date.now()-firstConfirmedAt}),contentType:'application/json'});
+  blocked=false;let recovered;
+  await expect.poll(async()=>{recovered=await page.evaluate(readProjectedGame,{id:game.id,guest:true});return recovered.moves.some(move=>move.computerProof)&&recovered.board.state.sideToMove!==game.computer.side;},{timeout:10000}).toBe(true);
+  const computerMove=recovered.moves.findLast(move=>move.computerProof);expect(computerMove).toBeTruthy();await expect(page.locator(`[data-testid="history-move-item"][data-move-id="${computerMove.moveId}"]`)).toHaveCount(1);await expect(page.locator('.computer-replay')).toHaveCount(0);await expect(notice).toHaveCount(0);await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toBeEnabled();
+  await info.attach('confirmed-frame-read-recovery',{body:JSON.stringify({reads,firstReadDelayMs:firstReadAt-firstConfirmedAt,foregroundWaitMs:Date.now()-firstConfirmedAt,computerMoveId:computerMove.moveId,gameplayRevision:recovered.gameplayRevision,sideToMove:recovered.board.state.sideToMove}),contentType:'application/json'});
  }finally{blocked=false;gate.release();}
 });
 

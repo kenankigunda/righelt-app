@@ -134,7 +134,7 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
   await expect(effects(page)).toHaveCount(0);
   await switchGamePanel(page,'history');
   await expect(page.getByTestId('history-destruction-item')).toHaveCount(2);
-  await page.getByTestId('history-move-item').first().click();
+  const selectedTurn=page.getByTestId('history-turn').filter({hasText:'Turn 1'});await selectedTurn.locator(':scope > .history-turn-hit').click();await expect(selectedTurn.locator(':scope > .history-turn-heading')).toHaveAttribute('aria-current','true');
   if(mobile){
    const preview=page.getByTestId('history-inline-preview');
    await expect(preview.locator('.cell')).toHaveCount(100);
@@ -229,7 +229,7 @@ test('reduced motion never commits removal frames and settles active effects and
 
  await switchGamePanel(page,'history');
  await page.evaluate(armNoRemovalCommitWitness,'history-reduced');
- await page.getByTestId('history-move-item').first().click();
+ const selectedMove=page.getByTestId('history-move-item').first();await selectedMove.locator(':scope > .history-move-hit').click();await expect(selectedMove).toHaveAttribute('aria-current','true');
  await expect(page.locator('#shell-board .history-destruction-piece')).toHaveCount(2,{timeout:REDUCED_MOTION_SETTLEMENT_MS});
  expect(await readNoRemovalCommitWitness(page,'history-reduced')).toEqual([]);
  await disposeNoRemovalCommitWitness(page,'history-reduced');
