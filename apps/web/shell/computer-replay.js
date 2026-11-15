@@ -16,7 +16,7 @@ export const COMPUTER_REPLAY_TIMING = Object.freeze({motion: 520, pause: 360});
 // Automatic live confirmation has no explanatory lead-in or trailing hold.
 // Its one remaining duration is the visible move itself; explicit replay keeps
 // the more deliberate policy above.
-export const AUTOMATIC_LIVE_TIMING = Object.freeze({motion: 520, pause: 0});
+export const AUTOMATIC_LIVE_TIMING = Object.freeze({motion: 120, pause: 0});
 
 /** Frames come from acknowledged active-lineage decisions, never engine simulation. */
 export function buildComputerTurnReplay(options) {
@@ -74,7 +74,7 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
   const findToken = piece => Array.from(layer.querySelectorAll?.(".piece-token[data-piece-id]") ?? []).find(token => token.getAttribute("data-piece-id") === piece.id && !token.classList.contains("ghost"));
   const render = (state, key, frame = null) => preview.update({snapshot: state, previewKey: key, overlay: {mode: 'none'}});
   const showFrame = (displayFrame = null) => {
-    if (!replay || index < 0) return;
+    if (!replay || index < 0) return false;
     clearMotion();
     const frame = displayFrame ?? replay.frames[index];
     // Capture source geometry while before-state tokens are still mounted.
@@ -108,7 +108,9 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
     }
     onFrame(structuredClone(replay.frames[index]));
     notify();
+    return animations.length > 0;
   };
+  const stageWait = startedMotion => reducedMotion() && automatic ? 0 : automatic && !startedMotion ? 0 : (reducedMotion() ? 0 : playbackTiming.motion) + playbackTiming.pause;
   const next = () => {
     if (!replay || !reducedMotion()) return false;
     if (index + 1 >= replay.frames.length) { stop('completed'); return true; }
@@ -135,12 +137,12 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
     if (!await wait(reducedMotion() && automatic ? 0 : playbackTiming.pause) || generation !== current) return false;
     for (index = 0; replay && generation === current && index < replay.frames.length; index++) {
       if (index) render(replay.frames[index].before, `${generation}:${index}:before`);
-      showFrame();
-      if (!await wait(reducedMotion() && automatic ? 0 : (reducedMotion() ? 0 : playbackTiming.motion) + playbackTiming.pause) || generation !== current) return false;
+      const movementStarted=showFrame();
+      if (!await wait(stageWait(movementStarted)) || generation !== current) return false;
       const frame=replay?.frames[index];
       if(frame?.settledAfter){
-        showFrame({...frame,before:frame.after,after:frame.settledAfter,destroyedPieces:frame.settlementDestroyedPieces??[]});
-        if(!await wait(reducedMotion()&&automatic?0:playbackTiming.motion+playbackTiming.pause)||generation!==current)return false;
+        const settlementStarted=showFrame({...frame,before:frame.after,after:frame.settledAfter,destroyedPieces:frame.settlementDestroyedPieces??[]});
+        if(!await wait(stageWait(settlementStarted))||generation!==current)return false;
       }
     }
     if (replay && generation === current) {
