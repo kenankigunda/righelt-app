@@ -6,7 +6,7 @@ export const getPushRetreatPrompt = (snapshot, currentPieceId, renderBoardPrevie
     if (!pushedPiece) {
       return null;
     }
-    return `Select a retreat for piece at ${renderBoardPreviewCoordinate(pushedPiece.position)}`;
+    return `Your piece at ${renderBoardPreviewCoordinate(pushedPiece.position)} has been pushed. Choose a square to retreat to.`;
   };
 
 export const requiredRushContext = (state,{interactive,canPresentActions,getUnsuppliedPieceIds,getPieceById,formatCoordinate}) => {
