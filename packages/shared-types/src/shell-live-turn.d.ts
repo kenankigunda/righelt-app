@@ -30,7 +30,8 @@ export function finalizeResolvedTurn(args: {
   activeTurn: TurnLike;
   endedAt: string;
   onRemoval?: RemovalCollector;
-  resolveToStability: (state: GameState, options: { artifactMode: "full"; onRemoval?: RemovalCollector }) => GameState;
+  onInspectionFrame?: (frame: GameState) => void;
+  resolveToStability: (state: GameState, options: { artifactMode: "full"; onRemoval?: RemovalCollector; onInspectionFrame?: (frame: GameState) => void }) => GameState;
 }): {
   nextState: GameState;
   nextTurn: TurnLike;

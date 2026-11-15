@@ -124,6 +124,17 @@ test("U-09b: normalizeMoves — empty destroyedPieces array is preserved (not re
   assert.deepEqual(normalizedMove.destroyedPieces, []);
 });
 
+test("inspection snapshot is additive, round-trips when valid, and invalid legacy input is dropped", async () => {
+  const valid={...modernMoveWithDestroyedPieces([]),inspectionSnapshot:legacyMove().selectionSnapshot};
+  const invalid={...modernMoveWithDestroyedPieces([]),moveId:'invalid-inspection',inspectionSnapshot:'not-a-state'};
+  const env=makeEnv(),game=makeGameWithMoves([valid,invalid]);
+  await persistGameState(env,game,1);
+  const projection=await loadGameProjection(env,game.id);
+  assert.equal(projection.kind,'ok');
+  assert.deepEqual(projection.game.moves[0].inspectionSnapshot,valid.inspectionSnapshot);
+  assert.equal(projection.game.moves[1].inspectionSnapshot,undefined);
+});
+
 test("U-09c: normalizeMoves — multiple destroyedPieces records preserved exactly", async () => {
   const destroyedPieces = [
     { position: { row: 3, col: 6 }, ownerSeat: "p1", reason: "commander_unsupplied" },

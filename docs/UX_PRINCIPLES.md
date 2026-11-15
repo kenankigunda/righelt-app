@@ -307,6 +307,14 @@ A result represents the acknowledged game outcome, never a pending local move. A
 
 Play again offers a deliberate opponent and side choice, with the opposite side selected by default. Friend starts a fresh invitation and never forces the former opponent into another match. Self-play retains its chosen starting side through reloads. Unavailable trained opponents remain disabled. Closing the dialog or changing accounts cancels pending continuation. The optional creation-side field defaults to red for existing clients and changes no game rules.
 
+### History destruction timing
+
+History animations match the timing of actual removal in live play. Attribution explains which move caused a destruction; it never moves the removal animation to that move.
+
+“Show me again” preserves every supply cut, restoration and repeated cut, with destruction animated only when live play finalized it. Selecting a move shows its supply-cut and pending-destruction state, including pieces awaiting turn-end settlement. Immediate no-retreat destruction is the exception: animate it on the move where it actually happened. Selecting a completed turn animates its turn-end destructions only, then leaves static destroyed markers. Repeat that animation on deliberate turn reselection, never on refresh or layout changes. Respect reduced motion while preserving the same final state and accessible meaning.
+
+The attribution and inspection contract is recorded in [Web app spec §7.1](RIGHELT_WEB_APP_SPEC.md#71-destruction-attribution-and-inspection).
+
 ### Account settings and player identity
 
 Settings belong in a stone-cut side flyout that leaves the game usable on wider screens and fills the screen on phones. Sign-in and account creation remain modal. Settings and password changes share the account surface, branded action icons and player emblem. Keep credential behavior and session fencing unchanged.

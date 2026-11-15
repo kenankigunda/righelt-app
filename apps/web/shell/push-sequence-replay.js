@@ -3,6 +3,7 @@ import {recordedMoveNumber,visibleRecordedMoves} from './recorded-narration.js';
 import { normalizeActivitySide } from './activity-affiliation.js';
 import {listLegalActions} from '../generated/packages/game-engine/src/index.js';
 import {canonicalCommandJson} from '../generated/packages/shared-types/src/sync-protocol.js';
+import {immediateRemovalRecords,moveInspectionSnapshot,settlementRemovalRecords,withCausalDestructionPresentation} from './destruction-presentation.js';
 
 const isHumanSide = (game, side, turn, identityId) => {
   if (!side) return false;
@@ -47,7 +48,11 @@ export function buildPushSequenceReplay({ moves, startId, endId, gameId, revisio
   if (push.action?.type !== 'push' || sequence.at(-1).action?.type !== 'follow'
     || sequence.slice(1).some((move, index) => !['retreat', 'follow'].includes(move.action?.type) || move.action.type === 'retreat' && index !== 0 || move.turnIndex !== push.turnIndex)
     || sequence.some((move, index) => !move.moveId || !move.selectionSnapshot || !move.snapshot || move.turnMoveIndex !== push.turnMoveIndex + index)) return null;
-  return structuredClone({ gameId, revision, lineageHead, frames: sequence.map(move => ({ decisionId: move.moveId, action: move.action, before: move.selectionSnapshot, after: move.snapshot, destroyedPieces: move.destroyedPieces ?? [], moveNumber:recordedMoveNumber(move), recordedMove:move })) });
+  const presented=withCausalDestructionPresentation(sequence);
+  return structuredClone({ gameId, revision, lineageHead, frames: sequence.map((move,index) => ({ decisionId: move.moveId,
+    action: move.action,before:move.selectionSnapshot,after:moveInspectionSnapshot(move),destroyedPieces:immediateRemovalRecords(move),
+    ...(move.inspectionSnapshot&&move.snapshot?{settledAfter:move.snapshot,settlementDestroyedPieces:settlementRemovalRecords(move)}:{}),
+    moveNumber:recordedMoveNumber(move),recordedMove:presented[index] })) });
 }
 
 export function withPushSequenceMessage(message, game, selection, identityId) {

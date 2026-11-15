@@ -7,6 +7,7 @@ import {describeRecordedMove,describeRecordedTurn,recordedMoveNumber,recordedAct
 import {completedTurnTitle,isCompletedWinningTurn} from './completed-review.js';
 import {completedOutcomeNarration} from './completion-narration.js';
 import {BOARD_MESSAGE_STRENGTH,isMeaningfulHistoryMessage,resolveBoardMessageOwner} from '../board/message-priority.js';
+import {moveInspectionSnapshot,withCausalDestructionPresentation} from './destruction-presentation.js';
 
 export const HISTORY_HIT_TARGET_CONTRACT='move-button-v1';
 
@@ -16,7 +17,7 @@ const ownedActor=(game,move,options)=>recordedActorIdentity(game,move,options).o
 export function selectedHistoryPresentation(game,options={}){
  if(!game?.inHistoryMode)return null;
  if(game.historyTurnIndex!=null){
-  const moves=game.historyTurnMoves??[],turn=game.turns?.find(turn=>turn.index===game.historyTurnIndex),side=historyTurnSide(turn,moves);
+  const moves=withCausalDestructionPresentation(game.historyTurnMoves??[]),turn=game.turns?.find(turn=>turn.index===game.historyTurnIndex),side=historyTurnSide(turn,moves);
   const actor=moves.find(move=>recordedActorSide(move)===side),identity=actorIdentity(game,actor,side,options),name=identity.text;
   const completedTitle=isCompletedWinningTurn(game)?completedTurnTitle(game,options.identityId,game.historyTurnIndex):null;
   const completion=completedTitle?completedOutcomeNarration(game,options):null;
@@ -30,15 +31,19 @@ export function selectedHistoryPresentation(game,options={}){
 }
 
 export function selectedHistoricalRecord(game){
+ const context=[...(game?.moves??[]),...(game?.historyContextMoves??[])];
  const move=game?.inspectedDecision??game?.moves?.find(move=>move.index===game.historyIndex);
- return recordedMoveWithClosure(move,[...(game?.moves??[]),...(game?.historyContextMoves??[])]);
+ const closed=recordedMoveWithClosure(move,context);
+ if(!closed)return closed;
+ return withCausalDestructionPresentation([...context.filter(entry=>entry.moveId!==closed.moveId),closed])
+  .find(entry=>entry.moveId===closed.moveId)??closed;
 }
 /** Closure changes historical presentation only, never the live authoritative view. */
 export function recordedHistoryView(game){
  if(!game?.inHistoryMode||game.historyTurnIndex!=null)return game;
  const move=selectedHistoricalRecord(game);
  if(!move)return game;
- return {...game,inspectedDecision:move,currentSnapshot:move.snapshot??game.currentSnapshot};
+ return {...game,inspectedDecision:move,currentSnapshot:moveInspectionSnapshot(move)??game.currentSnapshot};
 }
 
 /** Recorded detail belongs to context, outside the finite Board prompt budget. */

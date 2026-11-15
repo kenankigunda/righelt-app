@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildMovePreview,buildTurnPreview} from '../shell/history-preview.js';
 import {applyHistoryIntent} from '../shell/recovery-view.js';
+import {presentationDestroyedPiecesForMove} from '../shell/destruction-presentation.js';
 const piece=(id,owner,row,col)=>({id,owner,kind:'unit',position:{row,col},supplied:true,commanded:true});
 const snapshot=(pieces,turnIndex=0)=>({pieces,turnIndex,sideToMove:'P1'});
 const move=(index,type,from,to,owner='P1')=>({index,turnIndex:0,turnMoveIndex:index,moveId:`m${index}`,action:{type,actorId:owner,from,to},selectionSnapshot:snapshot([piece(owner,owner,from.row,from.col)]),snapshot:snapshot([piece(owner,owner,to.row,to.col)])});
@@ -48,6 +49,24 @@ test('aggregate includes end-turn finalization and destruction from durable arch
  assert.equal(preview.overlay.destroyedPieces[0].piece.id,'P1');
  assert.equal(preview.overlay.recordedActions[0].recordedAction.type,'move');
 
+});
+
+test('causal move inspection keeps the casualty present while completed turn inspection shows settlement',()=>{
+ const cut=move(0,'project',{row:1,col:1},{row:1,col:2});
+ const close=move(1,'move',{row:2,col:1},{row:2,col:2});
+ const casualty=piece('casualty','P2',4,4);
+ cut.snapshot=snapshot([...cut.snapshot.pieces,casualty]);
+ close.inspectionSnapshot=snapshot([...close.snapshot.pieces,{...casualty,supplied:false,displaySupplied:false}]);
+ close.snapshot=snapshot([],1);
+ close.destroyedPieces=[{pieceId:'casualty',position:{row:4,col:4},ownerSeat:'p2',reason:'loss_of_supply',
+  removalPhase:'turn_settlement',causalMoveId:'m0',piece:casualty}];
+ const inspected=buildMovePreview(cut),turn=buildTurnPreview([cut,close]);
+ assert.equal(inspected.snapshot.pieces.some(entry=>entry.id==='casualty'),true);
+ assert.deepEqual(inspected.overlay.destroyedPieces,[]);
+ assert.deepEqual(turn.snapshot,snapshot([],1));
+ assert.equal(turn.overlay.destroyedPieces[0].piece.id,'casualty');
+ assert.equal(presentationDestroyedPiecesForMove(cut,[cut,close])[0].pieceId,'casualty');
+ assert.deepEqual(presentationDestroyedPiecesForMove(close,[cut,close]),[]);
 });
 
 

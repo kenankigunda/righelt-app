@@ -691,8 +691,10 @@ const normalizeMoves = (value: unknown, mismatches: PersistedGameMismatch[]): Li
           "dropped_invalid_imported_origin",
         );
       }
+      const inspectionSnapshot = asGameState(move.inspectionSnapshot);
+      const { inspectionSnapshot: _inspectionSnapshot, ...persistedMove } = entry as LiveGame["moves"][number];
       const next = {
-        ...(entry as LiveGame["moves"][number]),
+        ...persistedMove,
         moveId: typeof move.moveId === "string" && move.moveId.length > 0 ? move.moveId : nextMoveId(),
         index: typeof move.index === "number" && Number.isFinite(move.index) ? move.index : index,
         displayMoveNumber:
@@ -700,9 +702,14 @@ const normalizeMoves = (value: unknown, mismatches: PersistedGameMismatch[]): Li
             ? move.displayMoveNumber
             : activeMoveCounter,
         destroyedPieces,
+        ...(inspectionSnapshot ? { inspectionSnapshot } : {}),
         action: action ?? { type: "pass" },
         ...(importedFrom ? { importedFrom } : {}),
       } satisfies LiveGame["moves"][number];
+      if (move.inspectionSnapshot !== undefined && !asGameState(move.inspectionSnapshot)) {
+        recordMismatch(mismatches, `moves[${index}].inspectionSnapshot`, "GameState", move.inspectionSnapshot,
+          "dropped_invalid_inspection_snapshot");
+      }
       if (typeof move.moveId !== "string" || move.moveId.length === 0) {
         recordMismatch(mismatches, `moves[${index}].moveId`, "non-empty string", move.moveId, "generated_move_id");
       }
@@ -1027,7 +1034,7 @@ const normalizePersistedPosition = (row: PersistedGameRow): PersistedGameProject
 export const loadPositionProjection = async (env: LiveGameEnv, gameId: string): Promise<PersistedGameProjection | null> => {
   const row = await env.DB.prepare(`SELECT game_id, created_at, updated_at,
     CASE WHEN json_valid(state_json) THEN json_set(state_json, '$.moves', json(COALESCE(
-      (SELECT json_group_array(json(json_remove(value, '$.snapshot', '$.selectionSnapshot')))
+      (SELECT json_group_array(json(json_remove(value, '$.snapshot', '$.selectionSnapshot', '$.inspectionSnapshot')))
        FROM json_each(live_games.state_json, '$.moves')), '[]'))) ELSE state_json END AS state_json,
     event_seq, gameplay_revision, ownership_mode, move_count FROM ${LIVE_GAMES_TABLE} WHERE game_id = ?1`).bind(gameId).first<PersistedGameRow & { move_count: number }>();
   if (!row?.state_json) return null;

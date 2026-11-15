@@ -229,7 +229,7 @@ export const compactHistoryResponse = (body: Record<string, unknown>): Record<st
   const last = game.moves.length - 1;
   return { ...body, game: { ...game, historyProjection: LIVE_HISTORY.snapshotValue, sharedReceipts: true, computerCapabilities: COMPUTER_CAPABILITIES, moves: game.moves.map((move, index) => {
     if (index === last) return move;
-    const { snapshot: _snapshot, selectionSnapshot: _selection, ...summary } = move;
+    const { snapshot: _snapshot, selectionSnapshot: _selection, inspectionSnapshot: _inspection, ...summary } = move;
     return index === 0 ? {...summary,selectionSnapshot:_selection} : summary;
   }) } };
 };

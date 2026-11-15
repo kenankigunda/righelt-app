@@ -1,107 +1,107 @@
 {
   "pathname": "/shell/app.js",
-  "sourceSha256": "b3d047f5d98faac753a7304bf747285e0334f85ce8854bb21bf4600e541a968a",
-  "outputSha256": "a13fdd4c4ee263d6da9ca0e7fb48840b5ddaf79885adeaf5fe2c22d233b3e09f",
+  "sourceSha256": "df8fd92b727a457468d846e5ee4eedf44a4c54c6884ca5384d3690f6fc2e78f5",
+  "outputSha256": "ad91e839f2c80d820b30e715120112bd4d043a26d5369d657a8b64e18b2eac5a",
   "operations": [
     {
-      "start": 8291,
-      "end": 8291,
+      "start": 8410,
+      "end": 8410,
       "before": "",
       "after": "const observeInviteFocus = (phase, detail) => { try { globalThis.__righeltInviteFocusProbe?.(phase, detail); } catch {} };\n",
       "anchor": "};\nconst patchToolHtml = (element, html) => {\n",
       "anchorCount": 1
     },
     {
-      "start": 187851,
-      "end": 187851,
+      "start": 187970,
+      "end": 187970,
       "before": "",
       "after": "  if (nextMarkup !== lastRenderedMarkup) observeInviteFocus(\"render-before-replacement\");\n",
       "anchor": "  if (notificationPatches.patchMainMarkup({appEl,nextMarkup,lastRenderedMarkup,routeName:currentRoute.name,patchHomeAroundCreateControl,createMarkupRoot,updateMountedFlyouts})) {\n",
       "anchorCount": 1
     },
     {
-      "start": 188030,
-      "end": 188030,
+      "start": 188149,
+      "end": 188149,
       "before": "",
       "after": "    observeInviteFocus(\"render-after-replacement\");\n",
       "anchor": "  if (notificationPatches.patchMainMarkup({appEl,nextMarkup,lastRenderedMarkup,routeName:currentRoute.name,patchHomeAroundCreateControl,createMarkupRoot,updateMountedFlyouts})) {\n    restoreScenarioDraftFocus?.();\n",
       "anchorCount": 1
     },
     {
-      "start": 191254,
-      "end": 191254,
+      "start": 191373,
+      "end": 191373,
       "before": "",
       "after": "  const observeFocus = phase => { if (typeof pendingKey === \"string\" && pendingKey.startsWith(\"copy-invite:\")) observeInviteFocus(phase); };\n  observeFocus(\"pending-before-set\");\n",
       "anchor": "  const pendingGeneration=account.snapshot().generation;\n  pendingButtonKeys.add(pendingKey);\n",
       "anchorCount": 1
     },
     {
-      "start": 191291,
-      "end": 191291,
+      "start": 191410,
+      "end": 191410,
       "before": "",
       "after": "  observeFocus(\"pending-after-set\");\n",
       "anchor": "  pendingButtonKeys.add(pendingKey);\n  if (renderStart) {\n",
       "anchorCount": 1
     },
     {
-      "start": 191312,
-      "end": 191312,
+      "start": 191431,
+      "end": 191431,
       "before": "",
       "after": "    observeFocus(\"pending-before-start-render\");\n",
       "anchor": "  if (renderStart) {\n    render({ animatePanels: false, includeBoard: false });\n",
       "anchorCount": 1
     },
     {
-      "start": 191374,
-      "end": 191374,
+      "start": 191493,
+      "end": 191493,
       "before": "",
       "after": "    observeFocus(\"pending-after-start-render\");\n",
       "anchor": "    render({ animatePanels: false, includeBoard: false });\n  }\n",
       "anchorCount": 6
     },
     {
-      "start": 191615,
-      "end": 191615,
+      "start": 191734,
+      "end": 191734,
       "before": "",
       "after": "    observeFocus(\"pending-before-clear\");\n",
       "anchor": "    if(pendingGeneration!==account.snapshot().generation)return;\n    pendingButtonKeys.delete(pendingKey);\n",
       "anchorCount": 1
     },
     {
-      "start": 191657,
-      "end": 191657,
+      "start": 191776,
+      "end": 191776,
       "before": "",
       "after": "    observeFocus(\"pending-after-clear\");\n",
       "anchor": "    pendingButtonKeys.delete(pendingKey);\n    if (renderEnd) {\n",
       "anchorCount": 1
     },
     {
-      "start": 191678,
-      "end": 191678,
+      "start": 191797,
+      "end": 191797,
       "before": "",
       "after": "      observeFocus(\"pending-before-end-render\");\n",
       "anchor": "    if (renderEnd) {\n      render({ animatePanels: false, includeBoard: false });\n",
       "anchorCount": 1
     },
     {
-      "start": 191744,
-      "end": 191744,
+      "start": 191863,
+      "end": 191863,
       "before": "",
       "after": "      observeFocus(\"pending-after-end-render\");\n",
       "anchor": "      render({ animatePanels: false, includeBoard: false });\n    }\n",
       "anchorCount": 7
     },
     {
-      "start": 214403,
-      "end": 214671,
+      "start": 214681,
+      "end": 214949,
       "before": "    try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { if(!active())return;inviteFallback={gameId,link,role};setInviteFeedback('Copy the link below to share it.'); }\n",
       "after": "    try { observeInviteFocus(\"clipboard-before-await\"); await navigator.clipboard.writeText(link); observeInviteFocus(\"clipboard-resolved\");if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { observeInviteFocus(\"clipboard-rejected\"); if(!active())return;inviteFallback={gameId,link,role};setInviteFeedback('Copy the link below to share it.'); }\n",
       "anchor": "    window.__righeltLastInvite=link;\n    try { await navigator.clipboard.writeText(link);if(!active())return;inviteFallback=null;setInviteFeedback('Link copied! Ready to share.'); }\n    catch { if(!active())return;inviteFallback={gameId,link,role};setInviteFeedback('Copy the link below to share it.'); }\n  }catch(error){if(active()){ issueDiagnostics.capture(`invite:${gameId}`, { gameId, operation: 'create_invite', stage: 'failed', code: error.code ?? 'unavailable' }); setInviteFeedback('We couldn’t create your invite link. Please try again.'); }}\n",
       "anchorCount": 1
     },
     {
-      "start": 271276,
-      "end": 271276,
+      "start": 271554,
+      "end": 271554,
       "before": "",
       "after": "    observeInviteFocus(\"action-entry\", actionEl);\n",
       "anchor": "    }\n    const invitationPanel = actionEl.closest('[data-game-panel=\"join\"]');\n    if (invitationPanel instanceof HTMLElement) panelPendingFocus.delete(invitationPanel);\n    pendingInvitationFocus.begin(actionEl, getCopyInviteButtonKey(gameId));\n    await withPendingButton(getCopyInviteButtonKey(gameId),()=>copyGameInvitation(gameId,actionEl.dataset.inviteRole || 'viewer'));\n",
