@@ -56,9 +56,10 @@ test('pageshow replacement may retire the exact initial read without rejecting a
 function controlledLoader(game,{mutate=()=>{},code='recovery_superseded',synchronous=false,status=null,initialAuthenticated=true}={}){
  const state={pendingCommands:[],recoveryGeneration:1,connectionRecoveryEpoch:1,connectionRecovering:false,recoveryOwner:null,recoveryPromise:null};
  const session={authenticated:initialAuthenticated,contextId:'c'.repeat(64),account:{id:'id-main-owner'}};
- const context={identityId:'id-main-owner',active:true,auth:{enabled:true,storageGeneration:'same-storage',session},gameById:new Map(),lastEventSeqByGameId:new Map(),
+ const context={identityId:'id-main-owner',active:true,auth:{enabled:true,storageGeneration:'same-storage',session},gameById:new Map(),lastEventSeqByGameId:new Map(),historyLoads:new Map(),
   getOptimisticState:()=>state,beforeReconcile:async()=>true,hydrateJournal:async()=>{},validSyncSnapshot,isSyncRevision,
-  getGameViewModel:()=>context.gameById.get(game.id)??null,markUpgradeRequired:()=>{throw Error('Unexpected initial upgrade');}};
+  getGameViewModel:()=>context.gameById.get(game.id)??null,recalculateOptimisticGame:()=>{},emitChange:()=>{},
+  markUpgradeRequired:()=>{throw Error('Unexpected initial upgrade');}};
  let fallbackCalls=0;context.boundedRequest=async()=>{fallbackCalls++;return {protocolVersion:2,game,eventSeq:1};};
  context.upsertGameSnapshot=({game,eventSeq})=>{context.gameById.set(game.id,game);context.lastEventSeqByGameId.set(game.id,eventSeq);};
  const failure=Object.assign(new Error(code),{code,...(status===null?{}:{status})});
