@@ -15,6 +15,7 @@ import {createAccountContinuationOwner} from './account-continuation-owner.js';
 import {createHomeCardRendering,scenarioPreviewStatus,formatSideToMoveLabel,getStaticCardPreviewSnapshot,getStaticCardPreviewSelection,getStaticCardPreviewPayload} from './home-card-rendering.js';
 import {renderGameTitle} from './game-title.js';
 import {documentTitleForRoute} from './document-title.js';
+import {createViewerTimeZoneRefresh} from './game-date-inlay.js';
 import {
   createHomeSectionReads, scrollHomeSectionIntoView, HOME_SECTION_SERVER_PAGE_SIZE, HOME_SECTION_VISIBLE_PAGE_SIZE_COMPACT,
   HOME_SECTION_VISIBLE_PAGE_SIZE_WIDE, createHomeSectionState, getHomeSectionVisibleTotalPages,
@@ -367,10 +368,11 @@ document.addEventListener('visibilitychange',()=>{gameSound.activityChanged();if
 window.addEventListener('pagehide',()=>{removalPresentation?.retire();notificationPaper.retire();gameSound.disposePaper();});
 window.addEventListener('hashchange',()=>{gameSound.cancelDestruction();notificationPaper.retire();});
 const syncPageActivity = () => { document.documentElement.dataset.pageActive=String(!document.hidden && document.hasFocus()); };
+const viewerTimeZoneRefresh=createViewerTimeZoneRefresh({onChange:()=>render({animatePanels:false,includeBoard:false})});
 syncPageActivity();
 document.addEventListener('visibilitychange',syncPageActivity);
 window.addEventListener('blur',()=>{document.documentElement.dataset.pageActive='false';gameSound.activityChanged();notificationPaper.cancel();removalPresentation?.retire();});
-window.addEventListener('focus',()=>{syncPageActivity();gameSound.activityChanged();});
+window.addEventListener('focus',()=>{syncPageActivity();gameSound.activityChanged();viewerTimeZoneRefresh.reconcile();});
 const tutorial = createTutorialController({ steps: bootstrap.tutorialSteps });
 let tutorialSavingError = null;
 let tutorialSaveOwner = null;

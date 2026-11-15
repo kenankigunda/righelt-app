@@ -1,49 +1,49 @@
 {
   "version": 1,
   "modulePath": "/shell/app.js",
-  "sourceSha256": "57cc36c404f196361a2c99553d3881cca496603b9f126cfcf4e91ce70ebe501c",
-  "outputSha256": "d2e48fd2614e2cadad3e0b30cecd9304c9c871ea3532454ad962d0edd8616c59",
+  "sourceSha256": "96e31a566d0aa886d277d62537a91b80e507a3ba215800a6e23d87328b0f2535",
+  "outputSha256": "2b66bb191b28e7a228e3da4729b8361ee21a64eb73d68a0903b00e00e3e9603e",
   "prefix": "const __righeltResultReviewFocusProbe = (kind, refs = {}) => { try { globalThis.__RIGHELT_RESULT_REVIEW_FOCUS_PROBE__?.(kind, refs); } catch {} };\n",
   "operations": [
     {
       "label": "context-history-patch",
-      "start": 14534,
-      "end": 14590,
+      "start": 14600,
+      "end": 14656,
       "before": "renderHistoryPanel,patchToolHtml,syncBoardContextDetails",
       "after": "renderHistoryPanel,patchToolHtml:(element,html)=>{const history=element?.matches?.('[data-game-panel=\"history\"]');if(history)__righeltResultReviewFocusProbe(\"history-before-context-patch\",{root:element});const value=patchToolHtml(element,html);if(history)__righeltResultReviewFocusProbe(\"history-after-context-patch\",{root:element});return value;},syncBoardContextDetails"
     },
     {
       "label": "incremental-history-patch",
-      "start": 144821,
-      "end": 145041,
+      "start": 145043,
+      "end": 145263,
       "before": "    const historyTransition = historySelectionTransition.capture(historyEl);\n    patchToolHtml(historyEl, renderHistoryPanel(game));\n    historySelectionTransition.present(historyTransition);\n    revealSelectedHistory();",
       "after": "    const historyTransition = historySelectionTransition.capture(historyEl);\n    __righeltResultReviewFocusProbe(\"history-before-incremental-patch\",{root:historyEl});\n    patchToolHtml(historyEl, renderHistoryPanel(game));\n    __righeltResultReviewFocusProbe(\"history-after-incremental-patch\",{root:historyEl});\n    historySelectionTransition.present(historyTransition);\n    revealSelectedHistory();"
     },
     {
       "label": "committed-render-entry",
-      "start": 178720,
-      "end": 178793,
+      "start": 178942,
+      "end": 179015,
       "before": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;",
       "after": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;\n  __righeltResultReviewFocusProbe(\"render-committed-entry\");"
     },
     {
       "label": "original-focus-once",
-      "start": 180223,
-      "end": 180332,
+      "start": 180445,
+      "end": 180554,
       "before": "if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }",
       "after": "if (heading) { heading.tabIndex = -1; __righeltResultReviewFocusProbe(\"focus-before\", {node:heading}); heading.focus({preventScroll:true}); __righeltResultReviewFocusProbe(\"focus-after\", {node:heading}); pendingResultReviewFocus = null; }"
     },
     {
       "label": "existing-render-tail",
-      "start": 180337,
-      "end": 180534,
+      "start": 180559,
+      "end": 180756,
       "before": "  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  resumeBoardContextReplay();",
       "after": "  __righeltResultReviewFocusProbe(\"render-before-join\");\n  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  __righeltResultReviewFocusProbe(\"render-after-join\");\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  resumeBoardContextReplay();\n  __righeltResultReviewFocusProbe(\"render-after-resume\");"
     },
     {
       "label": "explicit-analysis",
-      "start": 250337,
-      "end": 250468,
+      "start": 250559,
+      "end": 250690,
       "before": "if (action === \"analysis\") { confirmedResultOwner.review(actionGameId);completedReviewEntryGeneration++;resultPresentation.clear();",
       "after": "if (action === \"analysis\") { __righeltResultReviewFocusProbe(\"analysis-entry\"); confirmedResultOwner.review(actionGameId);completedReviewEntryGeneration++;resultPresentation.clear();"
     }
