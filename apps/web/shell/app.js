@@ -190,6 +190,7 @@ mountLoadingEdges(document);
 void fetch("/deploy-meta.json", { cache: "no-store", signal: AbortSignal.timeout(5000) }).then(response => response.json()).then(meta => { globalThis.__righeltObservedDeploymentSha = meta.sha ?? meta.commitSha ?? "unavailable"; }).catch(() => {});
 const appEl = document.getElementById("app");
 const documentIcon=createDocumentIconOwner({documentObject:document});
+let previousTurnKeyInteraction=null;
 let boardContextVisit=0;
 const boardContextPresentation=createBoardContextPresentation({appEl,document,getDependencies:()=>({
  transport,viewingScope,boardContextVisit,currentRoute,getBoardGame,getCurrentViewedGameId,replayRequests,replayController,
@@ -1538,7 +1539,7 @@ const cycleGameAlertStack = (gameId, actionEl = null) => {
 
 const renderGameAlertStackCard = options => renderAlertStackCard(options,escapeHtml);
 
-const historyRendering = createHistoryRendering(() => ({renderIncomingHistory:game=>renderIncomingNarrationHost(game,'wide'), getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, undoHistory, expandedUndoneGroups, expandedImportedHistory, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView}));
+const historyRendering = createHistoryRendering(() => ({renderIncomingHistory:game=>renderIncomingNarrationHost(game,'wide'), getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, mobilePreviousTurnReplaySupplies:descriptor=>previousTurnKeyInteraction?.supplies(descriptor)===true, undoHistory, expandedUndoneGroups, expandedImportedHistory, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView}));
 const renderHistoryPreview = (game, preview, key) => historyRendering.renderHistoryPreview(game, preview, key);
 const renderTurnHistory = game => historyRendering.renderTurnHistory(game);
 const renderHeader = () => `
@@ -3073,7 +3074,7 @@ const mountBoardForGame = (game) => {
       controls: {
         onGuidanceDiagnostic: createGuidanceIncidentSink({gameId:game.id,diagnostics:issueDiagnostics}),
         onInteractionSound: event => gameSound.interaction(event),
-        getDisplayOverlay:selection=>liveTurnOverviewOverlay(selection,{game:getBoardGame(transport.getGameViewModel(game.id)),overview:liveTurnOverview,confirmedPlayback,replayController,forcedFollow:()=>forcedFollowWorking(game.id)}),
+        getDisplayOverlay:selection=>liveTurnOverviewOverlay(selection,{game:getBoardGame(transport.getGameViewModel(game.id)),overview:liveTurnOverview,confirmedPlayback,replayController,replayRequests,forcedFollow:()=>forcedFollowWorking(game.id)}),
         onPieceSelected:piece=>liveTurnOverview.selected(piece),
         getTurnIndicator: state => playbackTurnIndicator(getBoardGame(transport.getGameViewModel(game.id)),state,{replay:replayController?.snapshot(),step:confirmedPlayback?.snapshot().current,identityId:transport.getIdentityId()}),
         getBoardMessage: selection => {
@@ -4330,7 +4331,11 @@ const openBoardAccountGate = async source => {
   accountDialog.open("login", null, source);
 };
 
-createPreviousTurnKeyInteraction(appEl,{getSupportsHover:()=>hoverCapability.getSupportsHover()});
+previousTurnKeyInteraction=createPreviousTurnKeyInteraction(appEl,{
+  getSupportsHover:()=>hoverCapability.getSupportsHover(),
+  getReplayDescriptor:()=>boardContextPresentation.previousTurnReplayDescriptor(appEl.querySelector('#shell-board')?.getAttribute('data-previous-turn-episode')??null),
+  onReplay:({episode,trigger})=>boardContextPresentation.replayPreviousTurn(episode,trigger),
+});
 
 appEl.addEventListener("pointerdown", event => {
   if (event.target.closest?.("#shell-board") && !account.canPlay()) {

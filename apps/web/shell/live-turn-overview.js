@@ -23,8 +23,8 @@ export function buildPreviousTurnOverlay(moves,side,episodeKey=null) {
 }
 
 /** Recorded presentation owners take precedence over an optional live overview. */
-export function liveTurnOverviewOverlay(selection,{game,overview,confirmedPlayback,replayController,forcedFollow}) {
-  return game?.confirmedPlayback || confirmedPlayback?.snapshot().playing || replayController?.snapshot().playing || forcedFollow()
+export function liveTurnOverviewOverlay(selection,{game,overview,confirmedPlayback,replayController,replayRequests,forcedFollow}) {
+  return game?.confirmedPlayback || confirmedPlayback?.snapshot().playing || replayController?.snapshot().playing || replayRequests?.snapshot()?.phase==='loading' || forcedFollow()
     ? null : overview.overlay(selection);
 }
 

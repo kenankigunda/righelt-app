@@ -2,7 +2,7 @@ import {createBoardContextStore} from './board-context.js';
 import {createBoardContextOwner,createBoardContextFocus} from './board-context-owner.js';
 import {createBoardContextLayout} from './board-context-layout.js';
 import {publishAcknowledgedBoardMessage,contextReplayAvailable} from './playback-presentation.js';
-import {displayedReplayIsCurrent} from './displayed-replay.js';
+import {captureDisplayedReplay,displayedReplayIsCurrent,displayedReplayMatchesPreviousTurnEpisode} from './displayed-replay.js';
 import {createBoardContextReceiver} from './board-context-receiver.js';
 import {displayedReplayFocusTarget} from './displayed-replay-starter.js';
 
@@ -74,6 +74,15 @@ export function createBoardContextPresentation({appEl,document,getDependencies,c
   const d=getDependencies();
   return contextReplayAvailable({descriptor,followWorking:d.forcedFollowWorking(descriptor?.gameId),playbackPlaying:d.confirmedPlayback?.snapshot().playing,canReplay:canReplayDisplayed,replayPending:d.replayRequests.snapshot(),replayPlaying:d.replayController?.snapshot().playing});
  };
+ const previousTurnReplayDescriptor=episode=>{
+  const d=getDependencies(),acknowledged=boardContexts.channel('acknowledged');
+  const descriptor=acknowledged?.replay??captureDisplayedReplay({game:displayedReplayFrame(),owner:d.transport,scope:boardContextScope(),identityId:d.transport.getIdentityId(),visible:!document.hidden});
+  return displayedReplayMatchesPreviousTurnEpisode(descriptor,episode)&&contextReplayEnabled(descriptor)?descriptor:null;
+ };
+ const replayPreviousTurn=(episode,trigger)=>{
+  const descriptor=previousTurnReplayDescriptor(episode);if(!descriptor)return false;
+  void getDependencies().startComputerReplay(descriptor,trigger);return true;
+ };
  const acknowledgedBoardMessage=(view,status,options)=>{
   const d=getDependencies();
   return publishAcknowledgedBoardMessage(view,status,options,{boardContexts,queueBoardContextRefresh,transport:d.transport,boardContextScope,document,notificationStack:d.notificationStack});
@@ -137,7 +146,7 @@ export function createBoardContextPresentation({appEl,document,getDependencies,c
   const focusReturn=boardContextFocus.begin(actionEl,{allowRemoval:true});queueBoardContextRefresh();focusReturn.restore(boardFocusTarget);
  };
  return {store:boardContexts,layout:boardContextLayout,owner:boardContextOwner,focus:boardContextFocus,announcement:contextAnnouncement,scope:boardContextScope,boardFocusTarget,
-  captureIncomingFocus,restoreIncomingFocus,queue:queueBoardContextRefresh,displayedReplayFrame,canReplayDisplayed,contextReplayEnabled,currentReplayContext,ack:acknowledgedBoardMessage,receive:receiveBoardContext,dispatch:dispatchBoardMessageAction,cancel:cancelPendingBoardContextReplay,resume:resumeBoardContextReplay,replayAction,dismiss,
+  captureIncomingFocus,restoreIncomingFocus,queue:queueBoardContextRefresh,displayedReplayFrame,canReplayDisplayed,contextReplayEnabled,previousTurnReplayDescriptor,replayPreviousTurn,currentReplayContext,ack:acknowledgedBoardMessage,receive:receiveBoardContext,dispatch:dispatchBoardMessageAction,cancel:cancelPendingBoardContextReplay,resume:resumeBoardContextReplay,replayAction,dismiss,
   state:{get activeDisplayedReplay(){return activeDisplayedReplay;},set activeDisplayedReplay(value){activeDisplayedReplay=value;},get activeReplayFocusCleanup(){return activeReplayFocusCleanup;},set activeReplayFocusCleanup(value){activeReplayFocusCleanup=value;},get pendingBoardContextReplay(){return pendingBoardContextReplay;}},
   destroy(){if(disposed)return;disposed=true;boardContextOwner.retire();cancelPendingBoardContextReplay();activeReplayFocusCleanup?.();activeReplayFocusCleanup=null;boardContextFocus.destroy();boardContextLayout.destroy?.();contextAnnouncement.remove?.();},
  };

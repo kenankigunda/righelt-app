@@ -32,6 +32,16 @@ test('turn headings retain ownership while displayed moves run newest first',()=
  assert.doesNotMatch(html,/class="history-actor"/);
  assert.match(html,/data-testid="history-pending-move-item"[^>]*aria-busy="true"/);
 });
+test('mobile replay key suppresses only the duplicate fallback for its exact live opponent episode',()=>{
+ const replay={key:'replay-key'},acknowledged={key:'ack',gameId:'g',message:{text:'Opponent moved'},replay};
+ context.boardContexts.update('acknowledged',acknowledged);context.boardContexts.dismiss('ack');
+ context.canReplayDisplayed=()=>true;context.contextReplayEnabled=()=>true;
+ context.mobilePreviousTurnReplaySupplies=descriptor=>descriptor===replay;
+ assert.doesNotMatch(context.render(game),/Show me again/);
+ context.mobilePreviousTurnReplaySupplies=()=>false;
+ assert.match(context.render(game),/Show me again/);
+ context.boardContexts.clear();delete context.canReplayDisplayed;delete context.contextReplayEnabled;delete context.mobilePreviousTurnReplaySupplies;
+});
 test('selected move is inert while individual actions remain buttons and preview uses action overlay',()=>{
  const html=context.render({...game,inHistoryMode:true,historyIndex:1});
  const selected=html.match(/<li class="history-item[^>]*is-selected[^>]*>/)[0];
