@@ -946,6 +946,19 @@ test('preview click instrumentation preserves lookup order and stops before end-
  for(const blocked of [true,false])for(const options of [{},{external:true},{external:true,inspection:true},{external:true,legal:false},{action:'pass'},{throwLookup:true}])assert.deepEqual(run(op.after,blocked,options),run(op.before,blocked,options));
  assert.equal(run(op.after,true).entries,0);assert.equal(run(op.after,false).entries,1);
 });
+test('preview click instrumentation preserves the Board explanation disclosure toggle',()=>{
+ const recipe=recipes['/board/runtime/board-runtime.js'],op=recipe.operations.find(op=>op.after.includes('runtime-preview-entry'));
+ const run=body=>{
+  const button={getAttribute:()=> 'toggle-board-explanation'};
+  const event={target:{closest:selector=>selector.includes('message')?button:null},isTrusted:false,currentTarget:{}};
+  const guidanceDisclosure={key:'piece',open:false};let renders=0;
+  const names=['interactionBlocked','elements','controls','submitPass','endCurrentTurn','rushGuidanceKey','syncRushGuidance','renderStatusContent','inspection','legalActions','getMutationSurface','mutationActivation','guidanceDisclosure','renderStatus'];
+  const runtime=new Function(...names,recipe.prefix+body+';return {handleBoardPreviewClick,getGuidanceDisclosure:()=>guidanceDisclosure};')(false,{boardPreviewLabelEl:event.currentTarget},{onBoardMessageAction:()=>assert.fail('the disclosure remains locally owned')},()=>assert.fail('must not pass'),()=>assert.fail('must not end turn'),null,()=>{},()=>{},null,[],()=>({}),{allow:()=>true},guidanceDisclosure,()=>{renders++;});
+  runtime.handleBoardPreviewClick(event);return{open:runtime.getGuidanceDisclosure().open,renders};
+ };
+ assert.deepEqual(run(op.before),{open:true,renders:1});
+ assert.deepEqual(run(op.after),{open:true,renders:1});
+});
 test('end-turn guard instrumentation preserves every original short-circuit getter count and thrown identity',()=>{
  const recipe=recipes['/board/runtime/board-runtime.js'],op=recipe.operations.find(op=>op.after.includes('runtime-end-turn-entry'));
  const expression=body=>body.match(/if \((.*)\) \{/)[1],names=['state','destroyed','interactionBlocked','submitting','overlayMode','OVERLAY_MODE','host'];

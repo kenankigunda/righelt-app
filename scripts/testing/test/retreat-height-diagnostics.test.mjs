@@ -89,8 +89,8 @@ test('height input preserves the original media query getter and transition argu
  const recipe=recipes['/board/message-height.js'],op=operation('/board/message-height.js','const change=');
  for(const code of [op.before,op.after]){
   let calls=0,reads=0,arg;const result={kind:'animate'};
-  const value=evaluate(recipe,code+';change;',{slot:{},from:40,target:50,initial:false,metricChange:false,forceSnap:false,pointer:false,key:true,win:{matchMedia(){calls++;return {get matches(){reads++;return false;}};}},messageHeightTransition(input){arg=input;return result;}});
-  assert.equal(calls,1);assert.equal(reads,1);assert.equal(arg.pressing,true);assert.equal(value,result);
+  const value=evaluate(recipe,code+';change;',{slot:{},from:40,target:50,initial:false,metricChange:false,forceSnap:false,pointer:false,key:true,contentHeightOwner:'board-guidance:selected-piece',win:{matchMedia(){calls++;return {get matches(){reads++;return false;}};}},messageHeightTransition(input){arg=input;return result;}});
+  assert.equal(calls,1);assert.equal(reads,1);assert.equal(arg.pressing,true);assert.equal(arg.contentChange,true);assert.equal(value,result);
  }
 });
 
