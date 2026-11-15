@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {cashPlan,actualCash} from '../cash.mjs';
+import {cashPlan,actualCash,cloudflareCoverage} from '../cash.mjs';
 import {projectCampaign} from '../bundle.mjs';
 import {fixture,projectionMeasurements} from './helpers.mjs';
 import {snapshotLeaseRenewal} from '../worker.mjs';
@@ -30,4 +30,17 @@ test('snapshot renewal stays immediate and periodic across many files without pe
  for(let i=0;i<1000;i++)await renew();assert.equal(calls,1);
  now=19999;await renew();assert.equal(calls,1);now=20000;await renew();assert.equal(calls,2);
  now=40000;await renew();assert.equal(calls,3);
+});
+test('Cloudflare allocation covers the original deadline and funded autonomous cleanup/response window',async()=>{
+ const f=await fixture(),now=f.now(),deadline=f.manifest.deadline,forecastUntil=deadline+5400000;
+ assert.equal(cloudflareCoverage(f.manifest.cash,{now,deadline,forecastUntil}).requiredUntil,forecastUntil);
+ const early=structuredClone(f.manifest.cash);early.cloudflare.reviewAt=now+3600000;
+ assert.throws(()=>cloudflareCoverage(early,{now,deadline,forecastUntil}),/full autonomous/);
+ const noResponse=structuredClone(f.manifest.cash);noResponse.cloudflare.reviewAt=deadline+3600000;
+ assert.throws(()=>cloudflareCoverage(noResponse,{now,deadline,forecastUntil}),/full autonomous/);
+ assert.throws(()=>cloudflareCoverage(f.manifest.cash,{now,deadline,forecastUntil:now+31*86400000}),/full autonomous/);
+ assert.throws(()=>cloudflareCoverage(f.manifest.cash,{now,deadline,forecastUntil:undefined}),/validated campaign/);
+ const exact=structuredClone(f.manifest.cash);exact.cloudflare.reviewAt=forecastUntil;
+ assert.equal(cloudflareCoverage(exact,{now,deadline,forecastUntil}).reviewAt,forecastUntil);
+ assert.equal(cloudflareCoverage(f.manifest.cash,{now,deadline,forecastUntil:now+3600000}).requiredUntil,deadline);
 });

@@ -4,6 +4,7 @@ import { canaryManifest } from '../canary-manifest.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
@@ -18,8 +19,42 @@ import { collect, verifyCollection } from '../cli.mjs';
 import { runWorker, publishSnapshot } from '../worker.mjs';
 const require = createRequire(import.meta.url);
 const { Miniflare } = require(require.resolve('miniflare', { paths: [require.resolve('wrangler/package.json')] }));
+const nativeRequired=process.env.RIGHELT_REQUIRE_NATIVE_HOSTED_PROOF==='1';
 
-test('real Worker/DO/R2 and child process complete without an attached submitter, then collect and clear', { timeout: 180000, skip: !existsSync('tools/ai-trainer/.venv/bin/python') && 'Requires trainer venv. Mandatory in trained-play CI model job.' }, async t => {
+test('real Worker/DO/R2 keeps staged inputs private and collectable after cancellation without provisioning',async t=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'righelt-staged-worker-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const bundle=await build({entryPoints:['apps/compute-controller/index.mjs'],bundle:true,write:false,format:'esm',platform:'browser'});
+  let outbound=0;
+  const mf=new Miniflare({modules:true,script:bundle.outputFiles[0].text,compatibilityDate:'2026-11-09',
+    durableObjects:{CONTROL:{className:'ComputeController',useSQLite:true}},r2Buckets:['ARTIFACTS'],
+    bindings:{ADMIN_TOKEN:'staging-admin',WORKER_SIGNING_KEY:'staging-signing-'.repeat(4),COMPUTE_ENABLED:'false',AUTHORIZED_PILOT_CENTS:'0'},
+    outboundService:async()=>{outbound++;throw Error('staged campaign must not contact a provider');}});
+  t.after(()=>mf.dispose());
+  const fetcher=(url,options)=>mf.dispatchFetch(url,options),admin=new Client({url:'https://compute.example',id:'pilot',token:'staging-admin',fetcher});
+  const f=await fixture(),raw=[f.cp,f.corpus,f.recipe];
+  await admin.request('manifest','PUT',f.manifest);for(const bytes of raw)await admin.upload(bytes);
+  assert.equal((await admin.json('status')).status,'staged');
+  const unauthorized=new Client({url:'https://compute.example',id:'pilot',token:'wrong-token',fetcher});
+  await assert.rejects(unauthorized.download(f.inputs[0]),/rejected/);
+  const bucket=await mf.getR2Bucket('ARTIFACTS');assert.deepEqual(new Uint8Array(await (await bucket.get(`pilot/${f.inputs[0].sha256}`)).arrayBuffer()),f.cp);
+  const cancelled=await admin.json('cancel',{});assert.equal(cancelled.status,'cancelled');assert.equal(cancelled.cleanupVerified,true);
+  const directory=path.join(root,'collection');await collect(admin,directory);assert.equal((await verifyCollection(directory)).verified,true);
+  const inventory=JSON.parse(await fs.readFile(path.join(directory,'inventory.json')));assert.equal(inventory.attempts.length,0);assert.equal(inventory.objects.length,3);assert.equal(outbound,0);
+});
+
+test('mandatory native lane fails instead of skipping when its trainer environment is absent',async t=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'righelt-missing-trainer-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const env={...process.env,RIGHELT_REQUIRE_NATIVE_HOSTED_PROOF:'1'};delete env.NODE_TEST_CONTEXT;
+  let failure;
+  try{await promisify(execFile)(process.execPath,['--import',require.resolve('tsx'),'--test','--test-name-pattern=^real Worker/DO/R2 and child process',fileURLToPath(import.meta.url)],
+    {cwd:root,env,timeout:30000,maxBuffer:1024*1024});}
+  catch(error){failure=error;}
+  assert(failure,'missing native environment must fail the dedicated lane');assert.equal(failure.code,1);
+  assert.match(failure.stdout,/Mandatory hosted native proof requires trainer venv/);
+});
+
+test('real Worker/DO/R2 and child process complete without an attached submitter, then collect and clear', { timeout: 180000, skip: !nativeRequired&&!existsSync('tools/ai-trainer/.venv/bin/python') && 'Requires trainer venv. Mandatory in trained-play CI model job.' }, async t => {
+  assert(existsSync('tools/ai-trainer/.venv/bin/python'),'Mandatory hosted native proof requires trainer venv');
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'righelt-compute-test-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const bundle = await build({ entryPoints: ['apps/compute-controller/index.mjs'], bundle: true, write: false, format: 'esm', platform: 'browser' });

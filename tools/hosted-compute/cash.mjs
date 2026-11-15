@@ -33,3 +33,15 @@ export function actualCash(plan, actual) {
     actual.providerUsageCents + actual.unusedCreditCents <= funding.fundedCreditCents;
   return { withinBudget, runpodPaidCents, cloudflarePaidCents, cashOutlayCents: runpodPaidCents + cloudflarePaidCents };
 }
+
+// The retention review is an owner decision after the intended autonomous
+// work, cleanup and funded response window. It is never a mid-run billing
+// refresh requirement, automatic renewal or authority to delete stored data.
+export function cloudflareCoverage(plan,{now,deadline,forecastUntil}) {
+  cashPlan(plan,plan.computeUsageCapCents);
+  assert([now,deadline,forecastUntil].every(Number.isSafeInteger) && deadline>now && forecastUntil>now,'validated campaign and external funding coverage required');
+  const cf=plan.cloudflare,requiredUntil=Math.max(deadline,forecastUntil);
+  const fundedUntil=cf.fundedFrom+cf.retentionDays*86400000;
+  assert(cf.fundedFrom<=now && Number.isSafeInteger(fundedUntil) && cf.reviewAt>=requiredUntil && fundedUntil>=requiredUntil,'Cloudflare reviewed reserve must cover the full autonomous campaign, cleanup and owner response window');
+  return {requiredUntil,fundedUntil,reviewAt:cf.reviewAt};
+}

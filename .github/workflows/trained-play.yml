@@ -52,6 +52,8 @@ jobs:
           PYTHONPATH: tools/ai-trainer
         run: pnpm test:trainer
       - name: Hosted compute contracts and local Worker proof
+        env:
+          RIGHELT_REQUIRE_NATIVE_HOSTED_PROOF: '1'
         run: pnpm test:hosted-compute
       - name: CPU export smoke test
         env:

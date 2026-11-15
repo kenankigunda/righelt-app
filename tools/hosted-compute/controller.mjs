@@ -1,7 +1,7 @@
 import { validateOperatorAttestation } from './operator-attestation.mjs';
 import { qualifyPilot } from './report.mjs';
 import { qualificationIdentity } from './qualification.mjs';
-import { cashPlan } from './cash.mjs';
+import { cashPlan,cloudflareCoverage } from './cash.mjs';
 import { validateScientificAdmission } from './experiment.mjs';
 import { verifyResult } from './result.mjs';
 import { POLICY, TERMINAL, assert, artifact, canonical, encode, safeName, sha256, validateManifest, reserveCents } from './policy.mjs';
@@ -49,7 +49,8 @@ export class Controller {
     }});
     for (const p of c.manifest.phases) assert(p.host.quoteObservedAt<=now && p.host.quoteExpires > now, 'host quote expired or unknown');
     assert(this.externalControl, 'external cleanup prearm unavailable');
-    await this.externalControl(c.manifest).authorizeLaunch(c.manifest, { phaseIndex: 0, generation: 1 });
+    const authority=await this.externalControl(c.manifest).authorizeLaunch(c.manifest, { phaseIndex: 0, generation: 1 });
+    cloudflareCoverage(c.manifest.cash,{now,deadline:c.manifest.deadline,forecastUntil:authority.forecastUntil});
     if(c.manifest.mode==='unattended'){
       const raw=await this.bucket.get(`${id}/${c.manifest.readinessSha256}`);assert(raw,'readiness evidence missing');
       const report=JSON.parse(new TextDecoder().decode(await raw.arrayBuffer()));
@@ -66,7 +67,6 @@ export class Controller {
     db.cloudflareAllocatedCents=(db.cloudflareAllocatedCents??0)+cloudflareUsageCapCents;
     assert((db.pilotReservedCents ?? 0) + c.manifest.maxCents <= this.config.authorizedCents, 'pilot authorization exhausted');
     db.pilotReservedCents = (db.pilotReservedCents ?? 0) + c.manifest.maxCents;
-    assert(c.manifest.cash.cloudflare.fundedFrom <= now && c.manifest.cash.cloudflare.reviewAt > now, 'Cloudflare retention review is overdue');
     c.status = 'queued'; this.event(c, 'authorized', { reference: c.manifest.authorizationReference });
     await this.save(db); return this.status(c);
   }

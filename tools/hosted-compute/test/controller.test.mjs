@@ -15,6 +15,18 @@ test('staging is idempotent, rejects changed inputs and does not spend', async (
   await assert.rejects(f.core.stage({ ...f.manifest, seed: 108 }), /already used/);
   await assert.rejects(f.core.putObject('pilot', f.inputs[0], encode('wrong')), /checksum/);
 });
+test('early Cloudflare review rejects paid launch before any provider reservations or work queues',async()=>{
+ for(const reviewOffset of [3600000,24*3600000,25*3600000]){
+  const f=await fixture();f.manifest.cash.cloudflare.reviewAt=f.now()+reviewOffset;
+  await f.stage();await assert.rejects(f.core.start(f.manifest.id),/full autonomous/);
+  const db=await f.core.load();assert.equal(db.campaigns.pilot.status,'staged');assert.equal(db.campaigns.pilot.attempts.length,0);
+  for(const key of ['creditAllocatedCents','cloudflareAllocatedCents','pilotReservedCents'])assert.equal(db[key]??0,0);
+  assert.equal(db.cashFunding,undefined);assert.equal(f.providers.creates,0);
+ }
+ const f=await fixture();f.manifest.cash.cloudflare.reviewAt=f.manifest.deadline+5400000;
+ await f.stage();await f.core.start(f.manifest.id);
+ assert.equal((await f.state()).status,'queued');assert.equal((await f.core.load()).creditAllocatedCents,f.manifest.maxCents);
+});
 test('disabled activation, incomplete inputs, expired quote and concurrent ownership block launch', async () => {
   const f = await fixture(); await f.core.stage(f.manifest);
   await assert.rejects(f.core.start('pilot'), /incomplete/);

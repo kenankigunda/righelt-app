@@ -69,6 +69,6 @@ export class PrimaryControl {
     assert(item && manifest.phases[phaseIndex]?.id === item.phaseId && manifest.phases[phaseIndex]?.host.image === item.image, 'launch not in exact prearmed inventory');
     assert(this.clock()<record.cutoff,'external launch cutoff reached');
     assertGithubUsageCurrent(record.githubUsage,this.clock());
-    return {name:item.name,prearmSha256:this.reference.sha256,cutoff:record.cutoff};
+    return {name:item.name,prearmSha256:this.reference.sha256,cutoff:record.cutoff,forecastUntil:record.githubUsage.projection.forecastUntil};
   }
 }
