@@ -200,5 +200,21 @@ test('one explicit loading episode starts before selection and survives until tr
   settled.resolve();
   assert.deepEqual(await selection, {accepted:true,value:'live'});
   assert.equal(actions.snapshot(), null);
+  assert.equal(actions.presentation().scope, 'game:live','accepted presentation survives loading settlement for its matching render');
+  assert.equal(actions.consumePresentation(actions.presentation().key),true);
+  assert.equal(actions.presentation(),null);
   assert.equal(events.at(-1), 'pending:clear');
+});
+
+test('rejected acceptance and explicit lifecycle retirement leave no claimable presentation',async()=>{
+  const view=fixture();
+  await view.actions.run({scope:'game:turn:2',select:()=>2,accepted:()=>false});
+  assert.equal(view.actions.presentation(),null);
+  await assert.rejects(view.actions.run({scope:'game:turn:3',select:()=>3,accepted:()=>{throw new Error('bad acceptance');}}),/bad acceptance/);
+  assert.equal(view.actions.snapshot(),null);
+  assert.equal(view.actions.presentation(),null);
+  await view.actions.run({scope:'game:turn:4',select:()=>4});
+  assert.equal(view.actions.presentation().scope,'game:turn:4');
+  view.actions.retire();
+  assert.equal(view.actions.presentation(),null);
 });

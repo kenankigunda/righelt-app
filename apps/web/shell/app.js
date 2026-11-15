@@ -982,6 +982,7 @@ const historySelectionTransition = createHistorySelectionTransition({ reducedMot
 const historySelectionActions = createHistorySelectionActions({
   transition: historySelectionTransition,
   playSound: cue => gameSound.play(cue),
+  onPresentationReady: () => render({ animatePanels: false, includeBoard: true }),
   onPendingChange: episode => {
     boardRuntime?.refreshStatus();
     if (episode) return;
@@ -995,9 +996,10 @@ const historySelectionActions = createHistorySelectionActions({
   },
 });
 const historyDestructionAnimationOwner = createHistoryDestructionAnimationOwner();
-document.addEventListener('visibilitychange', () => { if (document.hidden) historySelectionTransition.cancel(); });
-window.addEventListener('hashchange', () => historySelectionTransition.cancel());
-window.addEventListener('pagehide', () => historySelectionTransition.cancel());
+const cancelHistorySelection = () => { historySelectionTransition.cancel(); historySelectionActions.retire(); };
+document.addEventListener('visibilitychange', () => { if (document.hidden) cancelHistorySelection(); });
+window.addEventListener('hashchange', cancelHistorySelection);
+window.addEventListener('pagehide', cancelHistorySelection);
 const getRouteTransitionRenderKey = () =>
   routeTransition ? `${routeTransition.type}:${routeTransition.fromRoute}:${routeTransition.toRoute}:${routeTransition.gameId}` : "none";
 const getRouteTransitionPhaseKey = () => routeTransition?.phase || "idle";
@@ -3046,11 +3048,13 @@ const mountBoardForGame = (game) => {
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
   const historyDestroyedPieces = capturing ? [] : historyPreview?.overlay.destroyedPieces ?? getHistoryDestroyedPieceOverlays(game);
+  const historyDestructionEpisode = historySelectionActions.presentation();
   const animateHistoryDestruction = !capturing && historyDestructionAnimationOwner.claim(
     game,
-    historySelectionActions.snapshot(),
+    historyDestructionEpisode,
     (historyPreview?.overlay.animatedDestroyedPieces?.length ?? 0) > 0,
   );
+  if (animateHistoryDestruction) historySelectionActions.consumePresentation(historyDestructionEpisode.key);
   const historyRecordedActionStartPiece = capturing ? null : historyPreview?.overlay.recordedActionStartPiece ?? getHistoryRecordedActionStartPiece(game);
   const forceClickTargetSelection = Boolean(capturing);
   const frozenCapture = capturing && scenarioCapture.mode === 'frozen';
