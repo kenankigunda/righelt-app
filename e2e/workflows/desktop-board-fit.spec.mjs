@@ -80,7 +80,7 @@ test('desktop board fits primary viewport, remains stable through scroll/header 
  await page.evaluate(()=>document.documentElement.style.fontSize='100%');await page.setViewportSize({width:390,height:740});
  await expect(page.locator('#app')).toHaveAttribute('data-shell-layout-mode','narrow');expect(await page.locator('[data-testid="game-board-wrap"]').evaluate(el=>el.style.getPropertyValue('--desktop-board-side'))).toBe('');
  await switchGamePanel(page,'board');await makeAnyLegalMove(page);await switchGamePanel(page,'history');
- const move=page.getByTestId('history-move-item').first();await move.click();
+ const move=page.getByTestId('history-move-item').first();await move.locator(':scope > .history-move-hit').click();await expect(move).toHaveAttribute('aria-current','true');
  const selectedMoveId=await move.getAttribute('data-move-id');expect(selectedMoveId).toBeTruthy();
  for(const viewport of [{width:390,height:740},{width:1440,height:800}]){
   await page.setViewportSize(viewport);const history=page.locator('[data-game-panel="history"]');

@@ -76,10 +76,10 @@ for(const width of [1440])replayTest(`human opponent replay preserves authority 
   // An inactive seated player can still inspect a piece and its command lines.
   const saved=await projected(owner,gameId),piece=saved.board.state.pieces.find(piece=>piece.owner==='P1');
   const cell=(page,point)=>page.locator(`[data-testid="game-board"] .cell[data-row="${point.row}"][data-col="${point.col}"]`);
-  expect(piece.kind).toBe('commander');await cell(owner,piece.position).click();await expect(label(owner)).toHaveText('Supply lines');
+  expect(piece.kind).toBe('commander');await cell(owner,piece.position).click();await expect(label(owner)).toHaveText('Waiting for your opponent');
   const explanation=owner.getByRole('region',{name:'Board explanation',exact:true});
-  await expect(explanation).toContainText('Commander at');await expect(explanation).toContainText('has a supply line but no connected units.');await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
-  await owner.locator('[data-board-inspection="command"]').click();await expect(label(owner)).toHaveText('No connection');await expect(explanation).toContainText('Commander at');await expect(explanation).toContainText('has no connections.');await expect(owner.locator('#shell-overlay-lines [data-legend-kind="supply"]')).toHaveCount(0);await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
+  await expect(explanation).toHaveCount(1);await expect(explanation).toContainText('Commander at');await expect(explanation).toContainText('has a supply line but no connected units.');await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
+  await owner.locator('[data-board-inspection="command"]').click();await expect(label(owner)).toHaveText('Waiting for your opponent');await expect(explanation).toHaveCount(1);await expect(explanation).toContainText('Commander at');await expect(explanation).toContainText('has no connections.');await expect(owner.locator('#shell-overlay-lines [data-legend-kind="supply"]')).toHaveCount(0);await expect(label(owner).locator('[data-board-preview-action],[data-board-message-action="pass"]')).toHaveCount(0);
   const writes=[];const listen=request=>{if(request.method()!=='GET'&&new URL(request.url()).pathname.startsWith('/api/'))writes.push({method:request.method(),path:new URL(request.url()).pathname});};opponent.on('request',listen);
   const before=await projected(opponent,gameId);
   await opponent.emulateMedia({reducedMotion:'reduce'});await replayButton(opponent).click();await expect(opponent.locator('.computer-replay')).toBeVisible();await expect(label(opponent).getByRole('button',{name:'Next',exact:true})).toBeVisible();
@@ -130,11 +130,13 @@ for(const width of [390,1440])test(`reopening human play preserves narration and
    await owner.locator('[data-testid="game-board"] .cell[data-row="4"][data-col="4"]').click();
    await owner.locator(`[data-testid="game-board"] .cell[data-row="${piece.position.row}"][data-col="${piece.position.col}"]`).click();
    // The finite Board label and the complete scrollable explanation are separate surfaces.
-   await expect(label(owner)).toHaveText('Supply lines');
-   const inspectionHelp=owner.getByRole('region',{name:'Board explanation',exact:true}).filter({hasText:'has a supply line but no connected units'});
-   await expect(inspectionHelp).toBeVisible();await expect(inspectionHelp).toContainText('has a supply line but no connected units');
-   await expect(inspectionHelp.locator('.board-preview-coordinate-chip')).toHaveText(`${piece.position.row}, ${piece.position.col}`);
-   await expect(inspectionHelp).toContainText('no connected units.');
+   await expect(label(owner)).toHaveText('Waiting for your opponent');
+   if(width===1440){
+    const inspectionHelp=owner.getByRole('region',{name:'Board explanation',exact:true}).filter({hasText:'has a supply line but no connected units'});
+    await expect(owner.getByRole('region',{name:'Board explanation',exact:true})).toHaveCount(1);await expect(inspectionHelp).toBeVisible();await expect(inspectionHelp).toContainText('has a supply line but no connected units');
+    await expect(inspectionHelp.locator('.board-preview-coordinate-chip')).toHaveText(`${piece.position.row}, ${piece.position.col}`);
+    await expect(inspectionHelp).toContainText('no connected units.');
+   }else await expect(owner.getByRole('region',{name:'Board explanation',exact:true})).toHaveCount(0);
   }
  }
   // Reopening the live game clears inspection and exposes legal Pass beside narration.
