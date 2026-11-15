@@ -400,11 +400,27 @@ test('case source opt-in and sealed inline capture preserve the original two act
  // Keep the original golden: only invert the sealed test-owned observation block.
  const hash=text=>createHash('sha256').update(text).digest('hex');
  const originalSHA='165ec16bb620c0038a8059a2d513401a5a258069ea6ae397130bb58fb5844d30';
- const reviewedCurrentSHA='6ae8c6583ffdd86593a4b84b2409409cbbbf0920ef0ae4f14539c4274e6aee05';
+ const reviewedCurrentSHA='3ef48c2db687397eac6666b987f46fb36942b2479a47a13785edfacd40750540';
  // Preserve the old composed-source golden by exactly inverting the accepted
  // Recovery fault-lifecycle/reconnect fixture changes, not actions.
  const reviewedFixtureBaseSHA='95388c539469a08b581a1058ef79298c978cdaf859e12c5d1b328dd97bd8ca3b';
  const recoveryFixtureUnion=[
+  {
+    "before": " let socketsUnavailable=false,losePush=true,retreatProof=null;const commands=[], sockets=[],pushProofs=[];\n",
+    "after": " let socketsUnavailable=false,losePush=true;const commands=[], sockets=[],pushProofs=[];\n"
+  },
+  {
+    "before": "  const envelope=request.postDataJSON(),values=operationValues(request),action=values.payload?.action;commands.push(envelope);\n  if(action?.type==='retreat'){\n   const response=await fetchFaultResponse(route);if(!response)return;\n   const body=await response.json();\n   retreatProof={envelope,body};\n   await route.fulfill({response});return;\n  }\n  if(action?.type!=='push'){await route.continue();return;}\n",
+    "after": "  const envelope=request.postDataJSON(),values=operationValues(request);commands.push(envelope);\n  if(values.payload?.action?.type!=='push'){await route.continue();return;}\n"
+  },
+  {
+    "before": " await expect(message).toContainText('has been pushed. Choose a square to retreat to.');\n await expect(message).not.toContainText('Supply and command lines');\n",
+    "after": " await expect(message).toContainText('Select a retreat');\n await expect(message).not.toContainText('Supply and command lines');\n"
+  },
+  {
+    "before": " await expect(message).toContainText('has been pushed. Choose a square to retreat to.');\n const automaticFollow=page.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/apply')&&actionFor(request.postDataJSON())?.type==='follow');\n automaticFollow.catch(()=>{});\n await submitPlayableAction(page,retreat);\n await expect.poll(()=>retreatProof).not.toBeNull();\n const {body:retreatBody,envelope:retreatCommand}=retreatProof;\n",
+    "after": " await expect(message).toContainText(\"Select a retreat\");\n const acceptedRetreat=page.waitForResponse(response=>response.request().method()==='POST'&&new URL(response.url()).pathname.endsWith('/apply')&&actionFor(response.request().postDataJSON())?.type==='retreat');\n const automaticFollow=page.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/apply')&&actionFor(request.postDataJSON())?.type==='follow');\n acceptedRetreat.catch(()=>{});automaticFollow.catch(()=>{});\n await submitPlayableAction(page,retreat);\n const retreatResponse=await acceptedRetreat,retreatBody=await retreatResponse.json(),retreatCommand=retreatResponse.request().postDataJSON();\n"
+  },
   {
     "before": " const recordingPieces=page.locator('#shell-board .piece-token.pending-recording-piece');\n await expect(recordingPieces).toHaveCount(1);\n expect(await recordingPieces.evaluateAll(nodes=>nodes.map(node=>node.dataset.pieceId))).toEqual(['A1']);\n expect(await recordingPieces.evaluateAll(nodes=>nodes.map(node=>({name:node.getAttribute('aria-label'),animation:getComputedStyle(node).animationName})))).toEqual([\n  {name:'Red unit, will be destroyed if the turn ends now, recording move',animation:'pending-recording-piece-pulse'},\n ]);\n await page.emulateMedia({reducedMotion:'reduce'});\n expect(await recordingPieces.evaluateAll(nodes=>nodes.map(node=>({animation:getComputedStyle(node).animationName,outline:getComputedStyle(node).outlineStyle})))).toEqual([\n  {animation:'none',outline:'solid'},\n ]);\n await page.emulateMedia({reducedMotion:'no-preference'});\n",
     "after": ""
