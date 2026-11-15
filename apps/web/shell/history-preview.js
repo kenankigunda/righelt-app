@@ -1,5 +1,6 @@
 import {visibleRecordedMoves} from './recorded-narration.js';
 import { getTurnOwnerSideForState } from '../generated/packages/shared-types/src/shell-live-turn.js';
+import { immediateRemovalRecords, moveInspectionSnapshot, settlementRemovalRecords, turnInspectionRemovalRecords } from './destruction-presentation.js';
 
 const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
 
@@ -72,16 +73,41 @@ const historyRoleOverlay = (actions, context) => {
   return {presentationContext:'history', endpointRoles:[...cells.values()]};
 };
 
-export const buildMovePreview = (move, {context} = {}) => ({
-  snapshot: move?.snapshot ?? move?.selectionSnapshot ?? null,
-  overlay: {
+export const buildMovePreview = (move, {context} = {}) => {
+  const animatedDestroyedPieces = buildDestroyedPieceOverlays({destroyedPieceRecords: immediateRemovalRecords(move), preActionSnapshot: move?.selectionSnapshot});
+  const staticDestroyedPieces = buildDestroyedPieceOverlays({destroyedPieceRecords: settlementRemovalRecords(move), preActionSnapshot: move?.selectionSnapshot});
+  return {
+    snapshot: moveInspectionSnapshot(move),
+    overlay: {
     mode: "recorded-action",
     ...historyRoleOverlay([move?.action], context),
     recordedAction: move?.action ?? null,
     recordedActionStartPiece: findRecordedActionStartPiece(move?.selectionSnapshot, move?.action),
-    destroyedPieces: buildDestroyedPieceOverlays({destroyedPieceRecords: move?.destroyedPieces, preActionSnapshot: move?.selectionSnapshot}),
-  },
-});
+    destroyedPieces: [...animatedDestroyedPieces, ...staticDestroyedPieces],
+    animatedDestroyedPieces,
+    staticDestroyedPieces,
+    },
+  };
+};
+
+export const shouldAnimateHistoryDestruction = (game, episode) => {
+  if (!game?.inHistoryMode || typeof episode?.scope !== 'string' || episode.scope.length === 0) return false;
+  if (Number.isSafeInteger(game.historyTurnIndex)) return episode.scope === `${game.id}:turn:${game.historyTurnIndex}`;
+  const move = game.inspectedDecision ?? game.moves?.find(record => record.index === game.historyIndex);
+  const identities = [move?.moveId, move?.clientCommandId, game.historyIndex].filter(value => value !== null && value !== undefined);
+  return identities.some(identity => episode.scope === `${game.id}:move:${identity}` || episode.scope === `${game.id}:archive:${identity}`);
+};
+
+export const createHistoryDestructionAnimationOwner = () => {
+  let consumedEpisodeKey = null;
+  return {
+    claim(game, episode, hasEffects = true) {
+      if (!hasEffects || typeof episode?.key !== 'string' || consumedEpisodeKey === episode.key || !shouldAnimateHistoryDestruction(game, episode)) return false;
+      consumedEpisodeKey = episode.key;
+      return true;
+    },
+  };
+};
 
 export const buildTurnPreview = (moves, {context} = {}) => {
   const ordered = visibleRecordedMoves(moves).sort((a,b) => (a.turnMoveIndex ?? a.index) - (b.turnMoveIndex ?? b.index));
@@ -100,9 +126,11 @@ export const buildTurnPreview = (moves, {context} = {}) => {
     }
     return [overlay];
   });
+  const animatedDestroyedPieces=buildDestroyedPieceOverlays({destroyedPieceRecords:ordered.flatMap(turnInspectionRemovalRecords),preActionSnapshot:ordered[0]?.selectionSnapshot});
   return {
-    snapshot: previews.at(-1)?.snapshot ?? null,
-    overlay: {mode:'recorded-turn', ...historyRoleOverlay(ordered.map(move => move.action), context), recordedActions:actions, destroyedPieces:previews.flatMap(preview => preview.overlay.destroyedPieces)},
+    snapshot: ordered.at(-1)?.snapshot ?? previews.at(-1)?.snapshot ?? null,
+    overlay: {mode:'recorded-turn', ...historyRoleOverlay(ordered.map(move => move.action), context), recordedActions:actions,
+      destroyedPieces:animatedDestroyedPieces,animatedDestroyedPieces,staticDestroyedPieces:[]},
   };
 };
 

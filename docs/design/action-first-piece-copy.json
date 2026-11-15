@@ -8,7 +8,7 @@
     {
       "case": "Selected retreat",
       "before": "Piece at (4, 2) – Select a retreat",
-      "after": "Select a retreat for piece at (4, 2)"
+      "after": "Your piece at (4, 2) has been pushed. Choose a square to retreat to."
     },
     {
       "case": "Inactive command",

@@ -106,7 +106,10 @@
     "test:e2e:auth:journeys": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/run-auth-e2e.mjs --config playwright.auth.config.mjs",
     "test:e2e:auth-smoke": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/run-auth-e2e.mjs --config playwright.auth-smoke.config.mjs",
     "test:e2e:auth:controls": "node scripts/resources/cli.mjs run --kind heavy -- node scripts/run-auth-e2e.mjs --config playwright.auth-controls.config.mjs",
-    "test:e2e:storage": "RIGHELT_E2E_STORAGE_ARCHIVES=1 node scripts/resources/cli.mjs run --kind heavy -- playwright test --config playwright.storage-lifecycle.config.mjs"
+    "test:e2e:storage": "RIGHELT_E2E_STORAGE_ARCHIVES=1 node scripts/resources/cli.mjs run --kind heavy -- playwright test --config playwright.storage-lifecycle.config.mjs",
+    "ai:hosted": "node tools/hosted-compute/cli.mjs",
+    "ai:hosted:curate": "node --import tsx tools/hosted-compute/curate.mjs",
+    "test:hosted-compute": "node scripts/run-node-tests.mjs tools/hosted-compute/test"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.1",

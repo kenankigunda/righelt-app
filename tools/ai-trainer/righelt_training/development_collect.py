@@ -13,6 +13,7 @@ import time
 import uuid
 
 import torch
+from .device import configured_device
 
 from .bootstrap import source_identity, runtime_identity, PROFILE
 from .budget import effective_deadline
@@ -68,7 +69,7 @@ def validate_identity(identity, cases):
             or runtime.get('parityCorpusSha256') != cases['corpus']['sha256']
             or runtime.get('developmentCasesSha256') != identity['cases']['sha256']
             or parity.get('complete') is not True or parity.get('numericPassed') is not True
-            or parity.get('trainedCheckpoint') is not True or parity.get('referenceDevice') != 'mps'
+            or parity.get('trainedCheckpoint') is not True or parity.get('referenceDevice') != configured_device()
             or parity.get('heldoutStates') != 1000 or parity.get('configSha256') != CONFIG_SHA256
             or parity.get('checkpointSha256') != identity['checkpoint']['sha256']
             or parity.get('manifestSha256') != manifest['sha256']
@@ -105,7 +106,7 @@ def identity_for(model, checkpoint, corpus, cases_path, directory, attempt):
                 'cases': reference(cases_path), 'export': reference(snapshot), 'exportSourcePath': str(asset),
                 'parity': reference(attempt / 'trained-export-parity.json'), 'manifest': reference(manifest_path),
                 'runtimeRecord': reference(attempt / 'runtime.json'), 'modelWeightsSha256': model_weights(model)}
-    if model.training or model_device(model) != 'mps' or identity['modelWeightsSha256'] != checkpoint_weights(checkpoint):
+    if model.training or model_device(model) != configured_device() or identity['modelWeightsSha256'] != checkpoint_weights(checkpoint):
         raise ValueError('loaded development model differs from the exported checkpoint/eval device')
     runtime = read(identity['runtimeRecord']['path'])
     if runtime.get('supervisorPid') != os.getppid() or os.getpgrp() != os.getpid():
@@ -155,7 +156,7 @@ def read_proof(path, cases):
     proof_ref = reference(path); proof = read(path); identity = proof['identity']
     if (proof.get('schema') != 1 or proof.get('kind') != 'stage-development-proof'
             or proof.get('complete') is not True or proof.get('passed') is not True
-            or proof.get('profile') != PROFILE or proof.get('referenceDevice') != 'mps'
+            or proof.get('profile') != PROFILE or proof.get('referenceDevice') != configured_device()
             or proof.get('expectedCaseIds') != [case['id'] for case in cases['cases']]
             or len(proof.get('receipts', [])) != len(cases['cases'])):
         raise ValueError('incomplete or incompatible stage development proof')
@@ -195,7 +196,7 @@ def collect(model, checkpoint, corpus, cases_path, run_directory, deadline, *, c
         if available is False: raise TimeoutError('development resource stop')
         if available is not None and available is not True: raise ValueError('invalid development resource observation')
     proof = {'schema': 1, 'kind': 'stage-development-proof', 'complete': False, 'passed': False,
-             'profile': PROFILE, 'referenceDevice': 'mps', 'identity': {}, 'receipts': [],
+             'profile': PROFILE, 'referenceDevice': configured_device(), 'identity': {}, 'receipts': [],
              'expectedCaseIds': [], 'acceptancePassed': False, 'productionPromotion': False}
     failure = None
     try:
@@ -211,7 +212,7 @@ def collect(model, checkpoint, corpus, cases_path, run_directory, deadline, *, c
                 check(); remaining = soft_deadline - clock()
                 if remaining <= 1.1: raise TimeoutError('development search budget insufficient')
                 guarded = GuardedModel(model, frozen, check)
-                result = search_reference(frozen['state'], guarded, 'mps', 107 + case['corpusIndex'], PROFILE,
+                result = search_reference(frozen['state'], guarded, configured_device(), 107 + case['corpusIndex'], PROFILE,
                                           bound_seconds=min(10., remaining))
                 check()
                 if result.get('status') == 'recovery' or result.get('stopped') == 'deadline' or result.get('legality', {}).get('complete') is False:

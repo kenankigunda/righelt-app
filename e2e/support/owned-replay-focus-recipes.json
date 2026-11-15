@@ -2,8 +2,8 @@
   {
     "file": "apps/web/shell/board-context-owner.js",
     "servedPath": "/shell/board-context-owner.js",
-    "sourceSha256": "9a7b8cfaf6139be210eceeae9cad3fbf289c1452ab99c32e2cf3344cf4f18350",
-    "outputSha256": "bea495bf70189630549ca5865654aad14eb2c3ddc639667e8188c8ab9e39efda",
+    "sourceSha256": "0db6677c2140b64da47c09851247b999f042e4acc142a7a20c3536761ed1f471",
+    "outputSha256": "5f580a135173353f58af12f2cfc6a20c70dd702c6bfcae1b290657e5c2c2bf0f",
     "operations": [
       {
         "start": 0,
@@ -24,62 +24,68 @@
         "after": "return __ownedFocusValue(\"current-token-scope\",(token?.scope),token)===__ownedFocusValue(\"current-owner-scope\",(sync()),token)&&__ownedFocusValue(\"current-token-intent\",(token.intent),token)===__ownedFocusValue(\"current-owner-intent\",(intent),token);"
       },
       {
-        "start": 1390,
-        "end": 1417,
+        "start": 1417,
+        "end": 1444,
         "before": "original=doc.activeElement;",
         "after": "original=__ownedFocusValue(\"begin-active\",(doc.activeElement),trigger);"
       },
       {
-        "start": 1447,
-        "end": 1531,
+        "start": 1523,
+        "end": 1607,
         "before": "let live=!disposed&&(activation||original===trigger)&&Boolean(trigger?.isConnected);",
         "after": "let live=__ownedFocusValue(\"begin-live\",(!disposed&&(activation||original===trigger)&&Boolean(trigger?.isConnected)),trigger);"
       },
       {
-        "start": 1628,
-        "end": 1666,
+        "start": 1726,
+        "end": 1764,
         "before": "if(!live)return;live=false;onRetire();",
         "after": "if(!__ownedFocusValue(\"retire-live\",(live),trigger))return;live=false;onRetire();"
       },
       {
-        "start": 1671,
-        "end": 1726,
-        "before": "const focus=event=>{if(!owned(event.target))retire();};",
-        "after": "const focus=event=>{if(!__ownedFocusValue(\"focus-owned\",(owned(__ownedFocusValue(\"focus-target\",(event.target),trigger))),trigger))retire();};"
+        "start": 1769,
+        "end": 1858,
+        "before": "const focus=event=>{if(owned(event.target))lastOwnedControl=event.target;else retire();};",
+        "after": "const focus=event=>{const target=__ownedFocusValue(\"focus-target\",(event.target),trigger);if(__ownedFocusValue(\"focus-owned\",(owned(target)),trigger))lastOwnedControl=target;else retire();};"
       },
       {
-        "start": 1729,
-        "end": 1786,
+        "start": 1861,
+        "end": 1918,
         "before": "const pointer=event=>{if(!owned(event.target))retire();};",
         "after": "const pointer=event=>{if(!__ownedFocusValue(\"pointer-owned\",(owned(__ownedFocusValue(\"pointer-target\",(event.target),trigger))),trigger))retire();};"
       },
       {
-        "start": 1807,
-        "end": 1859,
+        "start": 1939,
+        "end": 1991,
         "before": "if(!owned(event.target)||event.key==='Tab')retire();",
         "after": "if(!__ownedFocusValue(\"key-owned\",(owned(__ownedFocusValue(\"key-target\",(event.target),trigger))),trigger)||__ownedFocusValue(\"key-tab\",(event.key==='Tab'),trigger))retire();"
       },
       {
-        "start": 1886,
-        "end": 1909,
+        "start": 2018,
+        "end": 2041,
         "before": "if(doc.hidden)retire();",
         "after": "if(__ownedFocusValue(\"visibility-hidden\",(doc.hidden),trigger))retire();"
       },
       {
-        "start": 2492,
-        "end": 2864,
-        "before": "const intentCurrent=()=>live&&!disposed&&!doc.hidden&&owner.current(token);\n  const current=()=>intentCurrent()\n   &&(owned(doc.activeElement)||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]')))||(removedControl!==null&&doc.activeElement===doc.body&&!removedControl.isConnected));",
-        "after": "const intentCurrent=()=>__ownedFocusValue(\"return-live\",(live),trigger)&&!disposed&&!doc.hidden&&__ownedFocusValue(\"return-owner-current\",(owner.current(token)),trigger);\n  const current=()=>__ownedFocusValue(\"return-current\",(intentCurrent()\n   &&(owned(__ownedFocusValue(\"return-active\",(doc.activeElement),trigger))||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]')))||(removedControl!==null&&doc.activeElement===doc.body&&!removedControl.isConnected))),trigger);"
+        "start": 2624,
+        "end": 2699,
+        "before": "const intentCurrent=()=>live&&!disposed&&!doc.hidden&&owner.current(token);",
+        "after": "const intentCurrent=()=>__ownedFocusValue(\"return-live\",(live),trigger)&&!disposed&&!doc.hidden&&__ownedFocusValue(\"return-owner-current\",(owner.current(token)),trigger);"
       },
       {
-        "start": 3751,
-        "end": 3774,
+        "start": 3015,
+        "end": 3340,
+        "before": "const current=()=>intentCurrent()\n   &&(owned(doc.activeElement)||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]')))||(removedControl!==null&&doc.activeElement===doc.body&&!removedControl.isConnected)||deferredOwnedRemovalCurrent());",
+        "after": "const current=()=>__ownedFocusValue(\"return-current\",(intentCurrent()\n   &&(owned(__ownedFocusValue(\"return-active\",(doc.activeElement),trigger))||(activation&&doc.activeElement===original)||(allowRemoval&&doc.activeElement===doc.body&&(!trigger.isConnected||trigger.closest?.('[inert]')))||(removedControl!==null&&doc.activeElement===doc.body&&!removedControl.isConnected)||deferredOwnedRemovalCurrent())),trigger);"
+      },
+      {
+        "start": 4227,
+        "end": 4250,
         "before": "const target=resolve();",
         "after": "const target=__ownedFocusValue(\"return-target\",(resolve()),trigger);"
       },
       {
-        "start": 3895,
-        "end": 3932,
+        "start": 4371,
+        "end": 4408,
         "before": "if(doc.activeElement===target)reveal(",
         "after": "if(__ownedFocusValue(\"after-focus-active\",(doc.activeElement),trigger)===target)reveal("
       }
@@ -88,32 +94,32 @@
   {
     "file": "apps/web/shell/displayed-replay-starter.js",
     "servedPath": "/shell/displayed-replay-starter.js",
-    "sourceSha256": "9197696be9d490f7fb45e70a4e191c9d269ef7603c0bc47df93d44d0b62acbf8",
-    "outputSha256": "66abdbec92946308d9eecfc0e54ccf0ac771cfe696c8660179eae5ba61986ab0",
+    "sourceSha256": "27983282e6b78d6b19f37d18a14f55c4b79b0b40cc9603aacddaae3581e78bb7",
+    "outputSha256": "f58e99a6d1d554e53fc6df0c5c588ec8fc77b1558599185a416ccf5c32cb85e5",
     "operations": [
       {
-        "start": 286,
-        "end": 286,
+        "start": 287,
+        "end": 287,
         "before": "",
         "after": "const __ownedFocusValue=(kind,value,scope)=>{try{globalThis.__ownedFocusProbe?.record(kind,value,scope);}catch{}return value;};\n"
       },
       {
-        "start": 1601,
-        "end": 1707,
-        "before": "const focusReturn=p.focus.begin(trigger,{allows:displayedReplayFocusTarget,allowRemoval:liveFocusTarget});",
-        "after": "const focusReturn=p.focus.begin(__ownedFocusValue(\"replay-trigger\",(trigger),null),{allows:displayedReplayFocusTarget,allowRemoval:liveFocusTarget});"
+        "start": 1993,
+        "end": 2137,
+        "before": "focusReturn=p.focus.begin(trigger,{allows:displayedReplayFocusTarget,allowRemoval:liveFocusTarget,allowDeferredRemoval:liveFocusTarget,onRetire:",
+        "after": "focusReturn=p.focus.begin(__ownedFocusValue(\"replay-trigger\",(trigger),null),{allows:displayedReplayFocusTarget,allowRemoval:liveFocusTarget,allowDeferredRemoval:liveFocusTarget,onRetire:"
       },
       {
-        "start": 3760,
-        "end": 3797,
-        "before": "const finish=()=>{\n   refresh(false);",
-        "after": "const finish=()=>{\n   __ownedFocusValue(\"finish-enter\",(trigger),focusReturn);\n   refresh(false);\n   __ownedFocusValue(\"finish-after-render\",(trigger),focusReturn);"
+        "start": 4958,
+        "end": 5028,
+        "before": "const finish=()=>{\n   refresh(false);state.activeDisplayedReplay=null;",
+        "after": "const finish=()=>{\n   __ownedFocusValue(\"finish-enter\",(trigger),focusReturn);\n   refresh(false);__ownedFocusValue(\"finish-after-render\",(trigger),focusReturn);state.activeDisplayedReplay=null;"
       },
       {
-        "start": 4592,
-        "end": 4722,
-        "before": "onChange:replay=>{\n   if(replay.playing)refresh(true);else focusReturn.renderOwnedRemoval(()=>refresh(false));\n  },onFinish:finish",
-        "after": "onChange:replay=>{\n   const playing=__ownedFocusValue(\"change-playing\",(replay.playing),focusReturn);\n   const refreshObserved=value=>{refresh(value);__ownedFocusValue(\"change-after-render\",(trigger),focusReturn);};\n   if(playing)refreshObserved(true);else focusReturn.renderOwnedRemoval(()=>refreshObserved(false));\n  },onFinish:finish"
+        "start": 5931,
+        "end": 6053,
+        "before": "if(replay.playing)refresh(true);else{state.activeDisplayedReplay=null;focusReturn.renderOwnedRemoval(()=>refresh(false));}",
+        "after": "const playing=__ownedFocusValue(\"change-playing\",(replay.playing),focusReturn);\n   const refreshObserved=value=>{refresh(value);__ownedFocusValue(\"change-after-render\",(trigger),focusReturn);};\n   if(playing)refreshObserved(true);else{state.activeDisplayedReplay=null;focusReturn.renderOwnedRemoval(()=>refreshObserved(false));}"
       }
     ]
   }

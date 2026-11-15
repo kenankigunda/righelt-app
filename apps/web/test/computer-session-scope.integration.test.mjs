@@ -6,7 +6,7 @@ import {COMPUTER_CAPABILITIES,createComputerControl,changeComputerControl} from 
 import {createInitialState} from '../generated/packages/game-engine/src/state.js';
 
 const microtasks=async()=>{for(let i=0;i<12;i++)await Promise.resolve();};
-function fixture({holdAction='acquire',holdResume=false}={}){
+function fixture({holdAction='acquire',holdResume=false,computeFailure=false}={}){
  const games=new Map(['babs-old','tau-new'].map((id,index)=>[id,{id,gameplayRevision:index,
   computer:createComputerControl('fake-owner',index?{p1:null,p2:'tau'}:{p1:'babs',p2:null}),
   board:{state:{...createInitialState(),sideToMove:index?'P2':'P1',turnIndex:index}}}]));
@@ -18,7 +18,7 @@ function fixture({holdAction='acquire',holdResume=false}={}){
    if(id==='babs-old'&&values.action===holdAction)await held;
    const game=games.get(id);game.computer=changeComputerControl(game.computer,{...values,ownerId:'fake-owner',authContextId:'fake-session',now,turnIndex:game.board.state.turnIndex});
   },decisionAttempt:async()=>{},applyGameAction:async()=>{throw Error('No gameplay submission belongs to this acquisition-only fixture');}};
- const runtime={cancel(){},compute(){computations++;throw Error('Synthetic computation failed');}};
+ const runtime={cancel(){},compute(){computations++;if(computeFailure)throw Error('Synthetic computation failed');return new Promise(()=>{});}};
  const session=createComputerSession({runtime,analysisRuntime:runtime,deviceId:'fake-device',clock:()=>now,
   timers:{setInterval(){return 1;},clearInterval(){}},getContext:()=>({game:games.get(gameId),transport,accountGeneration:1,authenticated:true,visible:true})});
  return {session,controls,releaseOld,computations:()=>computations,setTime(value){now=value;},enableResume(){const game=games.get(gameId);game.sharedReceipts=true;game.computerCapabilities={resumeHere:COMPUTER_CAPABILITIES.resumeHere};},switchToTau(){gameId='tau-new';},setBlocked(value){blocked=value;},game:()=>games.get(gameId)};
@@ -75,7 +75,7 @@ test('a foreign explicit resume and its control fence cannot block a new game',a
 });
 
 test('late successful old-game pause cannot clear current-game terminal recovery',async()=>{
- const f=fixture({holdAction:'pause'});let pause;
+ const f=fixture({holdAction:'pause',computeFailure:true});let pause;
  try{
   await f.session.tick();pause=f.session.action('pause');await microtasks();
   assert.deepEqual(f.controls.map(row=>[row.gameId,row.action]),[['babs-old','acquire'],['babs-old','pause']]);

@@ -129,7 +129,7 @@ test("lost move response recovers through identical submission while reconciliat
 test("guest play-both push retreat follow recovers with healthy HTTP and unavailable sockets",async({page,baseURL},info)=>{
  const admissionDiagnostics=await installBoardAdmissionDiagnostics(page,info,{baseURL,targetRow:4,targetCol:1});
  try {
- let socketsUnavailable=false,losePush=true;const commands=[], sockets=[],pushProofs=[];
+ let socketsUnavailable=false,losePush=true,retreatProof=null;const commands=[], sockets=[],pushProofs=[];
  const faults=createFaultLifecycle();
  const faultResources={faults:new Map([[page,[faults]]]),contexts:new Set()};
  const actionFor=command=>(command.kind==='shared'?command.payload.values:command).payload?.action;
@@ -153,8 +153,14 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
    await route.fulfill({response});return;
   }
   if(!isOperationRequest(request,'apply')){await route.continue();return;}
-  const envelope=request.postDataJSON(),values=operationValues(request);commands.push(envelope);
-  if(values.payload?.action?.type!=='push'){await route.continue();return;}
+  const envelope=request.postDataJSON(),values=operationValues(request),action=values.payload?.action;commands.push(envelope);
+  if(action?.type==='retreat'){
+   const response=await fetchFaultResponse(route);if(!response)return;
+   const body=await response.json();
+   retreatProof={envelope,body};
+   await route.fulfill({response});return;
+  }
+  if(action?.type!=='push'){await route.continue();return;}
   const first=losePush;
   if(first){holdConfirmation=true;socketsUnavailable=true;losePush=false;sockets.forEach(socket=>socket.close({code:1012,reason:"Test deployment transition"}));}
   const response=await fetchFaultResponse(route);
@@ -191,7 +197,7 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  game=await currentGame(page,gameId);expect(game.board.state.continuation.phase).toBe("retreat");
 
  const message=page.locator("#shell-board-preview-label");
- await expect(message).toContainText('Select a retreat');
+ await expect(message).toContainText('has been pushed. Choose a square to retreat to.');
  await expect(message).not.toContainText('Supply and command lines');
  await expect(message.locator('[data-board-preview-action],[data-board-message-action]')).toHaveCount(0);
  // The continuation intent stays visible while admission is disabled. Board
@@ -215,12 +221,12 @@ test("guest play-both push retreat follow recovers with healthy HTTP and unavail
  await page.screenshot({path:info.outputPath("retreat-recovered.png")});
  // Admission returns only after the definitive original receipt and a fresh
  // authoritative socket. Verify the required defender's legal destination.
- await expect(message).toContainText("Select a retreat");
- const acceptedRetreat=page.waitForResponse(response=>response.request().method()==='POST'&&new URL(response.url()).pathname.endsWith('/apply')&&actionFor(response.request().postDataJSON())?.type==='retreat');
+ await expect(message).toContainText('has been pushed. Choose a square to retreat to.');
  const automaticFollow=page.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname.endsWith('/apply')&&actionFor(request.postDataJSON())?.type==='follow');
- acceptedRetreat.catch(()=>{});automaticFollow.catch(()=>{});
+ automaticFollow.catch(()=>{});
  await submitPlayableAction(page,retreat);
- const retreatResponse=await acceptedRetreat,retreatBody=await retreatResponse.json(),retreatCommand=retreatResponse.request().postDataJSON();
+ await expect.poll(()=>retreatProof).not.toBeNull();
+ const {body:retreatBody,envelope:retreatCommand}=retreatProof;
  expect(retreatBody.commandOutcomes).toContainEqual(expect.objectContaining({clientCommandId:retreatCommand.clientCommandId,fingerprint:retreatCommand.fingerprint,outcome:'accepted'}));
  expect(retreatBody.game.board.state.continuation.phase).toBe('follow');
  // Read the immutable acknowledged decision: the sole mandatory continuation

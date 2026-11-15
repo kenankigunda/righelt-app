@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createResultPresentation,renderResultMark,resultSound} from '../shell/result-presentation.js';
 
-const fixture=()=>{let time=0,reduced=false;const motions=[];const mark={animate(frames,options){const motion={frames,options,currentTime:0,cancel(){this.cancelled=true;}};motions.push(motion);return motion;}};const root=()=>({querySelector:()=>mark,querySelectorAll:()=>[]});return{root,motions,time:value=>time=value,reduced:()=>reduced=true,controller:createResultPresentation({now:()=>time,reducedMotion:()=>reduced})};};
+const fixture=()=>{let time=0,reduced=false;const motions=[],cues=[];const mark={animate(frames,options){const motion={frames,options,currentTime:0,cancel(){this.cancelled=true;}};motions.push(motion);return motion;}};const root=()=>({querySelector:()=>mark,querySelectorAll:()=>[]});return{root,motions,cues,time:value=>time=value,reduced:()=>reduced=true,controller:createResultPresentation({now:()=>time,reducedMotion:()=>reduced,onEnter:(kind,result)=>cues.push({kind,tone:result.tone})})};};
 test('only observed live entry animates once, replacement DOM preserves elapsed time, and navigation cancels',()=>{
  const f=fixture();f.controller.mount(f.root(),'g');assert.equal(f.motions.length,0);
  f.controller.enter('g',{tone:'victory'});const root=f.root();f.controller.mount(root,'g');assert.equal(f.motions.length,1);
+ assert.deepEqual(f.cues,[{kind:'result-victory',tone:'victory'}]);
  f.time(350);f.controller.mount(root,'g');assert.equal(f.motions.length,1);
  f.controller.mount(f.root(),'g');assert.equal(f.motions[1].currentTime,350);
  f.time(1100);f.controller.mount(f.root(),'g');assert.equal(f.motions.length,2);
@@ -13,8 +14,8 @@ test('only observed live entry animates once, replacement DOM preserves elapsed 
 });
 test('defeat settles gently, while reduced motion, draws and spectators remain static',()=>{
  const f=fixture();f.controller.enter('g',{tone:'defeat'});f.controller.mount(f.root(),'g');assert.equal(f.motions[0].options.duration,650);
- f.reduced();f.controller.enter('g',{tone:'victory'});f.controller.mount(f.root(),'g');assert.equal(f.motions.length,1);
- for(const tone of ['draw','neutral']){const v=fixture();v.controller.enter('g',{tone});v.controller.mount(v.root(),'g');assert.equal(v.motions.length,0);}
+ f.reduced();f.controller.enter('g',{tone:'victory'});f.controller.mount(f.root(),'g');assert.equal(f.motions.length,1);assert.deepEqual(f.cues.map(cue=>cue.kind),['result-defeat','result-victory'],'reduced motion does not mute result entry');
+ for(const [tone,kind] of [['draw','result-draw'],['neutral','result']]){const v=fixture();v.controller.enter('g',{tone});v.controller.mount(v.root(),'g');assert.equal(v.motions.length,0);assert.deepEqual(v.cues,[{kind,tone}]);}
 });
 test('perspective copy is accessible and visual ornaments never become actions',()=>{
  for(const tone of ['victory','defeat','draw','neutral']){const html=renderResultMark({tone});assert.match(html,/<svg[^>]*aria-hidden="true"/);assert.doesNotMatch(html,/result-perspective/);assert.doesNotMatch(html,/button|data-action|tabindex/);}

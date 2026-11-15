@@ -5,7 +5,8 @@ import { terminalValue, transition } from "./transition";
 import { proveTactical, TacticalInterrupted, type TacticalStatus } from "./tactics";
 import { applyRootExploration, explorationEvidence, verifyTrainingRecipe, type RootExplorationEvidence, type RootExplorationRequest } from "./exploration";
 export type { TacticalStatus } from "./tactics";
-export const SEARCH_POLICY_VERSION = "model-fallback-v2";
+import {conditionedRootPriors,ROOT_PRIOR_POLICY_VERSION,CONDITIONED_SEARCH_POLICY_VERSION} from "./root-priors";
+export const SEARCH_POLICY_VERSION = CONDITIONED_SEARCH_POLICY_VERSION;
 
 export type Evaluation = { policyLogits: ArrayLike<number>; value: number };
 export type Evaluator = (input: Float32Array, context: {
@@ -42,7 +43,7 @@ export type SearchResult = ({
   status: "recovery"; reason: "terminal" | "no-legal-actions" | "incomplete-safety" | "no-completed-search";
   actions: ActionReport[]; nodes: number; simulations: number; elapsedMs: number; engineBudget: EngineBudget;
   stopped: "complete" | "deadline" | "node-limit";
-}) & { decisionCache?: DecisionCacheStats; rootExploration?: RootExplorationEvidence };
+}) & { decisionCache?: DecisionCacheStats; rootExploration?: RootExplorationEvidence; rootPriorConditioning?: {version:string;indices:number[];priors:number[];puctSelections:number} };
 
 type Edge = { index: number; action: Action; prior: number; policyLogit: number; visits: number; sum: number; child?: Node; resolved?: GameState; transitionLimited?: boolean };
 type Node = { state: GameState; edges?: Edge[]; enumerationLimited?: boolean; value?: number; visits: number; sum: number };
@@ -75,8 +76,9 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
     const cached = () => withDecisionRuleCache(ruleCache, operation);
     return request.observeEngine ? withEngineComputationObserver(request.observeEngine, cached) : cached();
   };
+  let rootPriorConditioning: {version:string;indices:number[];priors:number[];puctSelections:number}|undefined;
   const cacheEvidence = () => ({ ...(ruleCache ? { decisionCache: { ...ruleCache.stats } } : {}),
-    ...(exploration ? { rootExploration: exploration } : {}) });
+    ...(exploration ? { rootExploration: exploration } : {}),...(rootPriorConditioning?{rootPriorConditioning}:{}) });
   const random = seededRandom(request.seed);
   const simulations = request.simulations ?? config.search.selfPlaySimulations;
   const maxNodes = request.maxNodes ?? config.search.maxNodes;
@@ -368,8 +370,11 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
     completed++;
     request.onProgress?.({ phase: "looking-ahead", simulations: completed, total: simulations, nodes });
   }
+  // Condition on the admitted root set without overwriting reported model priors.
+  // Recomputing from logits also handles an eligible set whose raw mass underflowed.
+  const initialPriors = conditionedRootPriors(eligible);
   const limitedVisits = new Set<number>();
-  for (const preferred of [...eligible].sort((a, b) => b.prior - a.prior || a.index - b.index)) {
+  for (const preferred of [...eligible].sort((a, b) => initialPriors.get(b.index)! - initialPriors.get(a.index)! || a.index - b.index)) {
     try { await visit(preferred); break; }
     catch (error) {
       if (error instanceof EngineLimit) { limitedVisits.add(preferred.index); continue; }
@@ -410,22 +415,31 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
   }
   const notProvenLost = eligible.filter(edge => proofs.get(edge.index) !== "proven-loss");
   if (notProvenLost.length) eligible = notProvenLost;
-  // Root-only effective priors never replace raw model scores used by tactics,
-  // first visit, fallback, deeper PUCT or final choice. Draw once, before PUCT.
+  // Root-only effective priors never replace reported model priors, fallback,
+  // deeper PUCT or final choice. Draw exploration once, before PUCT.
+  const admitted = eligible.filter(edge => !!edge.child && !edge.child.enumerationLimited && !edge.transitionLimited && !limitedVisits.has(edge.index));
+  const admittedPriors=conditionedRootPriors(admitted);
   const rootPriors = exploration?.requested ? await applyRootExploration(exploration,
-    eligible.filter(edge => !!edge.child && !edge.child.enumerationLimited && !edge.transitionLimited && !limitedVisits.has(edge.index)),
+    admitted,
     simulations - completed, completed > 0 && eligible.some(edge => edge.visits > 0),
-    request.deadlineMs === undefined ? undefined : request.deadlineMs - reserveMs) : new Map<number, number>();
+    request.deadlineMs === undefined ? undefined : request.deadlineMs - reserveMs,admittedPriors) : new Map<number, number>();
+  const initialAvailable=eligible.filter(edge=>!limitedVisits.has(edge.index));
+  const initialEffective=conditionedRootPriors(initialAvailable,rootPriors);
+  let puctSelections=0;
+  rootPriorConditioning=initialAvailable.length?{version:ROOT_PRIOR_POLICY_VERSION,indices:initialAvailable.map(edge=>edge.index),priors:initialAvailable.map(edge=>initialEffective.get(edge.index)!),puctSelections}:undefined;
   try {
     while (completed < simulations) {
       check();
       const available = eligible.filter(edge => !limitedVisits.has(edge.index));
       if (!available.length) break;
+      const effective = conditionedRootPriors(available,rootPriors);
+      rootPriorConditioning={version:ROOT_PRIOR_POLICY_VERSION,indices:available.map(edge=>edge.index),priors:available.map(edge=>effective.get(edge.index)!),puctSelections:++puctSelections};
       let best = -Infinity;
       let selected = available[0];
       for (const edge of available) {
         const q = edge.visits ? edge.sum / edge.visits : root.value;
-        const score = rootSign * q + config.search.cPuct * (rootPriors.get(edge.index) ?? edge.prior) * Math.sqrt(Math.max(1, root.visits)) / (1 + edge.visits);
+        const prior = effective.get(edge.index)!;
+        const score = rootSign * q + config.search.cPuct * prior * Math.sqrt(Math.max(1, root.visits)) / (1 + edge.visits);
         if (score > best || (score === best && edge.index < selected.index)) { best = score; selected = edge; }
       }
       try { await visit(selected); }

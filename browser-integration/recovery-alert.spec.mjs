@@ -39,36 +39,41 @@ for(const width of [320,375,390,479,480,481,899,900,901,1440]) test(`alert modes
    if(width<480)expect(buttons.y).toBeGreaterThanOrEqual(copy.y+copy.height);
    else expect(buttons.x).toBeGreaterThanOrEqual(copy.x+copy.width);
   }
-  const caret=alert.getByRole('button',{name:'Details',exact:true});
+  const caret=alert.getByRole('button',{name:'Show diagnostic details',exact:true});
   if(await caret.count()){
-   const collapsed=await caret.boundingBox();await caret.click();await expect(caret).toHaveAttribute('aria-expanded','true');
-   await containedControls(page);const expanded=await caret.boundingBox();expect(expanded.x).toBeCloseTo(collapsed.x,1);expect(expanded.y).toBeCloseTo(collapsed.y,1);
-   expect(await caret.evaluate(el=>document.activeElement===el)).toBe(true);
-   await caret.press('Enter');await expect(caret).toHaveAttribute('aria-expanded','false');
+   const alignment=await caret.evaluate(button=>{const svg=button.querySelector('svg'),copy=button.closest('.shell-game-alert')?.querySelector('.shell-game-alert-copy'),svgRect=svg?.getBoundingClientRect(),copyRect=copy?.getBoundingClientRect(),style=copy?getComputedStyle(copy):null,lineHeight=style?Number.parseFloat(style.lineHeight):NaN,paddingTop=style?Number.parseFloat(style.paddingTop):NaN;return{caretCenter:svgRect?(svgRect.top+svgRect.bottom)/2:null,firstLineCenter:copyRect&&Number.isFinite(lineHeight)&&Number.isFinite(paddingTop)?copyRect.top+paddingTop+lineHeight/2:null};});
+   expect(alignment.caretCenter).not.toBeNull();expect(alignment.firstLineCenter).not.toBeNull();expect(Math.abs(alignment.caretCenter-alignment.firstLineCenter)).toBeLessThanOrEqual(1);
+   const collapsed=await caret.boundingBox();await caret.click();const expandedCaret=alert.getByRole('button',{name:'Hide diagnostic details',exact:true});await expect(expandedCaret).toHaveAttribute('aria-expanded','true');
+   await containedControls(page);const expanded=await expandedCaret.boundingBox();expect(expanded.x).toBeCloseTo(collapsed.x,1);expect(expanded.y).toBeCloseTo(collapsed.y,1);
+   expect(await expandedCaret.evaluate(el=>document.activeElement===el)).toBe(true);
+   await expandedCaret.press('Enter');await expect(alert.getByRole('button',{name:'Show diagnostic details',exact:true})).toHaveAttribute('aria-expanded','false');
   }
  }
  await page.evaluate(()=>window.renderMode('storage',{longMessage:true,stacked:true}));await containedControls(page);
  expect((await runScopedAxeScan({page,include:'[data-testid="fixture-alert"]'})).violations).toEqual([]);
  expect(await page.getByTestId('game-board').boundingBox()).toEqual(boardBefore);
  if((width===390&&info.project.name==='webkit')||(width===1440&&info.project.name==='chromium')){
-  await page.screenshot({path:info.outputPath('alert-collapsed.png')});await page.getByRole('button',{name:'Details',exact:true}).click();await page.screenshot({path:info.outputPath('alert-expanded.png')});
+  await page.screenshot({path:info.outputPath('alert-collapsed.png')});await page.getByRole('button',{name:'Show diagnostic details',exact:true}).click();await page.screenshot({path:info.outputPath('alert-expanded.png')});
  }
 });
 
 for(const viewport of [{width:667,height:320},{width:390,height:460}]) test(`expanded details remain usable in ${viewport.width}x${viewport.height}`,async({page})=>{
  await page.setViewportSize(viewport);await page.emulateMedia({reducedMotion:'reduce'});await openFixture(page);
  await page.evaluate(()=>{window.renderMode('storage');Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async()=>{throw Error('Unavailable');}}});});
- await page.getByRole('button',{name:'Details',exact:true}).click();await page.getByRole('button',{name:'Copy full details',exact:true}).click();
+ await page.getByRole('button',{name:'Show diagnostic details',exact:true}).click();await page.getByRole('button',{name:'Copy full details',exact:true}).click();
  await expect(page.getByTestId('fixture-alert')).toContainText('Copy the full details below');await containedControls(page);
  const details=page.locator('.issue-details');expect(await details.evaluate(el=>getComputedStyle(el).overflowY)).toBe('auto');
  expect((await page.getByTestId('fixture-alert').boundingBox()).y+(await page.getByTestId('fixture-alert').boundingBox()).height).toBeLessThanOrEqual(viewport.height-70);
- await page.getByRole('button',{name:'Details',exact:true}).click();await containedControls(page);
+ await page.getByRole('button',{name:'Hide diagnostic details',exact:true}).click();await containedControls(page);
 });
 
 test('enlarged text retains alert actions and disclosure',async({page},info)=>{
  await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'});await openFixture(page);
  await page.evaluate(()=>{document.documentElement.style.fontSize='32px';window.renderMode('storage',{longMessage:true});});
- await containedControls(page);await page.getByRole('button',{name:'Details',exact:true}).click();await containedControls(page);
+ await containedControls(page);const caret=page.getByRole('button',{name:'Show diagnostic details',exact:true});
+ const alignment=await caret.evaluate(button=>{const svg=button.querySelector('svg'),copy=button.closest('.shell-game-alert')?.querySelector('.shell-game-alert-copy'),svgRect=svg?.getBoundingClientRect(),copyRect=copy?.getBoundingClientRect(),style=copy?getComputedStyle(copy):null,lineHeight=style?Number.parseFloat(style.lineHeight):NaN,paddingTop=style?Number.parseFloat(style.paddingTop):NaN;return{caretCenter:svgRect?(svgRect.top+svgRect.bottom)/2:null,firstLineCenter:copyRect&&Number.isFinite(lineHeight)&&Number.isFinite(paddingTop)?copyRect.top+paddingTop+lineHeight/2:null};});
+ expect(alignment.caretCenter).not.toBeNull();expect(alignment.firstLineCenter).not.toBeNull();expect(Math.abs(alignment.caretCenter-alignment.firstLineCenter)).toBeLessThanOrEqual(1);
+ await caret.click();await containedControls(page);
  // Capture the clipboard adapter to verify native control feedback, not OS clipboard permissions.
  const expected=await page.evaluate(async()=>{
   const diagnostics=(await import('/apps/web/shell/issue-diagnostics.js')).issueDiagnostics;
@@ -146,14 +151,14 @@ for(const width of [320,390])test(`normal recovery keeps Home beside Retry conne
  await page.screenshot({path:info.outputPath('recovery-actions-normal.png')});
 });
 
-for(const width of [320,390])test(`terminal recovery keeps Details below the primary controls at ${width}px with enlarged text`,async({page})=>{
+for(const width of [320,390])test(`terminal recovery keeps primary actions stable below the first-line diagnostic toggle at ${width}px with enlarged text`,async({page})=>{
  await page.setViewportSize({width,height:844});await page.emulateMedia({reducedMotion:'reduce'});await openFixture(page);
  await page.evaluate(()=>{document.documentElement.style.fontSize='200%';window.renderMode('terminal');});
- const alert=page.getByTestId('fixture-alert'),actions=alert.locator('.shell-game-alert-actions'),details=alert.getByRole('button',{name:'Details',exact:true});
+ const alert=page.getByTestId('fixture-alert'),actions=alert.locator('.shell-game-alert-actions'),details=alert.getByRole('button',{name:'Show diagnostic details',exact:true});
  await containedControls(page);await expect(alert).toHaveClass(/is-terminal-recovery/);
  expect(await actions.evaluate(node=>[...node.children].map(child=>child.textContent.trim()))).toEqual(['Retry connection','Reload game','Home']);
  const actionBox=await actions.boundingBox(),detailsBox=await details.boundingBox();
- expect(detailsBox.y).toBeGreaterThanOrEqual(actionBox.y+actionBox.height);
+ expect(actionBox.y).toBeGreaterThanOrEqual(detailsBox.y+detailsBox.height);
 });
 
 test('recovery fixture follows the actual quiet and actionable timing contract',async({page})=>{

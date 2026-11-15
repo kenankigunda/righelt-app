@@ -10,6 +10,8 @@ If implementation behavior conflicts with this spec, this spec wins.
 
 Requirements state intended behavior. Approval, implementation, merge and deployment are separate facts. The [decision index](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index) identifies final approvals and superseded guidance. It does not certify a deployed build. [History presentation](ai/HISTORY_PRESENTATION.md), [recovery](ai/GAME_RECOVERY.md), and [the rules spec](RIGHELT_RULES_SPEC.md) own their detailed contracts.
 
+For new and existing surfaces, apply the [Approachable Copy Principle](UX_PRINCIPLES.md#approachable-copy-principle): remove neutral repetition of evident interface states while preserving friendly brand atmosphere and meaningful action, status, authority, error, recovery and accessible context. Copy cleanup must preserve approved keep examples and surface-specific contracts.
+
 ## 1. Core Concepts
 
 - `Game`: A single Righelt match and its associated participants and move history.
@@ -301,6 +303,22 @@ When a recipient opens either invite type:
   - A clear visual indicator must state that user is not on live state.
   - A prominent `Return to live` action must be visible and restore `Live view`.
 
+### 7.1 Destruction attribution and inspection
+
+**Timing principle:** History animations match the timing of actual piece removal in live play. The move credited with causing a destruction and the event that finalized it are separate facts.
+
+- Attribute a finalized supply destruction to the move that began that piece's final uninterrupted loss of supply within the sequence. Restoration clears the earlier attribution; a later cut starts a new attribution.
+- Immediate no-retreat destruction takes precedence and stays with the action where actual removal occurred.
+- `DESTROYED (row,col)` sub-bullets are not clickable and add no explanatory copy.
+- Selecting a move shows its trustworthy post-action, pre-turn-settlement state. Pieces awaiting turn-end destruction remain present and pending; move inspection does not animate their later removal.
+- Selecting a completed turn shows the finalized position and its turn-end destructions. It does not repeat earlier immediate removals. Deliberate reselection may repeat the turn effect; refresh, reconciliation and layout changes may not.
+- “Show me again” follows live chronology through cuts, restorations and repeated cuts, and removes pieces only at their actual finalization boundary.
+- Preserve ownership and pending/restored/finalized meaning in accessible text and reduced-motion presentation. Color and motion cannot be the only explanations.
+- Gameplay snapshots, hashes, removal events, chronology, Undo and branch-before authority remain unchanged. The inspection frame is observational evidence, not playable authority.
+- When retained evidence is incomplete, keep the existing recorded attribution and presentation rather than reconstructing or guessing.
+
+Commander finality remains a gameplay decision. Preserve the accepted terminal action and actual terminal position without adding unplayed actions or fabricating commander removal.
+
 ## 8. Home Page Game List and Public Entry (Flow 6)
 
 On home page, users must see a game list in reverse chronological order by latest activity timestamp (latest move time; if no moves, creation time).
@@ -444,7 +462,7 @@ Tutorial restart:
 
 ## 13. Notifications and Prompts
 
-The confirmed November 11 [incoming presentation follow-up](ai/INCOMING_NARRATION.md) gives incoming move narration a desktop History host or mobile bottom flyout. Other notices keep their authority and layering. Its implementation and deployment are tracked separately from the original refresh.
+The confirmed incoming-presentation contract gives previous-turn and automatic push/follow narration a flat History host only when Board and History appear together. Narrow layouts intentionally render no narration flyout, trigger, summary or Show me again replacement. Other notices keep their authority and layering. See [Incoming move presentation](ai/INCOMING_NARRATION.md).
 
 Notices are nonmodal and preserve incident identity, focused controls, open details and animation time. Their shared page layer stays above content, loading borders, menus, utility rails, mobile navigation and transition ribbons, and below native modal dialogs/backdrops. Check ancestor transforms, stacking contexts and clipping across both layouts and route transitions. Preserve native DOM/event ownership where possible. The study's token numbers and fallback root host are implementation proposals, not independently approved architecture. Notices never trap focus or make the background inert. [D13](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index) records the approved ordering.
 
@@ -489,11 +507,13 @@ Approved intended behavior, including the November 1 supply/commander follow-up 
 - Commander and Supply point retain independent inspection targets and affiliation contexts. Supply point selection never clears the selected commander. Clearing one explicit inspector leaves the other intact. Inspection never submits, queues a move or changes authority.
 - Supply paths use fixed green `#2f8e63`, round 3px strokes and `7 5` dashes. Command paths use owner colors, round 3px strokes and `2 6` dots. Shared segments use separate lanes at -2.5px supply and +2.5px command under canonical endpoint ordering. Define styles once for both adapter branches. Compact 16×3px legend samples use 5/4 supply and 2/4 command mark/gap patterns. Pieces, selected supply squares, inspection icons and label underlines keep affiliation colors. Decorative participant Tessera follow the stable multicolor identity contract rather than seat color.
 - Selected labels use a 2px text underline with a 5px offset and neutral text. Keep separate visible keyboard focus and at least 44px touch targets. Add no selected tint, outline, check mark or button-wide bottom rule.
+- The Board legend contains two semantic families in reading order: Commander followed by its conditional Command line, then Supply point followed by its conditional Supply line. Parent and child text share the same left edge without indentation. An absent child collapses without reserving a blank row, and responsive layouts move the complete family rather than separating its rows. Group strength remains a standalone peer and appears only when an actual strength badge is painted.
+- Every legend row uses a shared 24px icon track, a consistent gap, and a flexible text track. Align the icon with the first line when a label wraps. Keep the two native inspector buttons and their mounted focus, pressed state, affiliation, keyboard order, and 44px target. Passive samples add no focus stop or announcement. Legend height is content-driven and uses the Board's authoritative 18px cut token with enough bottom and edge clearance for visible content, hit regions, focus paint, enlarged text, and forced colors.
 - Commander-piece clicks cycle moves → combined connections → moves when complete legal previews exist. Combined connections include the commander's recorded supply path and applicable nonzero command paths ending at that commander. The Commander legend remains an independent command-only inspector. Ordinary unit behavior remains unchanged.
 - An explicit Supply point inspector exclusively chooses the affiliation whose supplies are drawn. Blue commander plus red Supply point draws blue commands and only red supplies. Clearing red supply does not silently restore blue personal supply. A deliberate commander-piece activation may re-enter the combined phase.
 - Use recorded paths, affiliation and endpoints. Do not invent substitute routes. Zero-length supply at its own source is not missing supply. Skip empty command stops. In read-only contexts, show useful connections or selected-piece information without a move-preview phase. Preserve independent explicit layers.
 - Commander and Supply point identity controls remain present. Line samples and group descriptions appear only when their overlays are actually drawn. A real board change drops vanished targets and routes while preserving unrelated valid inspectors.
-- While the live Board actually renders a previous-turn wash, the existing legend includes one passive generic square with the exact label “Previous turn.” The sample uses the previous player’s destination color at 17% and does not depict a piece, arrow, source, deletion or History treatment. Hide the key whenever no wash is rendered. It is explanatory only: it is not a button, focus target or inspector and never changes selection, replay, History, gameplay or authority.
+- While the live Board actually renders a previous-turn wash, the legend includes a separate contextual row with one passive generic square and the exact label “Previous turn.” The 20px square sits in the shared 24px icon track. The sample uses the previous player’s destination color at 17% and does not depict a piece, arrow, source, deletion or History treatment. Hide the row whenever no wash is rendered. It is explanatory only: it is not a button, focus target or inspector and never changes selection, replay, History, gameplay or authority.
 
 ### Stable board messages and inline actions
 

@@ -34,7 +34,7 @@ test('stone fracture has a hard stop, nonzero dry decay and no pitched oscillato
  const energy=values=>values.reduce((sum,n)=>sum+n*n,0)/values.length;
  assert.ok(energy(f.buffers[0].slice(0,160))>energy(f.buffers[0].slice(-160))*100);
 });
-test('optimistic/rejected removal never cracks; confirmed local receipt cracks exactly once and preserves result cue',()=>{
+test('optimistic/rejected removal never cracks; confirmed local receipt cracks once while result entry owns its cue',()=>{
  const f=audioFixture();const sound=createGameSound({createAudio:()=>f.audio,getIdentityId:()=> 'red'});sound.gesture();
  const event=(seq,g,reason='move_recorded')=>({game:g,eventSeq:seq,clientCommandId:'a',type:'event_appended',reason});
  sound.observe(event(1,game(['x','y'])),{silent:true});
@@ -43,7 +43,7 @@ test('optimistic/rejected removal never cracks; confirmed local receipt cracks e
  sound.observe(event(2,game(['x','y']),'action_rejected'));assert.equal(f.buffers.filter(b=>b.length===1040).length,0);
  const terminal=game(['y'],[record('a','x')]);terminal.player1={identityId:'red'};terminal.board.state.outcome={status:'p1_win'};
  sound.observe(event(3,terminal));sound.observe(event(4,terminal,'turn_ended'));
- assert.equal(f.buffers.filter(b=>b.length===1040).length,1);assert.equal(f.oscillators.filter(n=>[560,700,840].includes(n.frequency.value)).length,3);
+ assert.equal(f.buffers.filter(b=>b.length===1040).length,1);assert.equal(f.oscillators.filter(n=>[560,700,840].includes(n.frequency.value)).length,0);
 });
 test('mute, missing gesture and background consume destruction silently without later replay',()=>{
  for(const gate of ['mute','gesture','background','silent']){

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createInitialGame, applyServerAction, endServerTurn } from '../src/shell-live-core.ts';
-import { applyAction, resolveToStability } from '../../game-engine/src/index.ts';
+import { applyAction, deterministicStateHash, resolveToStability } from '../../game-engine/src/index.ts';
 import { projectOptimisticGame } from '../../../apps/web/shell/optimistic-live.js';
 
 const fixture = JSON.parse(fs.readFileSync(new URL('../../game-engine/test/fixtures/destruction-turn-end.json', import.meta.url)));
@@ -33,6 +33,12 @@ test('observed explicit turn-end losses persist on the final move and match opti
   assert.deepEqual(positions(ended.destroyedPieces),[{row:6,col:4},{row:7,col:4}]);
   assert.deepEqual(ended.destroyedPieces, optimistic.commandResults.get('end').destroyedPieces);
   assert.deepEqual(game.moves[0].destroyedPieces, optimistic.game.pendingMoves[0].destroyedPieces);
+  assert.deepEqual(game.moves[0].destroyedPieces.map(record=>record.causalMoveId),['rush','rush']);
+  assert.equal(game.moves[0].inspectionSnapshot.pieces.some(piece=>piece.id==='U1-2'),true,
+    'move inspection freezes the casualty before turn settlement');
+  assert.equal(game.moves[0].snapshot.pieces.some(piece=>piece.id==='U1-2'),false,
+    'the completed turn retains the authoritative removal');
+  assert.deepEqual(game.moves[0].inspectionSnapshot,optimistic.game.pendingMoves[0].inspectionSnapshot);
   assert.deepEqual(game.moves[0].snapshot, game.board.state);
   assert.deepEqual(optimistic.game.pendingMoves[0].snapshot, game.board.state);
   assert.equal(beforeEnd.moves[0].snapshot.pieces.length-game.moves[0].snapshot.pieces.length,2);
@@ -56,6 +62,19 @@ test('engine reports removal at the actual resolution boundary without aliasing 
   assert.deepEqual(events.map(e=>e.piece.position),[{row:6,col:4},{row:7,col:4}]);
   events[0].piece.position.row = 99;
   assert.equal(applied.state.pieces.find(p=>p.id===events[0].piece.id).position.row,6);
+});
+
+test('inspection observation cannot change rules, hashes, outcomes, or authoritative removal timing',()=>{
+ const applied=applyAction(structuredClone(fixture.initialState),fixture.action).state;
+ applied.continuation=null;
+ const baseline=resolveToStability(structuredClone(applied),{artifactMode:'full'});
+ let observed=null;
+ const inspected=resolveToStability(structuredClone(applied),{artifactMode:'full',onInspectionFrame:frame=>{
+  observed=frame;frame.pieces.length=0;throw new Error('observer is not authority');
+ }});
+ assert.equal(observed.pieces.length,0,'the observer receives a detached copy');
+ assert.equal(deterministicStateHash(inspected),deterministicStateHash(baseline));
+ assert.deepEqual(inspected.outcome,baseline.outcome);
 });
 
 test('semantic End Turn closes rush without a move row and records removals once', () => {

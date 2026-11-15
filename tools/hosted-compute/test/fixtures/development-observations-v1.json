@@ -1,0 +1,4984 @@
+{
+  "schema": 1,
+  "kind": "scoped-development-observations",
+  "sourceFamily": "S11",
+  "sourcePurpose": "exploratory",
+  "sourcePurposeQualification": "Kenan explicitly identifies deliberate endgame forbearance. Do not infer exact intent at other human decisions.",
+  "sourceRevision": "48835d495c4da71011e905ab56d1064cb8ecda40",
+  "cutoff": "2026-11-15T07:29:18.265725+00:00",
+  "familyQualification": "Updated prior S11, not independent new game. All active/undo/counterfactual descendants remain one exposed development family.",
+  "discardedBranchPolicy": "Preserve raw records and family guards, exclude discarded decisions23 and42 from proposed active policy labels and unaided-discovery claims.",
+  "cases": [
+    {
+      "id": "fixture-20",
+      "display": 20,
+      "uiTurn": 17,
+      "actor": "P1",
+      "actorProvenance": "computer",
+      "model": "trained-20261029-1086",
+      "rootState": {
+        "boardSize": 10,
+        "sideToMove": "P1",
+        "turnIndex": 16,
+        "pieces": [
+          {
+            "id": "C1",
+            "owner": "P1",
+            "kind": "commander",
+            "position": {
+              "row": 3,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-1",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": false,
+            "displaySupplied": true,
+            "displayCommanded": false,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-2",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 1,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-3",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 8
+            },
+            "supplied": true,
+            "commanded": false,
+            "displaySupplied": true,
+            "displayCommanded": false,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-4",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 4,
+              "col": 7
+            },
+            "supplied": true,
+            "commanded": false,
+            "displaySupplied": true,
+            "displayCommanded": false,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-5",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 7,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": false,
+            "displaySupplied": true,
+            "displayCommanded": false,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-6",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 1,
+              "col": 8
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-7",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 1,
+              "col": 4
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "C2",
+            "owner": "P2",
+            "kind": "commander",
+            "position": {
+              "row": 6,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-1",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 4,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-2",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 3,
+              "col": 7
+            },
+            "supplied": true,
+            "commanded": false,
+            "displaySupplied": true,
+            "displayCommanded": false,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-3",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 5
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-4",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 4,
+              "col": 8
+            },
+            "supplied": true,
+            "commanded": false,
+            "displaySupplied": true,
+            "displayCommanded": false,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-5",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 6,
+              "col": 5
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-6",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 6,
+              "col": 7
+            },
+            "supplied": true,
+            "commanded": false,
+            "displaySupplied": true,
+            "displayCommanded": false,
+            "shifted": false,
+            "pushed": false
+          }
+        ],
+        "continuation": null,
+        "outcome": {
+          "status": "ongoing"
+        },
+        "artifacts": {
+          "mode": "full",
+          "supply": [
+            {
+              "player": "P1",
+              "reachability": [
+                "C1",
+                "U1-1",
+                "U1-2",
+                "U1-3",
+                "U1-4",
+                "U1-5",
+                "U1-6",
+                "U1-7"
+              ],
+              "shortestPathByPieceId": {
+                "C1": [
+                  {
+                    "row": 3,
+                    "col": 6
+                  },
+                  {
+                    "row": 2,
+                    "col": 6
+                  },
+                  {
+                    "row": 1,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-1": [
+                  {
+                    "row": 5,
+                    "col": 6
+                  },
+                  {
+                    "row": 5,
+                    "col": 7
+                  },
+                  {
+                    "row": 5,
+                    "col": 8
+                  },
+                  {
+                    "row": 5,
+                    "col": 9
+                  },
+                  {
+                    "row": 4,
+                    "col": 9
+                  },
+                  {
+                    "row": 3,
+                    "col": 9
+                  },
+                  {
+                    "row": 2,
+                    "col": 9
+                  },
+                  {
+                    "row": 1,
+                    "col": 9
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-2": [
+                  {
+                    "row": 1,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-3": [
+                  {
+                    "row": 5,
+                    "col": 8
+                  },
+                  {
+                    "row": 5,
+                    "col": 9
+                  },
+                  {
+                    "row": 4,
+                    "col": 9
+                  },
+                  {
+                    "row": 3,
+                    "col": 9
+                  },
+                  {
+                    "row": 2,
+                    "col": 9
+                  },
+                  {
+                    "row": 1,
+                    "col": 9
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-4": [
+                  {
+                    "row": 4,
+                    "col": 7
+                  },
+                  {
+                    "row": 5,
+                    "col": 7
+                  },
+                  {
+                    "row": 5,
+                    "col": 8
+                  },
+                  {
+                    "row": 5,
+                    "col": 9
+                  },
+                  {
+                    "row": 4,
+                    "col": 9
+                  },
+                  {
+                    "row": 3,
+                    "col": 9
+                  },
+                  {
+                    "row": 2,
+                    "col": 9
+                  },
+                  {
+                    "row": 1,
+                    "col": 9
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-5": [
+                  {
+                    "row": 7,
+                    "col": 6
+                  },
+                  {
+                    "row": 7,
+                    "col": 7
+                  },
+                  {
+                    "row": 7,
+                    "col": 8
+                  },
+                  {
+                    "row": 6,
+                    "col": 8
+                  },
+                  {
+                    "row": 5,
+                    "col": 8
+                  },
+                  {
+                    "row": 5,
+                    "col": 9
+                  },
+                  {
+                    "row": 4,
+                    "col": 9
+                  },
+                  {
+                    "row": 3,
+                    "col": 9
+                  },
+                  {
+                    "row": 2,
+                    "col": 9
+                  },
+                  {
+                    "row": 1,
+                    "col": 9
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-6": [
+                  {
+                    "row": 1,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-7": [
+                  {
+                    "row": 1,
+                    "col": 4
+                  },
+                  {
+                    "row": 0,
+                    "col": 4
+                  },
+                  {
+                    "row": 0,
+                    "col": 5
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ]
+              },
+              "distanceByPieceId": {
+                "C1": 6,
+                "U1-1": 8,
+                "U1-2": 4,
+                "U1-3": 6,
+                "U1-4": 8,
+                "U1-5": 10,
+                "U1-6": 2,
+                "U1-7": 6
+              }
+            },
+            {
+              "player": "P2",
+              "reachability": [
+                "C2",
+                "U2-1",
+                "U2-2",
+                "U2-3",
+                "U2-4",
+                "U2-5",
+                "U2-6"
+              ],
+              "shortestPathByPieceId": {
+                "C2": [
+                  {
+                    "row": 6,
+                    "col": 3
+                  },
+                  {
+                    "row": 6,
+                    "col": 2
+                  },
+                  {
+                    "row": 6,
+                    "col": 1
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-1": [
+                  {
+                    "row": 4,
+                    "col": 6
+                  },
+                  {
+                    "row": 4,
+                    "col": 5
+                  },
+                  {
+                    "row": 4,
+                    "col": 4
+                  },
+                  {
+                    "row": 4,
+                    "col": 3
+                  },
+                  {
+                    "row": 4,
+                    "col": 2
+                  },
+                  {
+                    "row": 4,
+                    "col": 1
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-2": [
+                  {
+                    "row": 3,
+                    "col": 7
+                  },
+                  {
+                    "row": 3,
+                    "col": 8
+                  },
+                  {
+                    "row": 3,
+                    "col": 9
+                  },
+                  {
+                    "row": 4,
+                    "col": 9
+                  },
+                  {
+                    "row": 5,
+                    "col": 9
+                  },
+                  {
+                    "row": 6,
+                    "col": 9
+                  },
+                  {
+                    "row": 6,
+                    "col": 8
+                  },
+                  {
+                    "row": 6,
+                    "col": 7
+                  },
+                  {
+                    "row": 7,
+                    "col": 7
+                  },
+                  {
+                    "row": 8,
+                    "col": 7
+                  },
+                  {
+                    "row": 8,
+                    "col": 6
+                  },
+                  {
+                    "row": 8,
+                    "col": 5
+                  },
+                  {
+                    "row": 8,
+                    "col": 4
+                  },
+                  {
+                    "row": 8,
+                    "col": 3
+                  },
+                  {
+                    "row": 8,
+                    "col": 2
+                  },
+                  {
+                    "row": 8,
+                    "col": 1
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-3": [
+                  {
+                    "row": 5,
+                    "col": 5
+                  },
+                  {
+                    "row": 5,
+                    "col": 4
+                  },
+                  {
+                    "row": 5,
+                    "col": 3
+                  },
+                  {
+                    "row": 5,
+                    "col": 2
+                  },
+                  {
+                    "row": 5,
+                    "col": 1
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-4": [
+                  {
+                    "row": 4,
+                    "col": 8
+                  },
+                  {
+                    "row": 4,
+                    "col": 9
+                  },
+                  {
+                    "row": 5,
+                    "col": 9
+                  },
+                  {
+                    "row": 6,
+                    "col": 9
+                  },
+                  {
+                    "row": 6,
+                    "col": 8
+                  },
+                  {
+                    "row": 6,
+                    "col": 7
+                  },
+                  {
+                    "row": 7,
+                    "col": 7
+                  },
+                  {
+                    "row": 8,
+                    "col": 7
+                  },
+                  {
+                    "row": 8,
+                    "col": 6
+                  },
+                  {
+                    "row": 8,
+                    "col": 5
+                  },
+                  {
+                    "row": 8,
+                    "col": 4
+                  },
+                  {
+                    "row": 8,
+                    "col": 3
+                  },
+                  {
+                    "row": 8,
+                    "col": 2
+                  },
+                  {
+                    "row": 8,
+                    "col": 1
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-5": [
+                  {
+                    "row": 6,
+                    "col": 5
+                  },
+                  {
+                    "row": 6,
+                    "col": 4
+                  },
+                  {
+                    "row": 6,
+                    "col": 3
+                  },
+                  {
+                    "row": 6,
+                    "col": 2
+                  },
+                  {
+                    "row": 6,
+                    "col": 1
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-6": [
+                  {
+                    "row": 6,
+                    "col": 7
+                  },
+                  {
+                    "row": 7,
+                    "col": 7
+                  },
+                  {
+                    "row": 8,
+                    "col": 7
+                  },
+                  {
+                    "row": 8,
+                    "col": 6
+                  },
+                  {
+                    "row": 8,
+                    "col": 5
+                  },
+                  {
+                    "row": 8,
+                    "col": 4
+                  },
+                  {
+                    "row": 8,
+                    "col": 3
+                  },
+                  {
+                    "row": 8,
+                    "col": 2
+                  },
+                  {
+                    "row": 8,
+                    "col": 1
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ]
+              },
+              "distanceByPieceId": {
+                "C2": 6,
+                "U2-1": 11,
+                "U2-2": 17,
+                "U2-3": 9,
+                "U2-4": 15,
+                "U2-5": 8,
+                "U2-6": 10
+              }
+            }
+          ],
+          "command": {
+            "candidateEdges": [
+              "C1|U1-2",
+              "C1|U1-4",
+              "C2|U2-5",
+              "U1-1|U1-3",
+              "U1-1|U1-4",
+              "U1-1|U1-5",
+              "U1-2|U1-6",
+              "U1-2|U1-7",
+              "U1-3|U1-4",
+              "U2-1|U2-2",
+              "U2-1|U2-3",
+              "U2-2|U2-4",
+              "U2-3|U2-5",
+              "U2-5|U2-6"
+            ],
+            "cutEdges": [
+              "C1|U1-4",
+              "U1-1|U1-5",
+              "U2-1|U2-2",
+              "U2-5|U2-6"
+            ],
+            "activeEdges": [
+              "C1|U1-2",
+              "C2|U2-5",
+              "U1-1|U1-3",
+              "U1-1|U1-4",
+              "U1-2|U1-6",
+              "U1-2|U1-7",
+              "U1-3|U1-4",
+              "U2-1|U2-3",
+              "U2-2|U2-4",
+              "U2-3|U2-5"
+            ],
+            "shortestPathToCommanderByPieceId": {
+              "C1": [
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "U1-2": [
+                {
+                  "row": 1,
+                  "col": 6
+                },
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "U1-6": [
+                {
+                  "row": 1,
+                  "col": 8
+                },
+                {
+                  "row": 1,
+                  "col": 6
+                },
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "U1-7": [
+                {
+                  "row": 1,
+                  "col": 4
+                },
+                {
+                  "row": 1,
+                  "col": 6
+                },
+                {
+                  "row": 3,
+                  "col": 6
+                }
+              ],
+              "C2": [
+                {
+                  "row": 6,
+                  "col": 3
+                }
+              ],
+              "U2-1": [
+                {
+                  "row": 4,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 5
+                },
+                {
+                  "row": 6,
+                  "col": 5
+                },
+                {
+                  "row": 6,
+                  "col": 3
+                }
+              ],
+              "U2-3": [
+                {
+                  "row": 5,
+                  "col": 5
+                },
+                {
+                  "row": 6,
+                  "col": 5
+                },
+                {
+                  "row": 6,
+                  "col": 3
+                }
+              ],
+              "U2-5": [
+                {
+                  "row": 6,
+                  "col": 5
+                },
+                {
+                  "row": 6,
+                  "col": 3
+                }
+              ]
+            }
+          },
+          "groups": {
+            "componentByPieceId": {
+              "C1": "P1:C1",
+              "C2": "P2:C2",
+              "U1-1": "P1:U1-1",
+              "U1-2": "P1:U1-2",
+              "U1-3": "P1:U1-3",
+              "U1-4": "P1:U1-4",
+              "U1-5": "P1:U1-5",
+              "U1-6": "P1:U1-6",
+              "U1-7": "P1:U1-7",
+              "U2-1": "P2:U2-1",
+              "U2-2": "P2:U2-2",
+              "U2-3": "P2:U2-3",
+              "U2-5": "P2:U2-3",
+              "U2-4": "P2:U2-4",
+              "U2-6": "P2:U2-6"
+            },
+            "membersByComponentId": {
+              "P1:C1": [
+                "C1"
+              ],
+              "P2:C2": [
+                "C2"
+              ],
+              "P1:U1-1": [
+                "U1-1"
+              ],
+              "P1:U1-2": [
+                "U1-2"
+              ],
+              "P1:U1-3": [
+                "U1-3"
+              ],
+              "P1:U1-4": [
+                "U1-4"
+              ],
+              "P1:U1-5": [
+                "U1-5"
+              ],
+              "P1:U1-6": [
+                "U1-6"
+              ],
+              "P1:U1-7": [
+                "U1-7"
+              ],
+              "P2:U2-1": [
+                "U2-1"
+              ],
+              "P2:U2-2": [
+                "U2-2"
+              ],
+              "P2:U2-3": [
+                "U2-3",
+                "U2-5"
+              ],
+              "P2:U2-4": [
+                "U2-4"
+              ],
+              "P2:U2-6": [
+                "U2-6"
+              ]
+            },
+            "strengthByComponentId": {
+              "P1:C1": 1,
+              "P2:C2": 1,
+              "P1:U1-1": 1,
+              "P1:U1-2": 1,
+              "P1:U1-3": 1,
+              "P1:U1-4": 1,
+              "P1:U1-5": 1,
+              "P1:U1-6": 1,
+              "P1:U1-7": 1,
+              "P2:U2-1": 1,
+              "P2:U2-2": 1,
+              "P2:U2-3": 2,
+              "P2:U2-4": 1,
+              "P2:U2-6": 1
+            }
+          }
+        }
+      },
+      "rootStateHash": "57b08756f028a31ac9731b90876603662b56e3cc5d120d1a76a458b930fb3256",
+      "motif": "Observed repair or command denial",
+      "scope": "Verified observed effect, not optimal-policy or game-winning proof",
+      "alternatives": [
+        {
+          "line": [
+            {
+              "type": "project",
+              "actorId": "U1-6",
+              "from": {
+                "row": 1,
+                "col": 8
+              },
+              "to": {
+                "row": 3,
+                "col": 8
+              }
+            }
+          ],
+          "outcome": {
+            "status": "ongoing"
+          },
+          "redPieces": 9,
+          "redCommanded": 8,
+          "bluePieces": 6,
+          "blueCommanded": 4
+        }
+      ],
+      "learnerEligibility": {
+        "historicalPolicy": false,
+        "historicalOptimalNonterminalValue": false,
+        "competitiveScore": false
+      },
+      "purpose": "exposed-development-evidence"
+    },
+    {
+      "id": "fixture-70",
+      "display": 70,
+      "uiTurn": 51,
+      "actor": "P1",
+      "actorProvenance": "computer",
+      "model": "trained-20261029-1086",
+      "rootState": {
+        "boardSize": 10,
+        "sideToMove": "P1",
+        "turnIndex": 50,
+        "pieces": [
+          {
+            "id": "C1",
+            "owner": "P1",
+            "kind": "commander",
+            "position": {
+              "row": 1,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-17",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 0,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-18",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 2,
+              "col": 8
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-6",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 1,
+              "col": 8
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-8",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 3,
+              "col": 7
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "C2",
+            "owner": "P2",
+            "kind": "commander",
+            "position": {
+              "row": 5,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-1",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 4,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-10",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 1,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-11",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 0,
+              "col": 4
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-12",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 7,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-13",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 2,
+              "col": 5
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-14",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 3,
+              "col": 5
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-15",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 9,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-16",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 1,
+              "col": 5
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-17",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 2,
+              "col": 9
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-3",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-4",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 4,
+              "col": 8
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-5",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 6,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-6",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 6,
+              "col": 7
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-7",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 8
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-8",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 4,
+              "col": 9
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-9",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 4,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          }
+        ],
+        "continuation": {
+          "type": "rush",
+          "owner": "P1",
+          "frozenOwner": "P1",
+          "chainLength": 4,
+          "rushedPieceIds": [
+            "C1",
+            "U1-17",
+            "U1-18",
+            "U1-8"
+          ],
+          "rushChainPieceIds": [
+            "C1",
+            "U1-17",
+            "U1-18",
+            "U1-6",
+            "U1-8"
+          ],
+          "frozenPieceStatesById": {
+            "C1": {
+              "supplied": true,
+              "commanded": true
+            },
+            "U1-17": {
+              "supplied": true,
+              "commanded": true
+            },
+            "U1-18": {
+              "supplied": true,
+              "commanded": true
+            },
+            "U1-6": {
+              "supplied": true,
+              "commanded": true
+            },
+            "U1-8": {
+              "supplied": true,
+              "commanded": true
+            }
+          }
+        },
+        "outcome": {
+          "status": "ongoing"
+        },
+        "artifacts": {
+          "mode": "full",
+          "supply": [
+            {
+              "player": "P1",
+              "reachability": [
+                "C1",
+                "U1-17",
+                "U1-18",
+                "U1-6",
+                "U1-8"
+              ],
+              "shortestPathByPieceId": {
+                "C1": [
+                  {
+                    "row": 1,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-17": [
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-18": [
+                  {
+                    "row": 2,
+                    "col": 8
+                  },
+                  {
+                    "row": 1,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-6": [
+                  {
+                    "row": 1,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-8": [
+                  {
+                    "row": 3,
+                    "col": 7
+                  },
+                  {
+                    "row": 2,
+                    "col": 7
+                  },
+                  {
+                    "row": 1,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ]
+              },
+              "distanceByPieceId": {
+                "C1": 4,
+                "U1-17": 3,
+                "U1-18": 3,
+                "U1-6": 2,
+                "U1-8": 5
+              }
+            },
+            {
+              "player": "P2",
+              "reachability": [
+                "C2",
+                "U2-1",
+                "U2-10",
+                "U2-11",
+                "U2-12",
+                "U2-13",
+                "U2-14",
+                "U2-15",
+                "U2-16",
+                "U2-17",
+                "U2-3",
+                "U2-4",
+                "U2-5",
+                "U2-6",
+                "U2-7",
+                "U2-8",
+                "U2-9"
+              ],
+              "shortestPathByPieceId": {
+                "C2": [
+                  {
+                    "row": 5,
+                    "col": 3
+                  },
+                  {
+                    "row": 5,
+                    "col": 2
+                  },
+                  {
+                    "row": 5,
+                    "col": 1
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-1": [
+                  {
+                    "row": 4,
+                    "col": 6
+                  },
+                  {
+                    "row": 4,
+                    "col": 5
+                  },
+                  {
+                    "row": 4,
+                    "col": 4
+                  },
+                  {
+                    "row": 4,
+                    "col": 3
+                  },
+                  {
+                    "row": 4,
+                    "col": 2
+                  },
+                  {
+                    "row": 4,
+                    "col": 1
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-10": [
+                  {
+                    "row": 1,
+                    "col": 3
+                  },
+                  {
+                    "row": 1,
+                    "col": 2
+                  },
+                  {
+                    "row": 1,
+                    "col": 1
+                  },
+                  {
+                    "row": 1,
+                    "col": 0
+                  },
+                  {
+                    "row": 2,
+                    "col": 0
+                  },
+                  {
+                    "row": 3,
+                    "col": 0
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-11": [
+                  {
+                    "row": 0,
+                    "col": 4
+                  },
+                  {
+                    "row": 0,
+                    "col": 3
+                  },
+                  {
+                    "row": 0,
+                    "col": 2
+                  },
+                  {
+                    "row": 0,
+                    "col": 1
+                  },
+                  {
+                    "row": 0,
+                    "col": 0
+                  },
+                  {
+                    "row": 1,
+                    "col": 0
+                  },
+                  {
+                    "row": 2,
+                    "col": 0
+                  },
+                  {
+                    "row": 3,
+                    "col": 0
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-12": [
+                  {
+                    "row": 7,
+                    "col": 3
+                  },
+                  {
+                    "row": 7,
+                    "col": 2
+                  },
+                  {
+                    "row": 7,
+                    "col": 1
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-13": [
+                  {
+                    "row": 2,
+                    "col": 5
+                  },
+                  {
+                    "row": 2,
+                    "col": 4
+                  },
+                  {
+                    "row": 2,
+                    "col": 3
+                  },
+                  {
+                    "row": 2,
+                    "col": 2
+                  },
+                  {
+                    "row": 2,
+                    "col": 1
+                  },
+                  {
+                    "row": 2,
+                    "col": 0
+                  },
+                  {
+                    "row": 3,
+                    "col": 0
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-14": [
+                  {
+                    "row": 3,
+                    "col": 5
+                  },
+                  {
+                    "row": 3,
+                    "col": 4
+                  },
+                  {
+                    "row": 3,
+                    "col": 3
+                  },
+                  {
+                    "row": 3,
+                    "col": 2
+                  },
+                  {
+                    "row": 3,
+                    "col": 1
+                  },
+                  {
+                    "row": 3,
+                    "col": 0
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-15": [
+                  {
+                    "row": 9,
+                    "col": 3
+                  },
+                  {
+                    "row": 9,
+                    "col": 2
+                  },
+                  {
+                    "row": 9,
+                    "col": 1
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-16": [
+                  {
+                    "row": 1,
+                    "col": 5
+                  },
+                  {
+                    "row": 1,
+                    "col": 4
+                  },
+                  {
+                    "row": 1,
+                    "col": 3
+                  },
+                  {
+                    "row": 1,
+                    "col": 2
+                  },
+                  {
+                    "row": 1,
+                    "col": 1
+                  },
+                  {
+                    "row": 1,
+                    "col": 0
+                  },
+                  {
+                    "row": 2,
+                    "col": 0
+                  },
+                  {
+                    "row": 3,
+                    "col": 0
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-17": [
+                  {
+                    "row": 2,
+                    "col": 9
+                  },
+                  {
+                    "row": 3,
+                    "col": 9
+                  },
+                  {
+                    "row": 3,
+                    "col": 8
+                  },
+                  {
+                    "row": 4,
+                    "col": 8
+                  },
+                  {
+                    "row": 4,
+                    "col": 7
+                  },
+                  {
+                    "row": 4,
+                    "col": 6
+                  },
+                  {
+                    "row": 4,
+                    "col": 5
+                  },
+                  {
+                    "row": 4,
+                    "col": 4
+                  },
+                  {
+                    "row": 4,
+                    "col": 3
+                  },
+                  {
+                    "row": 4,
+                    "col": 2
+                  },
+                  {
+                    "row": 4,
+                    "col": 1
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-3": [
+                  {
+                    "row": 5,
+                    "col": 6
+                  },
+                  {
+                    "row": 5,
+                    "col": 5
+                  },
+                  {
+                    "row": 5,
+                    "col": 4
+                  },
+                  {
+                    "row": 5,
+                    "col": 3
+                  },
+                  {
+                    "row": 5,
+                    "col": 2
+                  },
+                  {
+                    "row": 5,
+                    "col": 1
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-4": [
+                  {
+                    "row": 4,
+                    "col": 8
+                  },
+                  {
+                    "row": 4,
+                    "col": 7
+                  },
+                  {
+                    "row": 4,
+                    "col": 6
+                  },
+                  {
+                    "row": 4,
+                    "col": 5
+                  },
+                  {
+                    "row": 4,
+                    "col": 4
+                  },
+                  {
+                    "row": 4,
+                    "col": 3
+                  },
+                  {
+                    "row": 4,
+                    "col": 2
+                  },
+                  {
+                    "row": 4,
+                    "col": 1
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-5": [
+                  {
+                    "row": 6,
+                    "col": 6
+                  },
+                  {
+                    "row": 6,
+                    "col": 5
+                  },
+                  {
+                    "row": 6,
+                    "col": 4
+                  },
+                  {
+                    "row": 6,
+                    "col": 3
+                  },
+                  {
+                    "row": 6,
+                    "col": 2
+                  },
+                  {
+                    "row": 6,
+                    "col": 1
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-6": [
+                  {
+                    "row": 6,
+                    "col": 7
+                  },
+                  {
+                    "row": 6,
+                    "col": 6
+                  },
+                  {
+                    "row": 6,
+                    "col": 5
+                  },
+                  {
+                    "row": 6,
+                    "col": 4
+                  },
+                  {
+                    "row": 6,
+                    "col": 3
+                  },
+                  {
+                    "row": 6,
+                    "col": 2
+                  },
+                  {
+                    "row": 6,
+                    "col": 1
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-7": [
+                  {
+                    "row": 5,
+                    "col": 8
+                  },
+                  {
+                    "row": 5,
+                    "col": 7
+                  },
+                  {
+                    "row": 5,
+                    "col": 6
+                  },
+                  {
+                    "row": 5,
+                    "col": 5
+                  },
+                  {
+                    "row": 5,
+                    "col": 4
+                  },
+                  {
+                    "row": 5,
+                    "col": 3
+                  },
+                  {
+                    "row": 5,
+                    "col": 2
+                  },
+                  {
+                    "row": 5,
+                    "col": 1
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-8": [
+                  {
+                    "row": 4,
+                    "col": 9
+                  },
+                  {
+                    "row": 4,
+                    "col": 8
+                  },
+                  {
+                    "row": 4,
+                    "col": 7
+                  },
+                  {
+                    "row": 4,
+                    "col": 6
+                  },
+                  {
+                    "row": 4,
+                    "col": 5
+                  },
+                  {
+                    "row": 4,
+                    "col": 4
+                  },
+                  {
+                    "row": 4,
+                    "col": 3
+                  },
+                  {
+                    "row": 4,
+                    "col": 2
+                  },
+                  {
+                    "row": 4,
+                    "col": 1
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-9": [
+                  {
+                    "row": 4,
+                    "col": 3
+                  },
+                  {
+                    "row": 4,
+                    "col": 2
+                  },
+                  {
+                    "row": 4,
+                    "col": 1
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ]
+              },
+              "distanceByPieceId": {
+                "C2": 7,
+                "U2-1": 11,
+                "U2-10": 11,
+                "U2-11": 13,
+                "U2-12": 5,
+                "U2-13": 12,
+                "U2-14": 11,
+                "U2-15": 3,
+                "U2-16": 13,
+                "U2-17": 16,
+                "U2-3": 10,
+                "U2-4": 13,
+                "U2-5": 9,
+                "U2-6": 10,
+                "U2-7": 12,
+                "U2-8": 14,
+                "U2-9": 8
+              }
+            }
+          ],
+          "command": {
+            "candidateEdges": [
+              "C1|U1-17",
+              "C1|U1-6",
+              "C2|U2-12",
+              "C2|U2-3",
+              "C2|U2-9",
+              "U1-18|U1-6",
+              "U1-18|U1-8",
+              "U2-1|U2-14",
+              "U2-1|U2-3",
+              "U2-1|U2-4",
+              "U2-1|U2-9",
+              "U2-10|U2-11",
+              "U2-10|U2-16",
+              "U2-10|U2-9",
+              "U2-11|U2-16",
+              "U2-12|U2-15",
+              "U2-13|U2-14",
+              "U2-13|U2-16",
+              "U2-17|U2-8",
+              "U2-3|U2-5",
+              "U2-3|U2-6",
+              "U2-3|U2-7",
+              "U2-4|U2-7",
+              "U2-4|U2-8",
+              "U2-5|U2-6",
+              "U2-6|U2-7",
+              "U2-7|U2-8"
+            ],
+            "cutEdges": [],
+            "activeEdges": [
+              "C1|U1-17",
+              "C1|U1-6",
+              "C2|U2-12",
+              "C2|U2-3",
+              "C2|U2-9",
+              "U1-18|U1-6",
+              "U1-18|U1-8",
+              "U2-1|U2-14",
+              "U2-1|U2-3",
+              "U2-1|U2-4",
+              "U2-1|U2-9",
+              "U2-10|U2-11",
+              "U2-10|U2-16",
+              "U2-10|U2-9",
+              "U2-11|U2-16",
+              "U2-12|U2-15",
+              "U2-13|U2-14",
+              "U2-13|U2-16",
+              "U2-17|U2-8",
+              "U2-3|U2-5",
+              "U2-3|U2-6",
+              "U2-3|U2-7",
+              "U2-4|U2-7",
+              "U2-4|U2-8",
+              "U2-5|U2-6",
+              "U2-6|U2-7",
+              "U2-7|U2-8"
+            ],
+            "shortestPathToCommanderByPieceId": {
+              "C2": [
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-1": [
+                {
+                  "row": 4,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-10": [
+                {
+                  "row": 1,
+                  "col": 3
+                },
+                {
+                  "row": 4,
+                  "col": 3
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-11": [
+                {
+                  "row": 0,
+                  "col": 4
+                },
+                {
+                  "row": 1,
+                  "col": 3
+                },
+                {
+                  "row": 4,
+                  "col": 3
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-12": [
+                {
+                  "row": 7,
+                  "col": 3
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-13": [
+                {
+                  "row": 2,
+                  "col": 5
+                },
+                {
+                  "row": 3,
+                  "col": 5
+                },
+                {
+                  "row": 4,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-14": [
+                {
+                  "row": 3,
+                  "col": 5
+                },
+                {
+                  "row": 4,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-15": [
+                {
+                  "row": 9,
+                  "col": 3
+                },
+                {
+                  "row": 7,
+                  "col": 3
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-16": [
+                {
+                  "row": 1,
+                  "col": 5
+                },
+                {
+                  "row": 1,
+                  "col": 3
+                },
+                {
+                  "row": 4,
+                  "col": 3
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-17": [
+                {
+                  "row": 2,
+                  "col": 9
+                },
+                {
+                  "row": 4,
+                  "col": 9
+                },
+                {
+                  "row": 5,
+                  "col": 8
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-3": [
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-4": [
+                {
+                  "row": 4,
+                  "col": 8
+                },
+                {
+                  "row": 4,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-5": [
+                {
+                  "row": 6,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-6": [
+                {
+                  "row": 6,
+                  "col": 7
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-7": [
+                {
+                  "row": 5,
+                  "col": 8
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-8": [
+                {
+                  "row": 4,
+                  "col": 9
+                },
+                {
+                  "row": 5,
+                  "col": 8
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-9": [
+                {
+                  "row": 4,
+                  "col": 3
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ]
+            }
+          },
+          "groups": {
+            "componentByPieceId": {
+              "C1": "P1:C1",
+              "U1-17": "P1:C1",
+              "C2": "P2:C2",
+              "U2-9": "P2:C2",
+              "U1-18": "P1:U1-18",
+              "U1-6": "P1:U1-18",
+              "U1-8": "P1:U1-8",
+              "U2-1": "P2:U2-1",
+              "U2-3": "P2:U2-1",
+              "U2-5": "P2:U2-1",
+              "U2-6": "P2:U2-1",
+              "U2-10": "P2:U2-10",
+              "U2-11": "P2:U2-11",
+              "U2-12": "P2:U2-12",
+              "U2-13": "P2:U2-13",
+              "U2-14": "P2:U2-13",
+              "U2-16": "P2:U2-13",
+              "U2-15": "P2:U2-15",
+              "U2-17": "P2:U2-17",
+              "U2-4": "P2:U2-4",
+              "U2-7": "P2:U2-4",
+              "U2-8": "P2:U2-4"
+            },
+            "membersByComponentId": {
+              "P1:C1": [
+                "C1",
+                "U1-17"
+              ],
+              "P2:C2": [
+                "C2",
+                "U2-9"
+              ],
+              "P1:U1-18": [
+                "U1-18",
+                "U1-6"
+              ],
+              "P1:U1-8": [
+                "U1-8"
+              ],
+              "P2:U2-1": [
+                "U2-1",
+                "U2-3",
+                "U2-5",
+                "U2-6"
+              ],
+              "P2:U2-10": [
+                "U2-10"
+              ],
+              "P2:U2-11": [
+                "U2-11"
+              ],
+              "P2:U2-12": [
+                "U2-12"
+              ],
+              "P2:U2-13": [
+                "U2-13",
+                "U2-14",
+                "U2-16"
+              ],
+              "P2:U2-15": [
+                "U2-15"
+              ],
+              "P2:U2-17": [
+                "U2-17"
+              ],
+              "P2:U2-4": [
+                "U2-4",
+                "U2-7",
+                "U2-8"
+              ]
+            },
+            "strengthByComponentId": {
+              "P1:C1": 2,
+              "P2:C2": 2,
+              "P1:U1-18": 2,
+              "P1:U1-8": 1,
+              "P2:U2-1": 4,
+              "P2:U2-10": 1,
+              "P2:U2-11": 1,
+              "P2:U2-12": 1,
+              "P2:U2-13": 3,
+              "P2:U2-15": 1,
+              "P2:U2-17": 1,
+              "P2:U2-4": 3
+            }
+          }
+        }
+      },
+      "rootStateHash": "ff436ab5ec4cbab1959ab03f318ed0c5b961cdf3d9fec4b18aa48a4efeffc5b5",
+      "motif": "Finish a rush turn with the necessary defensive blocker",
+      "scope": "One specified immediate win prevented. Global safety and unique optimal defense not proved.",
+      "alternatives": [
+        {
+          "line": [
+            {
+              "type": "rush",
+              "actorId": "U1-6",
+              "from": {
+                "row": 1,
+                "col": 8
+              },
+              "to": {
+                "row": 1,
+                "col": 9
+              }
+            }
+          ],
+          "blockedProjection": {
+            "type": "project",
+            "actorId": "U2-17",
+            "from": {
+              "row": 2,
+              "col": 9
+            },
+            "to": {
+              "row": 0,
+              "col": 9
+            }
+          }
+        },
+        {
+          "line": [
+            {
+              "type": "end_turn"
+            },
+            {
+              "type": "project",
+              "actorId": "U2-17",
+              "from": {
+                "row": 2,
+                "col": 9
+              },
+              "to": {
+                "row": 0,
+                "col": 9
+              }
+            }
+          ],
+          "outcome": {
+            "status": "p2_win",
+            "reason": "p1_commander_unsupplied"
+          },
+          "category": "losing contrast"
+        }
+      ],
+      "learnerEligibility": {
+        "historicalPolicy": false,
+        "historicalOptimalNonterminalValue": false,
+        "competitiveScore": false
+      },
+      "purpose": "exposed-development-evidence"
+    },
+    {
+      "id": "fixture-77",
+      "display": 77,
+      "uiTurn": 56,
+      "actor": "P2",
+      "actorProvenance": "human",
+      "model": null,
+      "rootState": {
+        "boardSize": 10,
+        "sideToMove": "P2",
+        "turnIndex": 55,
+        "pieces": [
+          {
+            "id": "C1",
+            "owner": "P1",
+            "kind": "commander",
+            "position": {
+              "row": 1,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-17",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 0,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-18",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 2,
+              "col": 8
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-19",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 3,
+              "col": 9
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-20",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 0,
+              "col": 8
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-6",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 1,
+              "col": 9
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U1-8",
+            "owner": "P1",
+            "kind": "unit",
+            "position": {
+              "row": 3,
+              "col": 7
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "C2",
+            "owner": "P2",
+            "kind": "commander",
+            "position": {
+              "row": 5,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-1",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 4,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-10",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 1,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-11",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 0,
+              "col": 4
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-12",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 7,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-13",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 2,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-14",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 3,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-15",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 9,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-16",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 1,
+              "col": 5
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-18",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 1,
+              "col": 7
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-3",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-4",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 4,
+              "col": 8
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-5",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 6,
+              "col": 6
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-6",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 6,
+              "col": 7
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-7",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 5,
+              "col": 8
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-8",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 4,
+              "col": 9
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          },
+          {
+            "id": "U2-9",
+            "owner": "P2",
+            "kind": "unit",
+            "position": {
+              "row": 4,
+              "col": 3
+            },
+            "supplied": true,
+            "commanded": true,
+            "displaySupplied": true,
+            "displayCommanded": true,
+            "shifted": false,
+            "pushed": false
+          }
+        ],
+        "continuation": null,
+        "outcome": {
+          "status": "ongoing"
+        },
+        "artifacts": {
+          "mode": "full",
+          "supply": [
+            {
+              "player": "P1",
+              "reachability": [
+                "C1",
+                "U1-17",
+                "U1-18",
+                "U1-19",
+                "U1-20",
+                "U1-6",
+                "U1-8"
+              ],
+              "shortestPathByPieceId": {
+                "C1": [
+                  {
+                    "row": 1,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-17": [
+                  {
+                    "row": 0,
+                    "col": 6
+                  },
+                  {
+                    "row": 0,
+                    "col": 7
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-18": [
+                  {
+                    "row": 2,
+                    "col": 8
+                  },
+                  {
+                    "row": 1,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-19": [
+                  {
+                    "row": 3,
+                    "col": 9
+                  },
+                  {
+                    "row": 2,
+                    "col": 9
+                  },
+                  {
+                    "row": 1,
+                    "col": 9
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-20": [
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-6": [
+                  {
+                    "row": 1,
+                    "col": 9
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ],
+                "U1-8": [
+                  {
+                    "row": 3,
+                    "col": 7
+                  },
+                  {
+                    "row": 2,
+                    "col": 7
+                  },
+                  {
+                    "row": 2,
+                    "col": 8
+                  },
+                  {
+                    "row": 1,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 8
+                  },
+                  {
+                    "row": 0,
+                    "col": 9
+                  }
+                ]
+              },
+              "distanceByPieceId": {
+                "C1": 4,
+                "U1-17": 3,
+                "U1-18": 3,
+                "U1-19": 3,
+                "U1-20": 1,
+                "U1-6": 1,
+                "U1-8": 5
+              }
+            },
+            {
+              "player": "P2",
+              "reachability": [
+                "C2",
+                "U2-1",
+                "U2-10",
+                "U2-11",
+                "U2-12",
+                "U2-13",
+                "U2-14",
+                "U2-15",
+                "U2-16",
+                "U2-18",
+                "U2-3",
+                "U2-4",
+                "U2-5",
+                "U2-6",
+                "U2-7",
+                "U2-8",
+                "U2-9"
+              ],
+              "shortestPathByPieceId": {
+                "C2": [
+                  {
+                    "row": 5,
+                    "col": 3
+                  },
+                  {
+                    "row": 5,
+                    "col": 2
+                  },
+                  {
+                    "row": 5,
+                    "col": 1
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-1": [
+                  {
+                    "row": 4,
+                    "col": 6
+                  },
+                  {
+                    "row": 4,
+                    "col": 5
+                  },
+                  {
+                    "row": 4,
+                    "col": 4
+                  },
+                  {
+                    "row": 4,
+                    "col": 3
+                  },
+                  {
+                    "row": 4,
+                    "col": 2
+                  },
+                  {
+                    "row": 4,
+                    "col": 1
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-10": [
+                  {
+                    "row": 1,
+                    "col": 3
+                  },
+                  {
+                    "row": 1,
+                    "col": 2
+                  },
+                  {
+                    "row": 1,
+                    "col": 1
+                  },
+                  {
+                    "row": 1,
+                    "col": 0
+                  },
+                  {
+                    "row": 2,
+                    "col": 0
+                  },
+                  {
+                    "row": 3,
+                    "col": 0
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-11": [
+                  {
+                    "row": 0,
+                    "col": 4
+                  },
+                  {
+                    "row": 0,
+                    "col": 3
+                  },
+                  {
+                    "row": 0,
+                    "col": 2
+                  },
+                  {
+                    "row": 0,
+                    "col": 1
+                  },
+                  {
+                    "row": 0,
+                    "col": 0
+                  },
+                  {
+                    "row": 1,
+                    "col": 0
+                  },
+                  {
+                    "row": 2,
+                    "col": 0
+                  },
+                  {
+                    "row": 3,
+                    "col": 0
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-12": [
+                  {
+                    "row": 7,
+                    "col": 3
+                  },
+                  {
+                    "row": 7,
+                    "col": 2
+                  },
+                  {
+                    "row": 7,
+                    "col": 1
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-13": [
+                  {
+                    "row": 2,
+                    "col": 6
+                  },
+                  {
+                    "row": 2,
+                    "col": 5
+                  },
+                  {
+                    "row": 2,
+                    "col": 4
+                  },
+                  {
+                    "row": 2,
+                    "col": 3
+                  },
+                  {
+                    "row": 2,
+                    "col": 2
+                  },
+                  {
+                    "row": 2,
+                    "col": 1
+                  },
+                  {
+                    "row": 2,
+                    "col": 0
+                  },
+                  {
+                    "row": 3,
+                    "col": 0
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-14": [
+                  {
+                    "row": 3,
+                    "col": 6
+                  },
+                  {
+                    "row": 3,
+                    "col": 5
+                  },
+                  {
+                    "row": 3,
+                    "col": 4
+                  },
+                  {
+                    "row": 3,
+                    "col": 3
+                  },
+                  {
+                    "row": 3,
+                    "col": 2
+                  },
+                  {
+                    "row": 3,
+                    "col": 1
+                  },
+                  {
+                    "row": 3,
+                    "col": 0
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-15": [
+                  {
+                    "row": 9,
+                    "col": 3
+                  },
+                  {
+                    "row": 9,
+                    "col": 2
+                  },
+                  {
+                    "row": 9,
+                    "col": 1
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-16": [
+                  {
+                    "row": 1,
+                    "col": 5
+                  },
+                  {
+                    "row": 1,
+                    "col": 4
+                  },
+                  {
+                    "row": 1,
+                    "col": 3
+                  },
+                  {
+                    "row": 1,
+                    "col": 2
+                  },
+                  {
+                    "row": 1,
+                    "col": 1
+                  },
+                  {
+                    "row": 1,
+                    "col": 0
+                  },
+                  {
+                    "row": 2,
+                    "col": 0
+                  },
+                  {
+                    "row": 3,
+                    "col": 0
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-18": [
+                  {
+                    "row": 1,
+                    "col": 7
+                  },
+                  {
+                    "row": 2,
+                    "col": 7
+                  },
+                  {
+                    "row": 2,
+                    "col": 6
+                  },
+                  {
+                    "row": 2,
+                    "col": 5
+                  },
+                  {
+                    "row": 2,
+                    "col": 4
+                  },
+                  {
+                    "row": 2,
+                    "col": 3
+                  },
+                  {
+                    "row": 2,
+                    "col": 2
+                  },
+                  {
+                    "row": 2,
+                    "col": 1
+                  },
+                  {
+                    "row": 2,
+                    "col": 0
+                  },
+                  {
+                    "row": 3,
+                    "col": 0
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-3": [
+                  {
+                    "row": 5,
+                    "col": 6
+                  },
+                  {
+                    "row": 5,
+                    "col": 5
+                  },
+                  {
+                    "row": 5,
+                    "col": 4
+                  },
+                  {
+                    "row": 5,
+                    "col": 3
+                  },
+                  {
+                    "row": 5,
+                    "col": 2
+                  },
+                  {
+                    "row": 5,
+                    "col": 1
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-4": [
+                  {
+                    "row": 4,
+                    "col": 8
+                  },
+                  {
+                    "row": 4,
+                    "col": 7
+                  },
+                  {
+                    "row": 4,
+                    "col": 6
+                  },
+                  {
+                    "row": 4,
+                    "col": 5
+                  },
+                  {
+                    "row": 4,
+                    "col": 4
+                  },
+                  {
+                    "row": 4,
+                    "col": 3
+                  },
+                  {
+                    "row": 4,
+                    "col": 2
+                  },
+                  {
+                    "row": 4,
+                    "col": 1
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-5": [
+                  {
+                    "row": 6,
+                    "col": 6
+                  },
+                  {
+                    "row": 6,
+                    "col": 5
+                  },
+                  {
+                    "row": 6,
+                    "col": 4
+                  },
+                  {
+                    "row": 6,
+                    "col": 3
+                  },
+                  {
+                    "row": 6,
+                    "col": 2
+                  },
+                  {
+                    "row": 6,
+                    "col": 1
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-6": [
+                  {
+                    "row": 6,
+                    "col": 7
+                  },
+                  {
+                    "row": 6,
+                    "col": 6
+                  },
+                  {
+                    "row": 6,
+                    "col": 5
+                  },
+                  {
+                    "row": 6,
+                    "col": 4
+                  },
+                  {
+                    "row": 6,
+                    "col": 3
+                  },
+                  {
+                    "row": 6,
+                    "col": 2
+                  },
+                  {
+                    "row": 6,
+                    "col": 1
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-7": [
+                  {
+                    "row": 5,
+                    "col": 8
+                  },
+                  {
+                    "row": 5,
+                    "col": 7
+                  },
+                  {
+                    "row": 5,
+                    "col": 6
+                  },
+                  {
+                    "row": 5,
+                    "col": 5
+                  },
+                  {
+                    "row": 5,
+                    "col": 4
+                  },
+                  {
+                    "row": 5,
+                    "col": 3
+                  },
+                  {
+                    "row": 5,
+                    "col": 2
+                  },
+                  {
+                    "row": 5,
+                    "col": 1
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-8": [
+                  {
+                    "row": 4,
+                    "col": 9
+                  },
+                  {
+                    "row": 4,
+                    "col": 8
+                  },
+                  {
+                    "row": 4,
+                    "col": 7
+                  },
+                  {
+                    "row": 4,
+                    "col": 6
+                  },
+                  {
+                    "row": 4,
+                    "col": 5
+                  },
+                  {
+                    "row": 4,
+                    "col": 4
+                  },
+                  {
+                    "row": 4,
+                    "col": 3
+                  },
+                  {
+                    "row": 4,
+                    "col": 2
+                  },
+                  {
+                    "row": 4,
+                    "col": 1
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ],
+                "U2-9": [
+                  {
+                    "row": 4,
+                    "col": 3
+                  },
+                  {
+                    "row": 4,
+                    "col": 2
+                  },
+                  {
+                    "row": 4,
+                    "col": 1
+                  },
+                  {
+                    "row": 4,
+                    "col": 0
+                  },
+                  {
+                    "row": 5,
+                    "col": 0
+                  },
+                  {
+                    "row": 6,
+                    "col": 0
+                  },
+                  {
+                    "row": 7,
+                    "col": 0
+                  },
+                  {
+                    "row": 8,
+                    "col": 0
+                  },
+                  {
+                    "row": 9,
+                    "col": 0
+                  }
+                ]
+              },
+              "distanceByPieceId": {
+                "C2": 7,
+                "U2-1": 11,
+                "U2-10": 11,
+                "U2-11": 13,
+                "U2-12": 5,
+                "U2-13": 13,
+                "U2-14": 12,
+                "U2-15": 3,
+                "U2-16": 13,
+                "U2-18": 15,
+                "U2-3": 10,
+                "U2-4": 13,
+                "U2-5": 9,
+                "U2-6": 10,
+                "U2-7": 12,
+                "U2-8": 14,
+                "U2-9": 8
+              }
+            }
+          ],
+          "command": {
+            "candidateEdges": [
+              "C1|U1-17",
+              "C2|U2-12",
+              "C2|U2-3",
+              "C2|U2-9",
+              "U1-17|U1-20",
+              "U1-18|U1-19",
+              "U1-18|U1-20",
+              "U1-18|U1-6",
+              "U1-18|U1-8",
+              "U1-19|U1-6",
+              "U1-19|U1-8",
+              "U1-20|U1-6",
+              "U2-1|U2-14",
+              "U2-1|U2-3",
+              "U2-1|U2-4",
+              "U2-1|U2-9",
+              "U2-10|U2-11",
+              "U2-10|U2-16",
+              "U2-10|U2-9",
+              "U2-11|U2-16",
+              "U2-12|U2-15",
+              "U2-13|U2-14",
+              "U2-13|U2-16",
+              "U2-13|U2-18",
+              "U2-3|U2-5",
+              "U2-3|U2-6",
+              "U2-3|U2-7",
+              "U2-4|U2-7",
+              "U2-4|U2-8",
+              "U2-5|U2-6",
+              "U2-6|U2-7",
+              "U2-7|U2-8"
+            ],
+            "cutEdges": [],
+            "activeEdges": [
+              "C1|U1-17",
+              "C2|U2-12",
+              "C2|U2-3",
+              "C2|U2-9",
+              "U1-17|U1-20",
+              "U1-18|U1-19",
+              "U1-18|U1-20",
+              "U1-18|U1-6",
+              "U1-18|U1-8",
+              "U1-19|U1-6",
+              "U1-19|U1-8",
+              "U1-20|U1-6",
+              "U2-1|U2-14",
+              "U2-1|U2-3",
+              "U2-1|U2-4",
+              "U2-1|U2-9",
+              "U2-10|U2-11",
+              "U2-10|U2-16",
+              "U2-10|U2-9",
+              "U2-11|U2-16",
+              "U2-12|U2-15",
+              "U2-13|U2-14",
+              "U2-13|U2-16",
+              "U2-13|U2-18",
+              "U2-3|U2-5",
+              "U2-3|U2-6",
+              "U2-3|U2-7",
+              "U2-4|U2-7",
+              "U2-4|U2-8",
+              "U2-5|U2-6",
+              "U2-6|U2-7",
+              "U2-7|U2-8"
+            ],
+            "shortestPathToCommanderByPieceId": {
+              "C1": [
+                {
+                  "row": 1,
+                  "col": 6
+                }
+              ],
+              "U1-17": [
+                {
+                  "row": 0,
+                  "col": 6
+                },
+                {
+                  "row": 1,
+                  "col": 6
+                }
+              ],
+              "U1-18": [
+                {
+                  "row": 2,
+                  "col": 8
+                },
+                {
+                  "row": 0,
+                  "col": 8
+                },
+                {
+                  "row": 0,
+                  "col": 6
+                },
+                {
+                  "row": 1,
+                  "col": 6
+                }
+              ],
+              "U1-19": [
+                {
+                  "row": 3,
+                  "col": 9
+                },
+                {
+                  "row": 2,
+                  "col": 8
+                },
+                {
+                  "row": 0,
+                  "col": 8
+                },
+                {
+                  "row": 0,
+                  "col": 6
+                },
+                {
+                  "row": 1,
+                  "col": 6
+                }
+              ],
+              "U1-20": [
+                {
+                  "row": 0,
+                  "col": 8
+                },
+                {
+                  "row": 0,
+                  "col": 6
+                },
+                {
+                  "row": 1,
+                  "col": 6
+                }
+              ],
+              "U1-6": [
+                {
+                  "row": 1,
+                  "col": 9
+                },
+                {
+                  "row": 0,
+                  "col": 8
+                },
+                {
+                  "row": 0,
+                  "col": 6
+                },
+                {
+                  "row": 1,
+                  "col": 6
+                }
+              ],
+              "U1-8": [
+                {
+                  "row": 3,
+                  "col": 7
+                },
+                {
+                  "row": 2,
+                  "col": 8
+                },
+                {
+                  "row": 0,
+                  "col": 8
+                },
+                {
+                  "row": 0,
+                  "col": 6
+                },
+                {
+                  "row": 1,
+                  "col": 6
+                }
+              ],
+              "C2": [
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-1": [
+                {
+                  "row": 4,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-10": [
+                {
+                  "row": 1,
+                  "col": 3
+                },
+                {
+                  "row": 4,
+                  "col": 3
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-11": [
+                {
+                  "row": 0,
+                  "col": 4
+                },
+                {
+                  "row": 1,
+                  "col": 3
+                },
+                {
+                  "row": 4,
+                  "col": 3
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-12": [
+                {
+                  "row": 7,
+                  "col": 3
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-13": [
+                {
+                  "row": 2,
+                  "col": 6
+                },
+                {
+                  "row": 3,
+                  "col": 6
+                },
+                {
+                  "row": 4,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-14": [
+                {
+                  "row": 3,
+                  "col": 6
+                },
+                {
+                  "row": 4,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-15": [
+                {
+                  "row": 9,
+                  "col": 3
+                },
+                {
+                  "row": 7,
+                  "col": 3
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-16": [
+                {
+                  "row": 1,
+                  "col": 5
+                },
+                {
+                  "row": 1,
+                  "col": 3
+                },
+                {
+                  "row": 4,
+                  "col": 3
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-18": [
+                {
+                  "row": 1,
+                  "col": 7
+                },
+                {
+                  "row": 2,
+                  "col": 6
+                },
+                {
+                  "row": 3,
+                  "col": 6
+                },
+                {
+                  "row": 4,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-3": [
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-4": [
+                {
+                  "row": 4,
+                  "col": 8
+                },
+                {
+                  "row": 4,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-5": [
+                {
+                  "row": 6,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-6": [
+                {
+                  "row": 6,
+                  "col": 7
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-7": [
+                {
+                  "row": 5,
+                  "col": 8
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-8": [
+                {
+                  "row": 4,
+                  "col": 9
+                },
+                {
+                  "row": 5,
+                  "col": 8
+                },
+                {
+                  "row": 5,
+                  "col": 6
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ],
+              "U2-9": [
+                {
+                  "row": 4,
+                  "col": 3
+                },
+                {
+                  "row": 5,
+                  "col": 3
+                }
+              ]
+            }
+          },
+          "groups": {
+            "componentByPieceId": {
+              "C1": "P1:C1",
+              "U1-17": "P1:C1",
+              "C2": "P2:C2",
+              "U2-9": "P2:C2",
+              "U1-18": "P1:U1-18",
+              "U1-19": "P1:U1-19",
+              "U1-20": "P1:U1-20",
+              "U1-6": "P1:U1-6",
+              "U1-8": "P1:U1-8",
+              "U2-1": "P2:U2-1",
+              "U2-13": "P2:U2-1",
+              "U2-14": "P2:U2-1",
+              "U2-3": "P2:U2-1",
+              "U2-5": "P2:U2-1",
+              "U2-6": "P2:U2-1",
+              "U2-10": "P2:U2-10",
+              "U2-11": "P2:U2-11",
+              "U2-12": "P2:U2-12",
+              "U2-15": "P2:U2-15",
+              "U2-16": "P2:U2-16",
+              "U2-18": "P2:U2-18",
+              "U2-4": "P2:U2-4",
+              "U2-7": "P2:U2-4",
+              "U2-8": "P2:U2-4"
+            },
+            "membersByComponentId": {
+              "P1:C1": [
+                "C1",
+                "U1-17"
+              ],
+              "P2:C2": [
+                "C2",
+                "U2-9"
+              ],
+              "P1:U1-18": [
+                "U1-18"
+              ],
+              "P1:U1-19": [
+                "U1-19"
+              ],
+              "P1:U1-20": [
+                "U1-20"
+              ],
+              "P1:U1-6": [
+                "U1-6"
+              ],
+              "P1:U1-8": [
+                "U1-8"
+              ],
+              "P2:U2-1": [
+                "U2-1",
+                "U2-13",
+                "U2-14",
+                "U2-3",
+                "U2-5",
+                "U2-6"
+              ],
+              "P2:U2-10": [
+                "U2-10"
+              ],
+              "P2:U2-11": [
+                "U2-11"
+              ],
+              "P2:U2-12": [
+                "U2-12"
+              ],
+              "P2:U2-15": [
+                "U2-15"
+              ],
+              "P2:U2-16": [
+                "U2-16"
+              ],
+              "P2:U2-18": [
+                "U2-18"
+              ],
+              "P2:U2-4": [
+                "U2-4",
+                "U2-7",
+                "U2-8"
+              ]
+            },
+            "strengthByComponentId": {
+              "P1:C1": 2,
+              "P2:C2": 2,
+              "P1:U1-18": 1,
+              "P1:U1-19": 1,
+              "P1:U1-20": 1,
+              "P1:U1-6": 1,
+              "P1:U1-8": 1,
+              "P2:U2-1": 6,
+              "P2:U2-10": 1,
+              "P2:U2-11": 1,
+              "P2:U2-12": 1,
+              "P2:U2-15": 1,
+              "P2:U2-16": 1,
+              "P2:U2-18": 1,
+              "P2:U2-4": 3
+            }
+          }
+        }
+      },
+      "rootStateHash": "d8fae8368272400a7a380660e3a715063fe8139cacd4ae0a9b494f036474d136",
+      "motif": "Non-corner commander enclosure with complete-turn settlement",
+      "scope": "Winning legal witness. Production automatically settled after third rush with exact matching finality proof.",
+      "alternatives": [
+        {
+          "line": [
+            {
+              "type": "rush",
+              "actorId": "U2-18",
+              "from": {
+                "row": 1,
+                "col": 7
+              },
+              "to": {
+                "row": 0,
+                "col": 7
+              }
+            },
+            {
+              "type": "rush",
+              "actorId": "U2-13",
+              "from": {
+                "row": 2,
+                "col": 6
+              },
+              "to": {
+                "row": 1,
+                "col": 7
+              }
+            },
+            {
+              "type": "rush",
+              "actorId": "U2-14",
+              "from": {
+                "row": 3,
+                "col": 6
+              },
+              "to": {
+                "row": 2,
+                "col": 6
+              }
+            },
+            {
+              "type": "end_turn"
+            }
+          ],
+          "outcome": {
+            "status": "p2_win",
+            "reason": "p1_commander_unsupplied"
+          },
+          "observedAutomaticActions": 3
+        }
+      ],
+      "automaticEndingProof": {
+        "display": 79,
+        "proofKind": "proven-terminal",
+        "visitedNodes": 946,
+        "cacheHits": 446,
+        "endpoints": 1,
+        "optionalEndpoints": 8835,
+        "exactRecordedHash": "14f8ae2ca69655984c4d92b60db5e4bc8b8dad5a92972f98388521dfefd0a12c"
+      },
+      "learnerEligibility": {
+        "historicalPolicy": false,
+        "historicalOptimalNonterminalValue": false,
+        "competitiveScore": false
+      },
+      "purpose": "exposed-development-evidence"
+    }
+  ]
+}

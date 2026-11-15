@@ -54,6 +54,23 @@ test('local rush, follow and forced retreat keep their real action prompts witho
  const g=game();g.computer={seats:{p1:'tau'}};g.computerTurn='tau';g.board.state.continuation={type:'rush'};
  assert.equal(opponentBoardMessage(g,{phase:'looking-ahead'}, {},{canInteract:false}),'Tau is thinking');
 });
+test('forced retreat overrides automatic opponent-piece selection for pusher and spectator views',()=>{
+ const g=game();g.controlSeat='Player 2';g.board.state.continuation={type:'push',phase:'retreat',pushedPieceId:'D1',attackerOwner:'P1'};
+ g.myRoles=['Player 1'];
+ assert.equal(opponentBoardMessage(g,{}, {selectedPieceId:'D1'},{identityId:'other'}),'Waiting for your opponent to retreat');
+ assert.equal(opponentBoardMessage(g,{}, {inspection:{kind:'supply',pieceId:'D1'}},{identityId:'other'}),null,'deliberate inspection retains its own message owner');
+ g.myRoles=[];
+ assert.deepEqual(opponentBoardMessage(g,{}, {selectedPieceId:'D1'}),{text:'Guest 2 is choosing a retreat',actorName:'Guest 2'});
+ g.myRoles=['Player 2'];
+ assert.equal(opponentBoardMessage(g,{}, {selectedPieceId:'D1'},{identityId:'me'}),null,'retreating player retains the live required-action prompt');
+});
+test('terminal ownership supersedes a stale retreat continuation',()=>{
+ const g=game();g.controlSeat='Player 2';g.status='finished';g.board.state.outcome={status:'p1_win'};g.board.state.continuation={type:'push',phase:'retreat',pushedPieceId:'D1',attackerOwner:'P1'};
+ g.myRoles=['Player 1'];
+ assert.deepEqual(opponentBoardMessage(g,{}, {},{identityId:'other'}),{text:'Review the game in History'});
+ g.myRoles=[];
+ assert.deepEqual(opponentBoardMessage(g,{}, {},{}),{text:'Review the game in History'});
+});
 test('spectators can replay named guest completed turns only before the next acknowledged action',()=>{
  for(const side of ['P1','P2']){
   const g=game();g.myRoles=[];g.moves[0].actorSide=side;g.turns[0].playerSeat=side==='P1'?'Player 1':'Player 2';g.controlSeat=side==='P1'?'Player 2':'Player 1';

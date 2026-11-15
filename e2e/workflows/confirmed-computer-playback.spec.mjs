@@ -19,7 +19,7 @@ const installCommandFrameGate=async page=>{
 };
 for(const motion of ['no-preference','reduce'])test(`computer stays unprojected until confirmation then shows paced movement and releases human control (${motion})`,async({page,context},info)=>{
  await page.emulateMedia({reducedMotion:motion});
- await page.addInitScript(()=>{window.moveNotes=[];const original=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(original,this,args);window.moveNotes.push({frequency:this.frequency.value,at:performance.now()});return value;};});
+ await page.addInitScript(()=>{window.moveNotes=[];window.elementAnimations=[];const originalStart=OscillatorNode.prototype.start;OscillatorNode.prototype.start=function(...args){const value=Reflect.apply(originalStart,this,args);window.moveNotes.push({frequency:this.frequency.value,at:performance.now()});return value;};const originalAnimate=Element.prototype.animate;Element.prototype.animate=function(keyframes,options){window.elementAnimations.push({className:this.className,duration:typeof options==='number'?options:options?.duration??null});return Reflect.apply(originalAnimate,this,[keyframes,options]);};});
  await page.setViewportSize({width:1440,height:1100});await page.goto('/');await page.locator('[data-action="opponent-story"][data-opponent="babs"]').click();await waitForOpponentReady(page);
  const created=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/shell/games'&&response.request().method()==='POST');await page.getByRole('button',{name:'Play Babs',exact:true}).click();const game=(await(await created).json()).game;
  await expect(page.locator('[data-shell-transition-phase]')).toHaveAttribute('data-shell-transition-phase','idle');await expect(page.locator('[data-computer-activity="here"]')).toHaveAttribute('data-computer-activity','here');await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toBeEnabled();await expect(page.getByTestId('game-board')).toBeVisible();
@@ -32,19 +32,27 @@ for(const motion of ['no-preference','reduce'])test(`computer stays unprojected 
   // Inspect each presentation atomically, including the short reduced-motion frame.
   // Separate protocol assertions could otherwise straddle its completion.
   await page.evaluate(()=>{window.playbackControlSamples=[];const sample=()=>{if(!document.querySelector('.computer-replay'))return;const label=document.querySelector('#shell-board-preview-label');window.playbackControlSamples.push({message:label?.textContent??'',loadingState:label?.parentElement.querySelector('.board-message-activity')?.dataset.loadingState??null,caption:document.querySelector('#shell-board-turn-indicator')?.textContent??'',contexts:[...document.querySelectorAll('[data-board-context]')].map(node=>({key:node.dataset.boardContext,text:node.textContent??''})),pass:[...(label?.querySelectorAll('button')??[])].some(button=>button.textContent.trim()==='Pass')});};window.playbackControlObserver=new MutationObserver(sample);window.playbackControlObserver.observe(document.querySelector('#game-shell')??document.body,{childList:true,subtree:true,characterData:true});});
-  release();await expect.poll(()=>page.evaluate(()=>window.playbackControlSamples.some(sample=>sample.message.includes('making their move'))),{timeout:15000}).toBe(true);
-  expect(await page.evaluate(()=>window.playbackControlSamples.some(sample=>sample.pass))).toBe(false);
+  release();
   await expect.poll(()=>page.evaluate(()=>window.moveNotes.filter(note=>note.frequency===820).length)).toBe(1);await expect(page.locator('.computer-replay')).toHaveCount(0,{timeout:15000});
   await expect.poll(async()=> (await read()).moves.filter(move=>move.computerProof).length).toBeGreaterThan(0);
   const displayed=(await read()).moves.find(move=>move.clientCommandId===command.clientCommandId);expect(displayed).toBeTruthy();
   const moveNumber=displayed.displayMoveNumber??displayed.index+1;expect(Number.isSafeInteger(moveNumber)).toBe(true);
   const samples=await page.evaluate(()=>window.playbackControlSamples);
   const recorded=samples.find(sample=>sample.message.includes('making their move')&&sample.caption.includes(`Move ${moveNumber}`)&&sample.contexts.some(context=>{try{const key=JSON.parse(context.key);return key.includes('confirmed-frame')&&key.includes(displayed.moveId);}catch{return false;}}));
-  expect(recorded,'The actual automatic step must publish its exact recorded move caption and context before presentation completes').toBeTruthy();
-  expect(recorded.loadingState,'The next computer actor must not show a processing cue beside the displayed confirmed step').toBe('idle');
-  const narration=recorded.contexts.find(context=>{try{return JSON.parse(context.key).includes(displayed.moveId);}catch{return false;}}).text;expect(narration).toContain('Babs');
-  for(const point of [displayed.action.from,displayed.action.to].filter(Boolean))expect(narration).toContain(`${point.row}, ${point.col}`);
-  await info.attach('automatic-recorded-presentation',{body:JSON.stringify({moveId:displayed.moveId,moveNumber,action:displayed.action,recorded}),contentType:'application/json'});
+  const hasMovement=Boolean(displayed.action.from&&displayed.action.to);
+  if(hasMovement){
+   const durations=await page.evaluate(()=>window.elementAnimations.filter(animation=>String(animation.className).includes('computer-replay')).map(animation=>animation.duration));
+   if(motion==='no-preference')expect(durations).toContain(120);else expect(durations).not.toContain(120);
+  }
+  // The 120ms frame may complete within one MutationObserver delivery. The
+  // composed unit proof owns its exact intermediate narration/context; native
+  // proof owns the actual animation duration, cue, final state and input release.
+  if(recorded){
+   expect(recorded.loadingState,'The next computer actor must not show a processing cue beside the displayed confirmed step').toBe('idle');
+   const narration=recorded.contexts.find(context=>{try{return JSON.parse(context.key).includes(displayed.moveId);}catch{return false;}}).text;expect(narration).toContain('Babs');
+   for(const point of [displayed.action.from,displayed.action.to].filter(Boolean))expect(narration).toContain(`${point.row}, ${point.col}`);
+  }
+  await info.attach('automatic-recorded-presentation',{body:JSON.stringify({moveId:displayed.moveId,moveNumber,action:displayed.action,hasMovement,recorded,animations:await page.evaluate(()=>window.elementAnimations)}),contentType:'application/json'});
   expect(await page.evaluate(()=>{window.playbackControlObserver.disconnect();return window.playbackControlSamples.some(sample=>sample.pass);})).toBe(false);
   await page.screenshot({path:info.outputPath('confirmed-computer-final.png')});await info.attach('confirmed-computer-command',{body:JSON.stringify({commandId:command.clientCommandId,attemptId:command.payload.computer.attemptId,before}),contentType:'application/json'});
  }finally{release();}
@@ -65,7 +73,7 @@ test('unseen update chime stays pending through History and Players and stops af
   const hit=row.locator(':scope > .history-move-hit');await expect(row).toHaveAttribute('data-move-id',recorded.moveId);await expect(hit).toHaveAttribute('data-action','jump-history');await expect(hit).toHaveAttribute('data-game-id',game.id);await expect(hit).toHaveAttribute('data-move-index',String(recorded.index));
   await hit.click();await expect(row).toHaveAttribute('aria-current','true');await expect(row).toHaveClass(/is-selected/);await page.evaluate(()=>window.moveNotes=[]);
   release();await expect.poll(async()=> (await notes(460)).length,{timeout:15000}).toBe(1);await expect.poll(async()=>(await notes(690)).length).toBe(1);expect(await notes(820)).toHaveLength(0);await expect(page.locator('.computer-replay')).toHaveCount(0);await expect(row).toHaveClass(/is-selected/);
-  await page.getByRole('button',{name:'Hide previous turn',exact:true}).click();await switchGamePanel(page,'players');expect(await notes(460)).toHaveLength(1);await expect.poll(async()=> (await notes(460)).length,{timeout:65000}).toBe(2);expect(await notes(820)).toHaveLength(0);
+  await switchGamePanel(page,'players');expect(await notes(460)).toHaveLength(1);await expect.poll(async()=> (await notes(460)).length,{timeout:65000}).toBe(2);expect(await notes(820)).toHaveLength(0);
   await switchGamePanel(page,'board');await expect(page.locator('.computer-replay')).toHaveCount(0);const seen=await notes(460);await page.waitForTimeout(61000);expect(await notes(460)).toHaveLength(seen.length);expect(await notes(820)).toHaveLength(0);
   await info.attach('unseen-update-notes',{body:JSON.stringify(await page.evaluate(()=>window.moveNotes)),contentType:'application/json'});await page.screenshot({path:info.outputPath('unseen-update-seen-live.png')});
  }finally{release();}
@@ -121,8 +129,10 @@ test('lean confirmed frames recover automatically with foreground grace and no f
   expect(retryState.cardKey).toBe(`confirmed-playback-recovery:${game.id}`);expect(retryState.activeCardKey).toBe(retryState.cardKey);
   await info.attach('confirmed-playback-retry-ready',{body:JSON.stringify({...retryState,firstConfirmedAt,foregroundWaitMs:retryState.at-firstConfirmedAt}),contentType:'application/json'});
   await page.screenshot({path:info.outputPath('confirmed-playback-retry-ready.png')});
-  blocked=false;await expect(page.locator('.computer-replay')).toBeVisible({timeout:10000});await expect(page.locator('.computer-replay')).toHaveCount(0);await expect(notice).toHaveCount(0);await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toBeEnabled();
-  await info.attach('confirmed-frame-read-recovery',{body:JSON.stringify({reads,firstReadDelayMs:firstReadAt-firstConfirmedAt,foregroundWaitMs:Date.now()-firstConfirmedAt}),contentType:'application/json'});
+  blocked=false;let recovered;
+  await expect.poll(async()=>{recovered=await page.evaluate(readProjectedGame,{id:game.id,guest:true});return recovered.moves.some(move=>move.computerProof)&&recovered.board.state.sideToMove!==game.computer.side;},{timeout:10000}).toBe(true);
+  const computerMove=recovered.moves.findLast(move=>move.computerProof);expect(computerMove).toBeTruthy();await expect(page.locator(`[data-testid="history-move-item"][data-move-id="${computerMove.moveId}"]`)).toHaveCount(1);await expect(page.locator('.computer-replay')).toHaveCount(0);await expect(notice).toHaveCount(0);await expect(page.locator('#shell-board-preview-label').getByRole('button',{name:'Pass',exact:true})).toBeEnabled();
+  await info.attach('confirmed-frame-read-recovery',{body:JSON.stringify({reads,firstReadDelayMs:firstReadAt-firstConfirmedAt,foregroundWaitMs:Date.now()-firstConfirmedAt,computerMoveId:computerMove.moveId,gameplayRevision:recovered.gameplayRevision,sideToMove:recovered.board.state.sideToMove}),contentType:'application/json'});
  }finally{blocked=false;gate.release();}
 });
 

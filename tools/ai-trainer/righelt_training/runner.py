@@ -1,4 +1,5 @@
 """Budgeted local experiment child. Supervisor owns permission and hard limits."""
+from .device import selected_device, memory_bytes
 from .budget import effective_deadline,validation_boundary
 from .admission import KINDS,CHECKPOINT_ALLOWANCE,estimate as admission_estimate, observe as observe_duration, restore_observations
 from .allocation import rows
@@ -22,15 +23,20 @@ from .checkpoint import atomic_json, save_checkpoint, load_checkpoint
 from .config import CONFIG, ROOT
 from .resource_policy import LIMITS
 from .curriculum import Curriculum
-from .model import PolicyValueNet
+from .model import PolicyValueNet, model_from_record
+from .architecture import record_architecture
+from .pilot_recipe import checked_recipe, teaching_job, DEFINITION
+from .portable import resolve_reference, read_bound
 from .replay import ReplayBuffer, save_game
+from .policy_pool import add_sampled_counts
 from .trainer import make_optimizer, train_round
 from . import fresh_health
 from . import exploration_adoption
 from .training_recipe import record_recipe, recipe_binding
 
 ENGINE = ROOT / 'tools/ai-trainer/engine-worker.mjs'
-CHECKPOINT_INTERVAL = 590
+CHECKPOINT_INTERVAL = (json.loads((ROOT/'tools/hosted-compute/policy.json').read_text())['trainerCheckpointSeconds']
+                       if os.environ.get('RIGHELT_HOSTED') == '1' else 590)
 
 
 def read_json(path):
@@ -99,6 +105,14 @@ class Runner:
             raise ValueError('manifest content mismatch')
         self.continuation = fresh_health.continuation_for(self.directory, self.manifest['manifest'])
         self.training_recipe = record_recipe(self.manifest['manifest'])
+        from .hosted_receipts import verify_recipe
+        verify_recipe(self.training_recipe)
+        from .execution_recipe import verify_runtime
+        execution=verify_runtime()
+        self.attention_method=execution['settings'].get('attentionMethod') if execution else None
+        self.pilot_recipe=checked_recipe(self.attention_method['pilotRecipe']) if self.attention_method else None
+        if self.attention_method and record_architecture(self.manifest['manifest'])!=self.attention_method['architecture']:
+            raise ValueError('attention architecture differs from frozen method')
         self.exploration_adoption = exploration_adoption.manifest_binding(self.directory, self.manifest['manifest'], mode='provenance')
         if self.exploration_adoption and (self.runtime.get('explorationAdoption') != self.exploration_adoption
                 or self.runtime.get('trainingRecipe') != self.training_recipe):
@@ -109,20 +123,26 @@ class Runner:
         self.started = self.runtime['startedMonotonic']
         if self.deadline <= self.started or self.deadline <= time.monotonic():
             raise ValueError('expired experiment')
-        self.device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
-        # Runtime fallback is prohibited for experiments; CPU remains available to unit tests.
-        if self.device.type != 'mps':
-            raise RuntimeError('MPS unavailable; run preflight with Metal access')
+        self.device = selected_device()
         torch.set_num_threads(2)
         torch.manual_seed(seed)
-        self.model = PolicyValueNet().to(self.device)
+        self.model = model_from_record(self.manifest['manifest']).to(self.device)
         self.optimizer = make_optimizer(self.model)
         corpus_binding=self.manifest['manifest'].get('productionCorpus')
         if corpus_binding:
             from .production import protected_encodings
             protected=protected_encodings(corpus_binding)
         else:protected=()
-        self.buffer = ReplayBuffer(protected_encoding_hashes=protected)
+        guards=self.manifest['manifest'].get('evaluationGuards')
+        families=()
+        if guards:
+            guard_record=json.loads(read_bound(guards))
+            protected=set(protected)|set(guard_record['encodingHashes'])
+            families=guard_record['familyIds']
+            if self.attention_method and guards['sha256']!=self.attention_method['guardsSha256']:
+                raise ValueError('attention held-out guards differ')
+        elif self.attention_method:raise ValueError('attention held-out guards missing')
+        self.buffer = ReplayBuffer(protected_encoding_hashes=protected,protected_family_ids=families)
         self.state = default_state()
         self.seed = seed
         self.stage = stage
@@ -132,12 +152,46 @@ class Runner:
         self.inference_bound = 30.
         if resume:
             self.restore(Path(resume))
+        from .execution_recipe import verify_start
+        verify_start(resume, self.model, self.optimizer)
+        self.teacher=None
+        if getattr(self,'pilot_recipe',None):
+            self.configure_pilot_learning_rate()
+            self.load_teacher()
         restore_observations(self.state,self.directory)
         self.restore_admission_claims()
         self.curriculum = Curriculum(seed, switched=self.state['curriculumSwitched'],
-                                     production_corpus=self.manifest['manifest'].get('productionCorpus'))
+                                     production_corpus=self.manifest['manifest'].get('productionCorpus'),pilot_recipe=self.pilot_recipe)
         self.model.eval()
         self.report_device_memory()
+
+    def configure_pilot_learning_rate(self):
+        rate=DEFINITION['learningRates']['continuation'if self.manifest['manifest'].get('warmStart')else'fresh']
+        prior=self.state.get('pilotLearningRate')
+        if prior is None:
+            for group in self.optimizer.param_groups:group['lr']=rate
+            self.state['pilotLearningRate']=rate
+        elif prior!=rate or any(group['lr']!=rate for group in self.optimizer.param_groups):
+            raise ValueError('Recovered optimizer changed frozen pilot learning rate')
+
+    def load_teacher(self):
+        binding=self.pilot_recipe['teacher'];checkpoint=resolve_reference(binding['path'],expected_sha256=binding['sha256'])
+        if hashlib.sha256(checkpoint.read_bytes()).hexdigest()!=binding['sha256']:
+            raise ValueError('Frozen teacher checkpoint changed')
+        cpu_rng=torch.get_rng_state()
+        mps_rng=torch.mps.get_rng_state()if self.device.type=='mps'else None
+        with self.operation('teacher-load',60):
+            from .checkpoint import inspect_checkpoint
+            data=inspect_checkpoint(checkpoint,manifest_sha256=binding['manifestSha256'],require_recovery=True)
+            # Teacher construction must not perturb the learner's recovered RNG.
+            with torch.random.fork_rng(devices=list(range(torch.cuda.device_count())) if self.device.type=='cuda' else []):
+                metadata=read_json(checkpoint.with_suffix('.json'))
+                self.teacher=model_from_record(metadata).to(self.device)
+                self.teacher.load_state_dict(data['model'])
+            self.teacher.eval();self.teacher.requires_grad_(False)
+        if not torch.equal(cpu_rng,torch.get_rng_state())or(mps_rng is not None and not torch.equal(mps_rng,torch.mps.get_rng_state())):
+            raise ValueError('Teacher loading changed learner RNG')
+        self.event('teacher-loaded',checkpointSha256=binding['sha256'],learnerRngPreserved=True)
 
     def operation(self,name,seconds):
         monitor=getattr(self,'monitor',None)
@@ -146,7 +200,7 @@ class Runner:
     def report_device_memory(self):
         if getattr(self,'monitor',None):
             self.monitor.check();return
-        amount=torch.mps.driver_allocated_memory() if self.device.type=='mps' else 0
+        amount=memory_bytes(str(self.device))
         atomic_json(self.directory/'device-memory.json', {'schema':1,'pid':os.getpid(),
                     'observedAt':time.time(),'driverBytes':amount})
 
@@ -154,6 +208,10 @@ class Runner:
         with self.operation("restore-and-replay",300):return self._restore(checkpoint)
 
     def _restore(self, checkpoint):
+        checkpoint=resolve_reference(checkpoint)
+        if getattr(self,'attention_method',None):
+            from .attention_method import restore_attention
+            return restore_attention(self,checkpoint)
         warm = getattr(self,'manifest',{}).get('manifest', {}).get('warmStart')
         if warm and not (self.directory / 'latest.json').exists():
             if (checkpoint.resolve() != Path(warm['path']).resolve()
@@ -171,7 +229,7 @@ class Runner:
             self.state['warmStart'] = warm
             source = checkpoint.parent.parent
             for name in data['recovery']['state']['archives']:
-                path = (source / name).resolve()
+                path = resolve_reference(name,base=source)
                 with gzip.open(path, 'rt') as stream:
                     self.buffer.append(json.load(stream))
                 self.state['archives'].append(str(path))
@@ -230,10 +288,10 @@ class Runner:
                 self.state['nonzeroUpdates'] = previous['nonzeroUpdates']
                 self.state['admissionDurations'] = previous.get('admissionDurations',{})
             self.state.pop('lastHandoffId', None)
-            self.state['archives'] = [str((source_directory / p).resolve()) for p in previous['archives']]
+            self.state['archives'] = [str(resolve_reference(p,base=source_directory)) for p in previous['archives']]
         self.buffer.positions.clear(); self.buffer.ids.clear(); self.buffer.game_ids.clear()
         for path in self.state['archives']:
-            with gzip.open(self.directory / path, 'rt') as stream:
+            with gzip.open(resolve_reference(path,base=self.directory), 'rt') as stream:
                 self.buffer.append(json.load(stream))
         self.model_version = companion['checkpointSha256']
         restore_observations(self.state,self.directory)
@@ -316,15 +374,24 @@ class Runner:
         if deadline - time.monotonic() < self.inference_bound:
             return False
         started = time.monotonic()
+        groups={}
+        for worker,message in requests:
+            teaching=worker.get('job',{}).get('teaching')
+            role=teaching['roles'][message['modelSeat']]if teaching else'current'
+            if role not in ('current','teacher')or(role=='teacher'and self.teacher is None):
+                raise ValueError('Unbound inference teacher role')
+            groups.setdefault(role,[]).append((worker,message))
+        outputs={}
         with torch.inference_mode():
-            inputs = torch.tensor([message['input'] for _, message in requests], dtype=torch.float32, device=self.device)
-            inputs = inputs.reshape(len(requests), CONFIG['inputPlanes'], CONFIG['boardSize'], CONFIG['boardSize'])
-            if not torch.isfinite(inputs).all():
-                raise ValueError('nonfinite inference input')
-            policy, value = self.model(inputs)
-            if not torch.isfinite(policy).all() or not torch.isfinite(value).all():
-                raise ValueError('nonfinite inference output')
-            policies, values = policy.cpu().tolist(), value.cpu().tolist()
+            for role,group in groups.items():
+                inputs=torch.tensor([message['input']for _,message in group],dtype=torch.float32,device=self.device)
+                inputs=inputs.reshape(len(group),CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize'])
+                if not torch.isfinite(inputs).all():raise ValueError('nonfinite inference input')
+                policy,value=(self.teacher if role=='teacher'else self.model)(inputs)
+                if not torch.isfinite(policy).all()or not torch.isfinite(value).all():raise ValueError('nonfinite inference output')
+                for (worker,message),logits,scalar in zip(group,policy.cpu().tolist(),value.cpu().tolist()):
+                    outputs[(id(worker),message['id'])]=(logits,scalar)
+        policies,values=zip(*(outputs[(id(worker),message['id'])]for worker,message in requests))
         self.report_device_memory()
         for (worker, message), logits, scalar in zip(requests, policies, values):
             worker['process'].stdin.write((json.dumps({'type': 'evaluation', 'id': message['id'], 'policyLogits': logits, 'value': scalar}) + '\n').encode())
@@ -335,6 +402,8 @@ class Runner:
         return True
 
     def accept_game(self, game, round_deadline, *, job=None):
+        if job is not None and game.get('teaching')!=job.get('teaching'):
+            raise ValueError('Generated game changed teacher provenance')
         if job is not None and game.get('productionSource') != job.get('productionSource'):
             raise ValueError('generated game changed production source provenance')
         self.maybe_checkpoint()
@@ -382,6 +451,9 @@ class Runner:
         if job is None:
             index=ledger.job(self.stage,getattr(self,'seed',self.curriculum.seed),self.state['nextJob'])
             job=self.curriculum.job(index,self.model_version)
+            if getattr(self,'pilot_recipe',None):job['teaching']=teaching_job(self.pilot_recipe,index,self.model_version)
+            families=getattr(getattr(self,'buffer',None),'protected_family_ids',())
+            if families:job['protectedFamilyIds']=sorted(families)
             protected=getattr(getattr(self,'buffer',None),'protected_encoding_hashes',())
             if protected:job['protectedEncodingHashes']=sorted(protected)
             prefix=getattr(self,'manifest',{}).get('manifest',{}).get('jobPrefix',self.stage)
@@ -417,6 +489,8 @@ class Runner:
             return None
         if not ledger.launch(job['id'],self.directory):
             raise ValueError('generation identity already launched')
+        if getattr(self,'pilot_recipe',None):
+            job['teaching']={**job['teaching'],'models':{**job['teaching']['models'],'current':self.model_version}}
         return {**job,'modelVersion':self.model_version,
                 'budgetMs':max(1,(remaining-bound['replay']-bound['checkpoint'])*1000)}
 
@@ -553,6 +627,10 @@ class Runner:
         self.state['updates'] += 1
         self.state['nonzeroUpdates'] += 1
         self.state['trainingBatch'] = metrics['batchIndex'] + 1
+        if metrics.get('policyRefreshBindingSha256'):
+            adoption=self.state.setdefault('policyRefreshAdoption',{'bindingSha256':metrics['policyRefreshBindingSha256'],'ids':[],'positions':0})
+            if adoption['bindingSha256']!=metrics['policyRefreshBindingSha256']:raise ValueError('recovery changed policy refresh binding')
+            self.state['policyRefreshAdoption']=add_sampled_counts(adoption,metrics['policyRefreshSampledIds'])
         if getattr(self, 'fresh_baseline', None) is not None:
             fresh_health.record_batch(self.state, metrics)
         self.event('training-batch', **metrics)

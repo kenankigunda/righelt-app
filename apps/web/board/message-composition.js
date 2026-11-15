@@ -23,7 +23,8 @@ export function messageHeightTarget({primaryRoutine = 0, fallbackRoutine = 0} = 
 
 // The owner supplies the currently interpolated rendered height on every
 // retarget. A held native press defers geometric movement, never action state.
-export function messageHeightTransition({from, to, initial = false, metricChange = false, reducedMotion = false, pressing = false} = {}) {
+export function messageHeightTransition({from, to, initial = false, metricChange = false, reducedMotion = false, pressing = false, contentChange = false} = {}) {
   if (pressing && from !== to) return {kind:'defer',height:from,target:to};
+  if(contentChange&&!initial&&!metricChange&&!reducedMotion&&from!==to)return {kind:'animate',height:to,duration:260,easing:'cubic-bezier(.22,.72,.2,1)'};
   return {kind:'snap',height:to};
 }

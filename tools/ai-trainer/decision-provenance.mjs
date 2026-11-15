@@ -2,9 +2,21 @@ import {CURRENT_RETREAT_SEMANTICS,archivedRetreatSemantics} from '../../packages
 import experimentConfig from '../../packages/computer-player/config/experiment-v1.json' with { type: 'json' };
 import { trainingRecipe } from '../../packages/computer-player/src/exploration.ts';
 import { validateExplorationProvenance } from './exploration-provenance.mjs';
+import {conditionedRootPriors,ROOT_PRIOR_POLICY_VERSION,CONDITIONED_SEARCH_POLICY_VERSION} from '../../packages/computer-player/src/root-priors.ts';
 // Search diagnostics are evidence, not a substitute for genuine policy targets.
 export function validateDecisionProvenance(record) {
   validateExplorationProvenance(record);
+  const conditioning=record.search?.rootPriorConditioning;
+  if(record.searchPolicyVersion===CONDITIONED_SEARCH_POLICY_VERSION&&record.search?.reason==='search'&&!conditioning)throw new Error('Missing root selection conditioning');
+  if(conditioning){
+    if(conditioning.version!==ROOT_PRIOR_POLICY_VERSION||!Number.isSafeInteger(conditioning.puctSelections)||conditioning.puctSelections<0||!Array.isArray(conditioning.indices)||conditioning.indices.length===0||new Set(conditioning.indices).size!==conditioning.indices.length||!Array.isArray(conditioning.priors)||conditioning.priors.length!==conditioning.indices.length)throw new Error('Invalid root selection conditioning');
+    const choices=conditioning.indices.map(i=>record.search.actions.find(a=>a.index===i));
+    const hasNonLost=record.search.actions.some(a=>a.immediate==='eligible'&&a.tactical!=='proven-loss');
+    if(choices.some(a=>!a||a.immediate!=='eligible'||(a.tactical==='proven-loss'&&hasNonLost)))throw new Error('Ineligible root selection conditioning');
+    const e=record.rootExploration,mixed=e?.selectionConditioning?new Map(e.eligibleIndices.map((index,i)=>[index,e.selectionConditioning.priors[i]])):undefined;
+    const expected=conditionedRootPriors(choices,mixed);
+    if(conditioning.priors.some((p,i)=>p!==expected.get(conditioning.indices[i])))throw new Error('Root selection conditioning mismatch');
+  }
   archivedRetreatSemantics(record.retreatSemantics);
   const mask = record.policyMask ?? true;
   if (typeof mask !== 'boolean') throw new Error('Invalid policy mask');
@@ -46,6 +58,7 @@ export function decisionProvenance(result, searchPolicyVersion) {
     searchPolicyVersion,
     search: { nodes: result.nodes, simulations: result.simulations, stopped: result.stopped,
       reason: result.reason, elapsedMs: result.elapsedMs, engineBudget: result.engineBudget,
+      ...(result.rootPriorConditioning?{rootPriorConditioning:result.rootPriorConditioning}:{}),
       actions: result.actions, reportedValue: result.value },
   };
   validateDecisionProvenance(record);

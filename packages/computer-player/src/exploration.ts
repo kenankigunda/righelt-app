@@ -12,6 +12,7 @@ export type RootExplorationEvidence = {
   schema: 1; recipe: TrainingRecipe; requested: boolean; applied: boolean;
   seedDerivation: string | null; derivedSeed: number | null; skipReason: ExplorationSkip | null;
   eligibleIndices: number[]; rawPriors: number[]; effectivePriors: number[]; noiseSha256: string | null;
+  selectionConditioning?: { version: "eligible-logits-v1"; priors: number[] };
 };
 
 /** Stable JSON for recipe/noise digests across TypeScript and Python. */
@@ -111,7 +112,7 @@ export function dirichletNoise(count: number, seed: number, recipe = trainingRec
 
 export async function applyRootExploration(evidence: RootExplorationEvidence | undefined,
   actions: { index: number; prior: number }[], remainingSimulations: number, firstVisitCompleted: boolean,
-  deadlineMs?: number): Promise<Map<number, number>> {
+  deadlineMs?: number, stableBase?: Map<number, number>): Promise<Map<number, number>> {
   const effective = new Map<number, number>();
   if (!evidence?.requested) return effective;
   const skip = (reason: ExplorationSkip) => { evidence.skipReason = reason; return effective; };
@@ -125,7 +126,7 @@ export async function applyRootExploration(evidence: RootExplorationEvidence | u
     !Number.isFinite(item.prior) || item.prior < 0)) throw new Error("Invalid root exploration priors");
   const mass = sorted.reduce((sum, item) => sum + item.prior, 0);
   if (!Number.isFinite(mass) || mass > 1 + 1e-12) throw new Error("Invalid root exploration mass");
-  if (mass === 0) return skip("zero-mass");
+  if (mass === 0 && !stableBase) return skip("zero-mass");
   const settings = definition(validateTrainingRecipe(evidence.recipe));
   await verifyTrainingRecipe(evidence.recipe);
   const noise = dirichletNoise(sorted.length, evidence.derivedSeed!, evidence.recipe);
@@ -135,6 +136,9 @@ export async function applyRootExploration(evidence: RootExplorationEvidence | u
   if (priors.some(value => !Number.isFinite(value) || value < 0)) throw new Error("Invalid effective root prior");
   Object.assign(evidence, { applied: true, skipReason: null, eligibleIndices: sorted.map(item => item.index),
     rawPriors: sorted.map(item => item.prior), effectivePriors: priors, noiseSha256 });
-  sorted.forEach((item, i) => effective.set(item.index, priors[i]));
+  const selection = stableBase ? sorted.map((item,i) => (1-settings.noiseWeight!)*stableBase.get(item.index)!+settings.noiseWeight!*noise[i]) : priors;
+  if(selection.some(value=>!Number.isFinite(value)||value<0))throw new Error("Invalid conditioned exploration prior");
+  if(stableBase)evidence.selectionConditioning={version:"eligible-logits-v1",priors:selection};
+  sorted.forEach((item, i) => effective.set(item.index, selection[i]));
   return effective;
 }

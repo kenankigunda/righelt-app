@@ -79,6 +79,16 @@ test('context coordinates retain their semantic roles through the escaped shared
  assert(!unsafe.includes(' onmouseover="bad'));assert(unsafe.includes('&quot; onmouseover=&quot;bad'));
 });
 
+test('supported Board guidance keeps Why inline and reveals one escaped Joined-stone detail',()=>{
+ const collapsed=renderBoardMessageHtml({text:"This piece can't move during this rush.",detail:{text:'It had no command connection when this rush began. Reconnecting it may let it move on future turns, but not this turn.',id:'joined-detail'}});
+ assert.match(collapsed,/this rush\. <button[^>]*class="board-guidance-disclosure"[^>]*aria-expanded="false"[^>]*>Why\?<\/button><span id="joined-detail" class="board-guidance-detail" hidden>/);
+ assert.equal((collapsed.match(/data-board-message-action="toggle-board-explanation"/g)??[]).length,1);
+ const expanded=renderBoardMessageHtml({text:'Your group isn’t strong enough to push here.',detail:{text:'Equal strength <isn’t> enough.',id:'joined-detail',expanded:true}});
+ assert.match(expanded,/aria-expanded="true"[^>]*>Less<\/button><span id="joined-detail" class="board-guidance-detail">Equal strength &lt;isn’t&gt; enough\.<\/span>/);
+ const sizing=renderBoardMessageHtml({text:'Your group isn’t strong enough to push here.',detail:{text:'Private detail'}},{sizing:true});
+ assert.doesNotMatch(sizing,/Why\?|Private detail|toggle-board-explanation|board-guidance-detail/);
+});
+
 // Authored private proposal structural controls; UNRUN.
 test('required retry pattern depends on badge and semantic action, never copy or array index',async()=>{
  const {boardPromptPattern,renderBoardMessageHtml}=await import('../board/message-presentation.js');

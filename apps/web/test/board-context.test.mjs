@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createBoardContextStore,renderBoardContext} from '../shell/board-context.js';
-import {captureDisplayedReplay,displayedReplayIsCurrent,replayArchiveMatches} from '../shell/displayed-replay.js';
+import {captureDisplayedReplay,displayedReplayIsCurrent,displayedReplayMatchesPreviousTurnEpisode,replayArchiveMatches} from '../shell/displayed-replay.js';
 import {createNotificationStack} from '../shell/notification-state.js';
 import {boardPromptSizingModels,isMappedBoardPromptHtml} from '../board/prompt-models.js';
 import {renderBoardMessageHtml} from '../board/message-presentation.js';
@@ -55,6 +55,10 @@ test('replay descriptor binds the visible accepted turn and rejects newer undisp
  game.moves[0].action.to.row=9;assert.equal(descriptor.moves[0].action.to.row,2);
  assert(replayArchiveMatches(descriptor,[...descriptor.moves,{moveId:'elsewhere',turnIndex:1}]));
  assert.equal(replayArchiveMatches(descriptor,[...descriptor.moves,{moveId:'substitute',turnIndex:0}]),false);
+ assert.equal(displayedReplayMatchesPreviousTurnEpisode(descriptor,'account:game:0:move'),true);
+ assert.equal(displayedReplayMatchesPreviousTurnEpisode(descriptor,'account:game:1:move'),false);
+ assert.equal(displayedReplayMatchesPreviousTurnEpisode(descriptor,'account:game:0:other'),false);
+ assert.equal(displayedReplayMatchesPreviousTurnEpisode({...descriptor,source:'push-sequence'},'account:game:0:move'),false);
  assert.equal(captureDisplayedReplay({game:{...game,gameplayRevision:undefined},owner,scope:'scope',identityId:'me'}),null);
 });
 test('explicit piece preference respects focused and urgent notices and explicit cycling',()=>{

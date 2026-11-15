@@ -1,4 +1,5 @@
 import {visibleRecordedMoves,recordedMoveNumber} from './recorded-narration.js';
+import {immediateRemovalRecords,moveInspectionSnapshot,settlementRemovalRecords,withCausalDestructionPresentation} from './destruction-presentation.js';
 const createReplayPreview = ({rootEl, createAdapter, preview}) => {
   const doc = rootEl.ownerDocument;
   const wrap = doc.createElement('div'); wrap.className = 'board-wrap computer-replay-wrap';
@@ -15,7 +16,7 @@ export const COMPUTER_REPLAY_TIMING = Object.freeze({motion: 520, pause: 360});
 // Automatic live confirmation has no explanatory lead-in or trailing hold.
 // Its one remaining duration is the visible move itself; explicit replay keeps
 // the more deliberate policy above.
-export const AUTOMATIC_LIVE_TIMING = Object.freeze({motion: 520, pause: 0});
+export const AUTOMATIC_LIVE_TIMING = Object.freeze({motion: 120, pause: 0});
 
 /** Frames come from acknowledged active-lineage decisions, never engine simulation. */
 export function buildComputerTurnReplay(options) {
@@ -28,9 +29,17 @@ export function buildTurnReplay({moves, completedTurnIndex, gameId, revision, li
   const turn = visibleRecordedMoves((moves ?? []).filter(move => move.turnIndex === completedTurnIndex));
   if (!turn.length) return null;
   if (turn.some((move, index) => !move.moveId || !move.selectionSnapshot || !move.snapshot || move.turnMoveIndex !== index)) return null;
-  const frames = turn.map(move => ({decisionId: move.moveId, action: move.action, before: move.selectionSnapshot, after: move.snapshot, destroyedPieces: move.destroyedPieces ?? [], moveNumber:recordedMoveNumber(move), recordedMove:move}));
+  const presented=withCausalDestructionPresentation(turn);
+  const frames = turn.map((move,index) => {
+    const after=moveInspectionSnapshot(move),settlement=settlementRemovalRecords(move);
+    return {decisionId: move.moveId, action: move.action, before: move.selectionSnapshot, after,
+      destroyedPieces:immediateRemovalRecords(move),
+      ...(move.inspectionSnapshot&&move.snapshot?{settledAfter:move.snapshot,settlementDestroyedPieces:settlement}:{}),
+      moveNumber:recordedMoveNumber(move),recordedMove:presented[index]};
+  });
   if (finalSnapshot && JSON.stringify(finalSnapshot) !== JSON.stringify(frames.at(-1).after)) {
-    frames.at(-1).after=finalSnapshot;
+    if(frames.at(-1).settledAfter)frames.at(-1).settledAfter=finalSnapshot;
+    else frames.at(-1).after=finalSnapshot;
     frames.at(-1).recordedMove={...frames.at(-1).recordedMove,snapshot:finalSnapshot};
   }
   return structuredClone({gameId, revision, lineageHead, turnIndex: completedTurnIndex, frames});
@@ -64,10 +73,10 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
   };
   const findToken = piece => Array.from(layer.querySelectorAll?.(".piece-token[data-piece-id]") ?? []).find(token => token.getAttribute("data-piece-id") === piece.id && !token.classList.contains("ghost"));
   const render = (state, key, frame = null) => preview.update({snapshot: state, previewKey: key, overlay: {mode: 'none'}});
-  const showFrame = () => {
-    if (!replay || index < 0) return;
+  const showFrame = (displayFrame = null) => {
+    if (!replay || index < 0) return false;
     clearMotion();
-    const frame = replay.frames[index];
+    const frame = displayFrame ?? replay.frames[index];
     // Capture source geometry while before-state tokens are still mounted.
     const sources = new Map((frame.before.pieces ?? []).map(piece => [piece.id, {piece, token: findToken(piece), rect: findToken(piece)?.getBoundingClientRect?.()}]));
     render(frame.after, `${generation}:${index}:after`);
@@ -97,13 +106,17 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
         if (ghost.animate) { const animation = ghost.animate([{opacity: 1}, {opacity: 0}], {duration: playbackTiming.motion, fill: 'forwards'}); animation.finished.catch(() => {}); animations.push(animation); }
       }
     }
-    onFrame(structuredClone(frame));
+    onFrame(structuredClone(replay.frames[index]));
     notify();
+    return animations.length > 0;
   };
+  const stageWait = startedMotion => reducedMotion() && automatic ? 0 : automatic && !startedMotion ? 0 : (reducedMotion() ? 0 : playbackTiming.motion) + playbackTiming.pause;
   const next = () => {
     if (!replay || !reducedMotion()) return false;
     if (index + 1 >= replay.frames.length) { stop('completed'); return true; }
-    index++; showFrame(); return true;
+    index++; showFrame();
+    if(replay.frames[index]?.settledAfter)render(replay.frames[index].settledAfter,`${generation}:${index}:settled`);
+    return true;
   };
   const play = async payload => {
     stop('replaced');
@@ -124,8 +137,13 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
     if (!await wait(reducedMotion() && automatic ? 0 : playbackTiming.pause) || generation !== current) return false;
     for (index = 0; replay && generation === current && index < replay.frames.length; index++) {
       if (index) render(replay.frames[index].before, `${generation}:${index}:before`);
-      showFrame();
-      if (!await wait(reducedMotion() && automatic ? 0 : (reducedMotion() ? 0 : playbackTiming.motion) + playbackTiming.pause) || generation !== current) return false;
+      const movementStarted=showFrame();
+      if (!await wait(stageWait(movementStarted)) || generation !== current) return false;
+      const frame=replay?.frames[index];
+      if(frame?.settledAfter){
+        const settlementStarted=showFrame({...frame,before:frame.after,after:frame.settledAfter,destroyedPieces:frame.settlementDestroyedPieces??[]});
+        if(!await wait(stageWait(settlementStarted))||generation!==current)return false;
+      }
     }
     if (replay && generation === current) {
       if (holdFinal) { index = replay.frames.length - 1; notify(); }

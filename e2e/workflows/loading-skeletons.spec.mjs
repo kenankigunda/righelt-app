@@ -129,6 +129,28 @@ test("invite route shows a skeleton while invite resolution is pending", async (
   }
 });
 
+test("home loading keeps its heading and accessible busy state without a filler subtitle", async ({ browser }) => {
+  const { context, page } = await createIsolatedPage(browser);
+  const deferredRequest = await deferRequest(
+    context,
+    ({ method, url }) => method === "GET" && url.pathname === "/api/shell/games" && url.searchParams.get("section") === "my",
+  );
+
+  try {
+    const navigation = page.goto("/");
+    await deferredRequest.waitUntilSeen();
+    const skeleton = page.getByTestId("home-section-skeleton").filter({ has: page.getByRole("heading", { name: "Continue playing" }) });
+    await expect(skeleton).toBeVisible();
+    await expect(skeleton).toHaveAttribute("aria-busy", "true");
+    await expect(skeleton.getByText("Games", { exact: true })).toHaveCount(0);
+    deferredRequest.release();
+    await navigation;
+  } finally {
+    deferredRequest.release();
+    await closeContextQuietly(context);
+  }
+});
+
 test("home pagination preserves its heading and cards while the next page loads", async ({ browser }) => {
   const { context, page } = await createIsolatedPage(browser);
   let releasePageLoad = null;

@@ -80,13 +80,13 @@ test('history and replay inspection receive an update chime while human acknowle
   assert.deepEqual(f.notes, [820, 460,690]);
 });
 
-test('opponent terminal finalization sounds once when its move was already received', () => {
+test('opponent terminal finalization stays quiet after its move so result entry owns the cue', () => {
   const f = audioFixture(); f.sound.authoritative(game(0, []));
   const current = game(1, [move('opponent')]); f.sound.authoritative(current);
   const terminal = { ...current, gameplayRevision: 2, board: { state: { ...current.board.state, outcome: { status: 'p2_win' } } } };
-  f.sound.authoritative(terminal); f.flush(); assert.deepEqual(f.notes, [820, 560]);
+  f.sound.authoritative(terminal); f.flush(); assert.deepEqual(f.notes, [820]);
   f.sound.observe({ game: terminal, eventSeq: 2, type: 'event_appended', reason: 'turn_ended' }, { opponentNotifications: false });
-  f.sound.authoritative(terminal); assert.deepEqual(f.notes, [820, 560]);
+  f.sound.authoritative(terminal); assert.deepEqual(f.notes, [820]);
 });
 
 test('one active unseen batch keeps its shared update chime through History and Players until live playback finishes',()=>{

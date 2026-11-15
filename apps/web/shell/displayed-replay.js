@@ -37,3 +37,11 @@ const descriptorMoves=(descriptor,moves)=>{
 export function replayArchiveMatches(descriptor,moves) {
  return JSON.stringify(moveIdentity(descriptorMoves(descriptor,moves)))===JSON.stringify(descriptor.moveIds);
 }
+
+export function displayedReplayMatchesPreviousTurnEpisode(descriptor,episode) {
+ if(!descriptor||descriptor.source==='push-sequence'||typeof episode!=='string'||!episode)return false;
+ const separator=episode.lastIndexOf(':'),turnSeparator=episode.lastIndexOf(':',separator-1);
+ if(separator<0||turnSeparator<0)return false;
+ const turnIndex=Number(episode.slice(turnSeparator+1,separator)),lastMoveId=episode.slice(separator+1);
+ return Number.isSafeInteger(turnIndex)&&descriptor.turnIndex===turnIndex&&descriptor.moveIds?.at(-1)===lastMoveId;
+}

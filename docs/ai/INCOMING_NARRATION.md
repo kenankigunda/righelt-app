@@ -8,8 +8,9 @@ Classify messages at their actual producers. Route by the final outer presentati
 
 | Purpose | Host |
 | --- | --- |
-| Incoming recorded turn narration | Top of History on desktop, bottom flyout on mobile |
-| Selected History, inspection, required continuation, replay progress and local sequence | Independent Board context |
+| Incoming recorded turn narration | Top of History when Board and History appear together; intentionally absent from narrow layouts |
+| Local automatic push/follow sequence | Top of History when Board and History appear together; intentionally absent from narrow layouts |
+| Selected History, inspection, required continuation and replay progress | Independent Board context |
 | Recovery, authentication, storage, consent and other notices | Existing notification owner |
 | Unclassified legacy context | Existing notice until explicitly classified |
 
@@ -27,19 +28,17 @@ Hover uses bold text and a thicker whole-turn rail. Keep row and turn background
 
 The separately confirmed contiguous-undone-run follow-up owns Undo grouping. This change must compose with its actual implementation and preserve stored operation provenance.
 
-## Mobile
+## Narrow layouts
 
-Incoming narration uses a distinct marble flyout at the bottom and both side edges. Use an owner-colored shaped top edge, the approved depth and typography, safe-area clearance and native controls. Full narration has no internal scrollport. Its collapsed label is exactly **Show previous turn**.
+Do not render incoming-turn or automatic push/follow narration, a disclosure trigger, Show me again, or a replacement summary in Players, Board or History. The absence applies across direct entry, incoming updates, selection and deselection, returning from History, completed games and responsive changes.
 
-Remove the empty notification/context reservation above Board. Center the grid within the actual visible viewport where the usable grid and legend fit. Keep its finite prompt separate. Preserve deliberate reader scrolling and held controls. Short screens retain usable cells and reachable content when perfect centering is impossible.
-
-Notifications, the incoming flyout and mobile tabs overlay Board. Arrival hides tabs once unless they already own focus or deliberate navigation. Existing upscroll and reveal behavior stays available. Tabs remain above the flyout and overlap it without resizing either surface or reserving space below the flyout. Add no expiry timer or automatic dismissal of focused content.
+Keep Board previous-turn square washes and their legend, the finite Board prompt, ordinary History selection and completed-review authority. With no narration overlay, mobile navigation follows only its ordinary focus, deliberate reveal, scrolling and idle behavior. Board focus clearance considers the actual mobile navigation and notices, not a phantom narration surface.
 
 ## Lifetimes and access
 
-Only the active responsive host owns interactive controls and announcements. Inert or hidden content never consumes an announcement. A host replacement may transfer its own focused control, while newer input, outside focus, account changes and route retirement win. Fixed flyout focus does not authorize a Board page scroll.
+Only the active wide History host owns narration controls and announcements. Narrow layouts create no host, focus target or announcement. A wide host replacement may transfer its own focused control, while newer input, outside focus, account changes and route retirement win.
 
-Reading History or the flyout never marks moves seen. Only visible live Board presentation of the relevant completed playback stops unseen-move reminders. Scope changes, backgrounding, Undo and newer revisions retire obsolete presentation through the existing owners. Replay stays visual-only and never searches, submits actions or mutates live state.
+Reading History or its narration never marks moves seen. Only visible live Board presentation of the relevant completed playback stops unseen-move reminders. Scope changes, backgrounding, Undo and newer revisions retire obsolete presentation through the existing owners. Replay stays visual-only and never searches, submits actions or mutates live state.
 
 Preserve urgent notices, native targets, focus, touch, pointer and keyboard input, short screens, text enlargement and real browser zoom. Reduced motion and mute remain independent. All approved marble, vellum, glass and artwork contracts still apply.
 
@@ -52,7 +51,7 @@ Completed-game gameplay turn descriptions and activity remain Board-owned rather
 After the actual marble, Naming and History predecessors are integrated, answer the remaining native questions with focused complete journeys:
 
 - Desktop incoming ownership, flat History placement, full names and coordinates, replay and stable selected History.
-- Mobile bottom flyout, collapse, one-time tab hiding, deliberate reveal, responsive host focus and announcements, overlays and full narration.
+- Narrow absence across Players, Board and History, including direct entry, incoming turns, automatic push/follow completion, History return, completed games, responsive changes and keyboard traversal. Confirm ordinary navigation and Board cues remain available.
 - Independent Board details and finite native controls during selection, inspection, required continuation and replay. Preserve held input and the real viewport's grid geometry.
 - Affected short-screen, safe-area, forced-color, reduced-motion and enlarged-text/real-zoom behavior. Reuse compatible predecessor proof instead of repeating a full cross-browser matrix.
 
