@@ -126,6 +126,7 @@ import {patchViewerSection,recordViewerDisclosure,recordViewerDisclosureClick,re
 import { createAccountController, safeAccountIntent } from './account-controller.js';
 import { createAccountDialog } from './account-dialog.js';
 import { renderPieceSymbol } from '../piece-symbols.js';
+import {renderBoardLegend} from './board-legend.js';
 import { invitationOptions, renderInvitationSurface, createHostInvitation, hostInvitationSettled } from './invitations.js';
 import { createIntroductionPreferences, createOpponentSession } from './opponent-session.js';
 import { renderWordmark, createBrandController, resolveActionAffiliation } from './brand.js';
@@ -148,7 +149,7 @@ import { createShellBoardHost } from "../board/hosts/shell-host.js";
 import { getBootstrapPayload } from "./bootstrap.js";
 import { createSyncStore } from "./sync-store.js";
 import { ensureHoverCapabilityController } from "../hover-capability.js";
-import { getCommandLegendSwatchStyle, updateLegendVisibility, updateInspectionLegend, updatePreviousTurnLegend } from "../legend.js";
+import { updateLegendVisibility, updateInspectionLegend, updatePreviousTurnLegend } from "../legend.js";
 import { loadDebugFlyoutOpen, saveDebugFlyoutOpen, saveTutorialCompleted } from "./persistence.js";
 import {
   buildHistoryBranchSeedFromGame,
@@ -2269,16 +2270,7 @@ const renderBoardPanel = (game) => `
     <div class="reconnect-background" aria-hidden="true"></div>
     <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
   </div>
-  <div class="overlay-key" aria-label="Board legend">
-    <button type="button" class="legend-inspection" data-board-inspection="command" aria-pressed="false"><i class="swatch commander-key">${renderPieceSymbol('commander')}</i><span class="legend-inspection-label">Commander</span></button>
-    <button type="button" class="legend-inspection" data-board-inspection="supply" aria-pressed="false"><i class="swatch supply-point" style="--supply-owner:var(--player-${game.currentSnapshot?.sideToMove === 'P2' ? 'p2' : 'p1'})">${renderPieceSymbol('supply')}</i><span class="legend-inspection-label">Supply point</span></button>
-    <span data-legend-entry="previousTurn" hidden><i class="previous-turn-key-swatch" aria-hidden="true"></i><span>Previous turn</span></span>
-    <span data-legend-entry="group" hidden><i class="swatch group"></i>Group strength</span>
-    <span data-legend-entry="command" hidden><i id="shell-command-legend-swatch" class="swatch command" style="${escapeHtml(
-      getCommandLegendSwatchStyle(game.currentSnapshot ?? null),
-    )}"></i>Command line</span>
-    <span data-legend-entry="supply" hidden><i class="swatch supply"></i>Supply line</span>
-  </div>
+  ${renderBoardLegend(game.currentSnapshot)}
 `;
 
 const shouldEnableStickyShellColumn = ({ matchesWideScreen, columnHeight, viewportHeight }) =>

@@ -272,7 +272,14 @@ body {background-image:var(--stone-grain);background-color:var(--surface-foundat
 @media(prefers-reduced-motion:reduce){.header-icon-action .header-action-label{transition:none;}}
 /* Matching four-corner cuts give the top pair equal broad bands and the bottom pair equal fine bands. */
 :is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) [data-shell-panel="board"] {
- --stone-outline:polygon(18px 0,calc(100% - 18px) 0,100% 18px,100% calc(100% - 18px),calc(100% - 18px) 100%,18px 100%,0 calc(100% - 18px),0 18px);
+ --board-stone-cut:18px;
+ --board-cut-clearance:8px;
+ --board-legend-inline-inset:20px;
+ /* 20px inline inset and a 45-degree 18px cut require >=9.4px below;
+    keep one 12px token minimum and let text enlargement increase it. */
+ --board-legend-safe-bottom:max(12px,.75em);
+ --stone-outline:polygon(var(--board-stone-cut) 0,calc(100% - var(--board-stone-cut)) 0,100% var(--board-stone-cut),100% calc(100% - var(--board-stone-cut)),calc(100% - var(--board-stone-cut)) 100%,var(--board-stone-cut) 100%,0 calc(100% - var(--board-stone-cut)),0 var(--board-stone-cut));
+ padding-block-end:var(--board-legend-safe-bottom);
 }
 :is(.game-shell-frame,.game-shell-mobile-panel,.invite-gate) section.panel[data-shell-panel="board"]::before {
  background:linear-gradient(135deg,var(--corner-start) 0 16px,transparent 16px) top left / 40px 40px no-repeat,
@@ -281,8 +288,6 @@ body {background-image:var(--stone-grain);background-color:var(--surface-foundat
  linear-gradient(315deg,var(--corner-end) 0 16px,transparent 16px) bottom right / 40px 40px no-repeat,
  var(--stone-grain),linear-gradient(135deg,#fffdf7,#f2ede1);
 }
-.overlay-key {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 12px;}
-.overlay-key > span {display:inline-flex;align-items:center;gap:6px;min-width:0;}
 .swatch.commander-key {width:16px;height:16px;border:0;background:transparent;color:var(--ink);}
 .home-refresh .mini-board-card {margin-bottom:5px;filter:drop-shadow(0 3px 2px rgb(54 45 30 / 22%));}
 .home-refresh .mini-board-card::after {inset:4px 0 -4px;background:#bdb19b;}
@@ -489,9 +494,16 @@ html[data-account-flyout="true"] #app .shell-main-content {width:100%;max-width:
 .overlay-key [hidden] {display:none!important;}
 .overlay-key {overflow:hidden;}
 .overlay-key .commander-key {color:var(--swatch-command-color,var(--player-p1));}
-.overlay-key [data-legend-entry="group"] {grid-column:3;grid-row:1;}
-.overlay-key [data-legend-entry="command"] {grid-column:1;grid-row:2;}
-.overlay-key [data-legend-entry="supply"] {grid-column:2;grid-row:2;}
+@media(forced-colors:active) {
+ .overlay-key .swatch.command::before {
+  forced-color-adjust:none;
+  background:repeating-linear-gradient(to right,CanvasText 0 2px,transparent 2px 6px);
+ }
+ .overlay-key .swatch.supply::before {
+  forced-color-adjust:none;
+  background:repeating-linear-gradient(to right,CanvasText 0 5px,transparent 5px 9px);
+ }
+}
 
 /* Invitation actions form aligned choices, each with its own supporting note. */
 .invite-gate-modal .invite-choice-list {align-items:flex-start;gap:20px;}
