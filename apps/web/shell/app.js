@@ -986,9 +986,11 @@ const historySelectionActions = createHistorySelectionActions({
     boardRuntime?.refreshStatus();
     if (episode) return;
     appEl?.querySelectorAll?.('[data-history-selection-episode-pending="true"]').forEach(element => {
+      const liveOverlay=element.closest?.('.history-return-live.is-transition-overlay');
       element.classList.remove('history-selection-pending');
       element.removeAttribute('aria-busy');
       element.removeAttribute('data-history-selection-episode-pending');
+      liveOverlay?.remove();
     });
   },
 });

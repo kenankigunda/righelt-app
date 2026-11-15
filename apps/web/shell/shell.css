@@ -1009,6 +1009,7 @@ button.secondary:disabled {
   list-style: none;
   display: grid;
   gap: var(--section-item-gap);
+  position: relative;
 }
 
 button.is-pressing,
@@ -1114,6 +1115,13 @@ button.button-release-bounce,
   box-sizing: border-box;
   min-block-size: 48px;
   align-items: center;
+}
+
+.history-return-live.is-transition-overlay {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  z-index: 1;
 }
 
 .history-item.history-item-waiting > .history-move-line,

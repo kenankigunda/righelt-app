@@ -90,7 +90,7 @@ test('production selection owner keeps replaced Move, Turn and Live controls pen
    updateComputerBoardLoading(activity,{id:'g'},{},{loadingKey:loading.key,suppressLoadingCue:true});
    events.push(episode?'pending':'clear');
    if(!episode)panel.querySelectorAll('[data-history-selection-episode-pending="true"]').forEach(element=>{
-    element.classList.remove('history-selection-pending');element.removeAttribute('aria-busy');element.removeAttribute('data-history-selection-episode-pending');
+    const overlay=element.closest('.history-return-live.is-transition-overlay');element.classList.remove('history-selection-pending');element.removeAttribute('aria-busy');element.removeAttribute('data-history-selection-episode-pending');overlay?.remove();
    });
   }});
   const run=async(scope,replacement)=>{
@@ -105,7 +105,7 @@ test('production selection owner keeps replaced Move, Turn and Live controls pen
   };
   const move=await run('g:move:m1','<li class="history-item history-selection-pending" aria-busy="true" data-history-selection-episode-pending="true">Move 1</li>');
   const turn=await run('g:turn:2','<li class="history-turn history-selection-pending" aria-busy="true" data-history-selection-episode-pending="true">Turn 2</li>');
-  const live=await run('g:live','<button class="history-selection-pending" aria-busy="true" data-history-selection-episode-pending="true">Return to live view</button>');
+  const live=await run('g:live','<li class="history-return-live is-transition-overlay"><button class="history-selection-pending" aria-busy="true" data-history-selection-episode-pending="true" disabled>Return to live view</button></li><li>Live · Waiting on you to move</li>');
   panel.remove();geometry.remove();return{move,turn,live,events};
  });
  for(const [name,result] of Object.entries({move:receipt.move,turn:receipt.turn,live:receipt.live})){

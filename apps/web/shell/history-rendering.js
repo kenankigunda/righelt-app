@@ -127,7 +127,9 @@ const renderTurnHistory = (game) => {
   const leadingEmpty=emptyTurns.filter(turn=>turn.index===game.currentTurn?.index).map(emptyRow).join('');
   const trailingEmpty=emptyTurns.filter(turn=>turn.index!==game.currentTurn?.index).reverse().map(emptyRow).join('');
   const livePending=episodeOwns(`${game.id}:live`);
-  const live = game.inHistoryMode && !isCompletedGame(game) ? `<li class="history-empty-line history-return-live"><button class="secondary${livePending?' history-selection-pending':''}" data-action="return-live" data-game-id="${escapeHtml(game.id)}" data-testid="history-return-live"${pendingAttributes(livePending,livePending)}>${icon('board')}Return to live view</button></li>` : '';
+  const liveVisible=(game.inHistoryMode||livePending)&&!isCompletedGame(game);
+  const liveOverlay=livePending&&!game.inHistoryMode;
+  const live = liveVisible ? `<li class="history-empty-line history-return-live${liveOverlay?' is-transition-overlay':''}"><button class="secondary${livePending?' history-selection-pending':''}" data-action="return-live" data-game-id="${escapeHtml(game.id)}" data-testid="history-return-live"${liveOverlay?' disabled':''}${pendingAttributes(livePending,livePending)}>${icon('board')}Return to live view</button></li>` : '';
   const state = game.currentSnapshot ?? game.board?.state;
   const current = !game.inHistoryMode && game.currentTurn;
   const waiting = current && (state?.continuation || !current.moveIndexes?.length) ? `<li class="history-item history-item-waiting ${playerToneClassForSeat(game.controlSeat ?? current.playerSeat)} is-live-selected" aria-disabled="true"><span class="history-move-line">${escapeHtml(liveHistoryLabel(game,state,{identityId:transport.getIdentityId()}))}</span></li>` : '';

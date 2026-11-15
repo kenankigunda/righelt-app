@@ -67,8 +67,9 @@ test('explicit selection episode survives replacement for cached Move, Turn and 
  const turn=context.render({...game,inHistoryMode:true,historyTurnIndex:1,historyTurnMoves:[moves[2]]});
  assert.match(turn,/class="history-turn player-tone-P2 history-selection-pending"[^>]*aria-busy="true"[^>]*data-history-selection-episode-pending="true"/);
  context.historySelectionEpisode=()=>({scope:'g:live'});
- const live=context.render({...game,inHistoryMode:true,historyIndex:1});
- assert.match(live,/class="secondary history-selection-pending"[^>]*data-action="return-live"[^>]*aria-busy="true"[^>]*data-history-selection-episode-pending="true"/);
+ const live=context.render({...game,inHistoryMode:false,currentTurn:{index:2,playerSeat:'Player 1',moveIndexes:[]},currentSnapshot:{pieces:[]}});
+ assert.match(live,/class="history-empty-line history-return-live is-transition-overlay"><button class="secondary history-selection-pending"[^>]*data-action="return-live"[^>]*disabled[^>]*aria-busy="true"[^>]*data-history-selection-episode-pending="true"/);
+ assert.match(live,/Waiting/);
  context.historySelectionEpisode=()=>null;
  assert.doesNotMatch(context.render({...game,inHistoryMode:true,historyIndex:1}),/data-history-selection-episode-pending/);
 });
