@@ -32,6 +32,12 @@ export function playbackTurnIndicator(view,state,{replay,step,identityId}={}) {
 }
 export const contextReplayAvailable=({descriptor,followWorking,playbackPlaying,replayPending,replayPlaying,canReplay})=>
  !followWorking&&!playbackPlaying&&canReplay(descriptor)&&!replayPending&&!replayPlaying;
+export function historySelectionLoading(view,episode) {
+ const owned=typeof episode?.scope==='string'&&episode.scope.startsWith(`${view?.id}:`)&&typeof episode.key==='string';
+ if(owned)return {pending:true,key:episode.key};
+ if(view?.historyLoading)return {pending:true,key:`history:${view.id}:${view.historyLoadTurnIndex!=null?`turn:${view.historyLoadTurnIndex}`:`move:${view.historyLoadIndex}`}`};
+ return {pending:false,key:null};
+}
 export function historyBoardRuntimeMessage(view,selection={},options={}) {
  if(!view?.inHistoryMode||selection.selectedPieceId||selection.inspection)return null;
  return historyBoardMessage(view,options);
@@ -70,10 +76,10 @@ export function publishAcknowledgedBoardMessage(view,status,options,{boardContex
 }
 
 // Keep loading ownership and confirmed-frame copy in the same production boundary.
-export function presentPlaybackBoardMessage(view,status,{activityHost,selection={},replay,replayFeedback,loadingKey=null,scope,...options}={}) {
+export function presentPlaybackBoardMessage(view,status,{activityHost,selection={},replay,replayFeedback,loadingKey=null,suppressLoadingCue=false,scope,...options}={}) {
  updateComputerBoardLoading(activityHost,view,status,{
   replaying:Boolean(view?.confirmedPlayback||replay?.playing),loadingKey,
-  inspecting:Boolean(selection.selectedPieceId||selection.inspection),scope,
+  inspecting:Boolean(selection.selectedPieceId||selection.inspection),suppressLoadingCue,scope,
  });
  if(view?.positionOnly)return {text:view.positionLoading?'Loading play':'Play could not finish loading'};
  return confirmedPlaybackMessage(view,status,options);

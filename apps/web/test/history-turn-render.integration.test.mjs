@@ -51,11 +51,12 @@ test('selected move is inert while individual actions remain buttons and preview
 });
 test('requested History targets pulse separately while the last accepted move and preview remain selected',()=>{
  const movePending=context.render({...game,inHistoryMode:true,historyIndex:0,historyLoading:true,historyLoadIndex:1});
- assert.match(movePending,/class="history-item player-tone-P2 history-selection-pending"[^>]*data-move-id="b"[^>]*aria-busy="true"/);
+ assert.match(movePending,/class="history-item player-tone-P2"[^>]*data-move-id="b"/);
+ assert.match(movePending,/class="history-move-hit secondary history-selection-pending"[^>]*data-move-index="1"[^>]*aria-busy="true"/);
  assert.match(movePending,/class="history-item player-tone-P1 is-selected[^"]*"[^>]*data-move-id="a"/);
  assert.match(movePending,/data-preview-mode="recorded-action"/);
  const turnPending=context.render({...game,inHistoryMode:true,historyIndex:0,historyLoading:true,historyLoadIndex:2,historyLoadTurnIndex:1});
- assert.match(turnPending,/class="history-turn player-tone-P2 history-selection-pending"[^>]*aria-busy="true"/);
+ assert.match(turnPending,/class="history-turn-hit secondary history-selection-pending"[^>]*data-turn-index="1"[^>]*aria-busy="true"/);
  assert.match(turnPending,/class="history-turn-heading"[^>]*>Turn 2/);
 });
 test('imported lineage is collapsed, source-linked, and branchable but never undoable',()=>{
