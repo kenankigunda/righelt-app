@@ -269,7 +269,7 @@ test("failed page reads after registration preserve the original action and reso
   expect(failedReads).toBe(2);expect(creates).toBe(0);
   const session = await page.evaluate(async () => (await (await fetch('/api/auth/session')).json()).contextId);
   expect(session).toBeTruthy();
-  await error.getByRole('button',{name:'Details',exact:true}).click();
+  await error.getByRole('button',{name:'Show diagnostic details',exact:true}).click();
   const report = page.locator('.issue-diagnostic').filter({has:page.locator('.issue-details')});
   await expect(report).toContainText('route_read_failed');
   await expect(report).toContainText('503');
@@ -649,7 +649,7 @@ test("tutorial saving reports diagnostics, coalesces actions, and ignores a late
   await page.getByRole("button", { name: "Finish Tutorial", exact: true }).click();
   const error = page.getByTestId("tutorial-saving-error");
   await expect(error).toContainText("We couldn’t save your lesson progress. Please try again.");
-  const caret = error.getByRole("button", { name: "Details", exact: true });
+  const caret = error.getByRole("button", { name: "Show diagnostic details", exact: true });
   const hitTarget = await caret.boundingBox();
   expect(hitTarget.width).toBeGreaterThanOrEqual(44);
   expect(hitTarget.height).toBeGreaterThanOrEqual(44);
@@ -1090,12 +1090,12 @@ test("long profile names remain accessible to observers without covering the boa
   const name = uniqueName(); await enterUsername(page,name);
   const status = dialog(page).locator("[data-username-status]");
   await expect(status).toContainText("We couldn’t check that username");
-  await status.getByRole("button",{name:"Details",exact:true}).click();
+  await status.getByRole("button",{name:"Show diagnostic details",exact:true}).click();
   await expect(status.locator("pre")).toContainText("username_lookup");
   await expect(status.locator("pre")).not.toContainText(name);
   available = true; await enterUsername(page,uniqueName());
   await expect(status).toContainText("Resolved");
   await status.getByRole("button",{name:"Dismiss",exact:true}).click();
-  await expect(status.getByRole("button",{name:"Details",exact:true})).toHaveCount(0);
+  await expect(status.getByRole("button",{name:"Show diagnostic details",exact:true})).toHaveCount(0);
   await expect(dialog(page).getByLabel("Username",{exact:true})).toBeFocused();
 });

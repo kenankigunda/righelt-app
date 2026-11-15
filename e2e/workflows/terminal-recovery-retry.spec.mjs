@@ -48,7 +48,7 @@ test('terminal recovery stops automatic work and Retry creates a fresh authorita
   await expect(page.getByTestId('sync-recovery-banner').getByText('Connection failed. Retry to keep playing or view details.',{exact:true})).toBeVisible();
   await expect(page.locator('[data-board-preview-action]:enabled')).toHaveCount(0);
   const alert=page.getByTestId('sync-recovery-banner'),retry=alert.getByRole('button',{name:'Retry connection',exact:true});
-  const reload=alert.getByRole('button',{name:'Reload game',exact:true}),home=alert.getByRole('link',{name:'Home',exact:true}),details=alert.getByRole('button',{name:'Details',exact:true});
+  const reload=alert.getByRole('button',{name:'Reload game',exact:true}),home=alert.getByRole('link',{name:'Home',exact:true}),details=alert.getByRole('button',{name:'Show diagnostic details',exact:true});
   for(const control of [retry,reload,home,details])await expect(control).toBeVisible();
   await expect(alert).toHaveClass(/is-terminal-recovery/);
   // The complete responsive geometry matrix lives in the native
@@ -58,7 +58,9 @@ test('terminal recovery stops automatic work and Retry creates a fresh authorita
   expect(await alert.evaluate(node=>[...node.querySelector('.shell-game-alert-actions').children].map(child=>child.textContent.trim()))).toEqual(['Retry connection','Reload game','Home']);
   expect(await details.evaluate(node=>node.closest('.shell-game-alert-actions'))).toBeNull();
   const actionBox=await alert.locator('.shell-game-alert-actions').boundingBox(),detailsBox=await details.boundingBox();
-  expect(detailsBox.y).toBeGreaterThanOrEqual(actionBox.y+actionBox.height);
+  expect(actionBox.y).toBeGreaterThanOrEqual(detailsBox.y+detailsBox.height);
+  const terminalAlignment=await details.evaluate(button=>{const svg=button.querySelector('svg'),copy=button.closest('.shell-game-alert')?.querySelector('.shell-game-alert-copy'),svgRect=svg?.getBoundingClientRect(),copyRect=copy?.getBoundingClientRect(),style=copy?getComputedStyle(copy):null,lineHeight=style?Number.parseFloat(style.lineHeight):NaN,paddingTop=style?Number.parseFloat(style.paddingTop):NaN;return{caretCenter:svgRect?(svgRect.top+svgRect.bottom)/2:null,firstLineCenter:copyRect&&Number.isFinite(lineHeight)&&Number.isFinite(paddingTop)?copyRect.top+paddingTop+lineHeight/2:null};});
+  expect(terminalAlignment.caretCenter).not.toBeNull();expect(terminalAlignment.firstLineCenter).not.toBeNull();expect(Math.abs(terminalAlignment.caretCenter-terminalAlignment.firstLineCenter)).toBeLessThanOrEqual(1);
   const terminal=await page.evaluate(async()=>{
    const timeline=(await import('/shell/recovery-telemetry.js')).recoveryTimelineSnapshot();
    return timeline.findLast(event=>event.type==='recovery_blocked'&&event.terminalFailure===true);
