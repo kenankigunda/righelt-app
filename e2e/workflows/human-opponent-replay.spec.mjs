@@ -10,7 +10,7 @@ const test=base.extend({
   const owned=ownedContexts(browser),observations=[];let roleIndex=0;
   try{await use(async options=>{
    const role=roleIndex++,context=await owned.create(options);
-   if(process.env.RIGHELT_OWNED_REPLAY_FOCUS_OBSERVER==='1'&&browserName==='firefox'&&info.title==='human opponent replay preserves authority and read-only inspection at 390px'&&role===1){
+   if(process.env.RIGHELT_OWNED_REPLAY_FOCUS_OBSERVER==='1'&&browserName==='firefox'&&info.title==='human opponent replay preserves authority and read-only inspection at 1440px'&&role===1){
     observations.push(await installOwnedFocusObservation(context,{baseURL,recipes:ownedFocusRecipes}));
    }
    return context;
@@ -36,7 +36,7 @@ const assertUnchanged=(before,after)=>{expect(after.gameplayRevision).toBe(befor
 // its original 60-second body.
 const replayTest=test.extend({
  humanReplayPrerequisites:[async({ownedRoleContext,baseURL},use,info)=>{
-  const widths=new Map([390,1440].map(width=>[`human opponent replay preserves authority and read-only inspection at ${width}px`,width]));
+  const widths=new Map([1440].map(width=>[`human opponent replay preserves authority and read-only inspection at ${width}px`,width]));
   const width=widths.get(info.title);
   if(width===undefined)throw Error('Native replay prerequisites require an original replay case');
  const contexts=await Promise.all([0,1,2].map(()=>ownedRoleContext({viewport:{width,height:900}})));
