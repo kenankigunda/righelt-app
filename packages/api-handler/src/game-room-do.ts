@@ -3,6 +3,7 @@ import { EngineComputationLimit, boundedEngineOperation } from "../../game-engin
 import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, canonicalCommandJson } from '../../shared-types/src/sync-protocol';
 import { stampAcceptedRestoration, type AcceptedRestoration, archiveStatements, readDecision, readDecisionPage, readAdditionalDecisionPage, parseHistoryCursor, prepareImportedHistory, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
 import { StorageWriteLimitError } from './storage-codec';
+import { SessionAlarm } from './session-alarm';
 import { COMPUTER_CAPABILITIES, COMPUTER_LIMITS, changeComputerControl, computerCommandError, computerModelForCreation, createComputerControl, parseComputerSeats, type ComputerProof } from '../../shared-types/src/computer-play';
 import { STORAGE_POLICY, STORAGE_GENERATION_HEADER } from "../../shared-types/src/storage-policy";
 import { storageRoomName } from "./storage-generation";
@@ -248,6 +249,7 @@ export class GameRoomDO {
   private readonly state: DurableObjectStateLike;
   private env: LiveGameEnv;
   private game: LiveGame | null = null;
+  private readonly sessionAlarm = new SessionAlarm();
   private sharedCommand: SyncCommand | null = null;
   private sharedReceipt: CommandReceipt | null = null;
   private requestId: string | null = null;
@@ -1205,6 +1207,7 @@ export class GameRoomDO {
   }
 
   private async alarmQueued() {
+    this.sessionAlarm.fired();
     this.env = await withCutoverPolicy(this.env);
     if (authActive(this.env)) await this.recheckSockets();
     const cutoff = Date.now() - HEARTBEAT_TIMEOUT_MS;
@@ -1227,9 +1230,9 @@ export class GameRoomDO {
     await this.syncSessionAlarm();
   }
 
-  private async ensureLoaded() {
+  private async ensureLoaded(copyForMutation = true) {
     if (this.game) {
-      return clone(this.game);
+      return copyForMutation ? clone(this.game) : this.game;
     }
     const gameId = this.getLoadedGameId();
     if (!gameId) {
@@ -1241,7 +1244,7 @@ export class GameRoomDO {
     }
     this.game = projection.game;
     this.eventSeq = projection.eventSeq;
-    return clone(this.game);
+    return copyForMutation ? clone(this.game) : this.game;
   }
 
   private getLoadedGameId() {
@@ -1289,30 +1292,32 @@ export class GameRoomDO {
     this.env = await withCutoverPolicy(this.env);
     if (authActive(this.env) && (this.env.AUTH_ENABLED !== "true" || this.env.ACCOUNT_POLICY?.maintenance)) return;
     if (this.getLoadedGameId() && (await archiveRow(this.env,this.getLoadedGameId()!))?.status === "archiving") return;
-    const loaded = await this.ensureLoaded();
-    const game = loaded ? clone(loaded) : null;
-    if (!game) {
+    // This queue owns the loaded state. Inspect presence without copying history,
+    // then create a candidate only when a durable presence transition is needed.
+    const loaded = await this.ensureLoaded(false);
+    if (!loaded) {
       return;
     }
-    if ((!authActive(this.env) && game.ownershipMode === "account_v1") || (authActive(this.env) && game.ownershipMode !== "account_v1")) return;
+    if ((!authActive(this.env) && loaded.ownershipMode === "account_v1") || (authActive(this.env) && loaded.ownershipMode !== "account_v1")) return;
     const sessionCount = this.getSessionCount(identityId);
-    const participants = getParticipantsForIdentity(game, identityId);
+    const participants = getParticipantsForIdentity(loaded, identityId);
     if (participants.length === 0) {
       return;
     }
-    const roles = getRolesForIdentity(game, identityId);
     const connected = sessionCount > 0;
-    const lastHeartbeatAt = now();
     const changed = participants.some(
       ({ participant }) => participant.connected !== connected || participant.sessionCount !== sessionCount,
     );
-    for (const { participant } of participants) {
+    if (!changed) {
+      return;
+    }
+    const game = clone(loaded);
+    const roles = getRolesForIdentity(game, identityId);
+    const lastHeartbeatAt = now();
+    for (const { participant } of getParticipantsForIdentity(game, identityId)) {
       participant.connected = connected;
       participant.sessionCount = sessionCount;
       participant.lastHeartbeatAt = lastHeartbeatAt;
-    }
-    if (!changed) {
-      return;
     }
     this.logDiagnostic("info", "live_server_presence_changed", { identityId, connected, sessionCount, roles }, true);
     const presenceEvent: PresenceChangedEvent = {
@@ -1782,10 +1787,6 @@ export class GameRoomDO {
         nextExpiryAt = candidate;
       }
     }
-    if (nextExpiryAt === null) {
-      await storage.deleteAlarm();
-      return;
-    }
-    await storage.setAlarm(nextExpiryAt);
+    await this.sessionAlarm.sync(storage, nextExpiryAt, Date.now());
   }
 }

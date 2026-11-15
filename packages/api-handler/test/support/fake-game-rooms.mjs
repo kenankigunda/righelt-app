@@ -6,6 +6,7 @@ export const createFakeGameRooms = (getEnv) => {
   const createRoomRecord = (gameId) => {
     const record = {
       alarmAt: null,
+      alarmWrites: 0,
       autoResponse: null,
       instance: null,
       sockets: [],
@@ -28,6 +29,7 @@ export const createFakeGameRooms = (getEnv) => {
       },
       storage: {
         setAlarm(scheduledTime) {
+          record.alarmWrites++;
           record.alarmAt = scheduledTime instanceof Date ? scheduledTime.getTime() : Number(scheduledTime);
         },
         deleteAlarm() {
@@ -75,10 +77,15 @@ export const createFakeGameRooms = (getEnv) => {
     },
     fireAlarm(gameId) {
       const room = getRoom(gameId);
+      // The platform consumes the scheduled alarm before invoking its handler.
+      rooms.get(gameId).alarmAt = null;
       return room.alarm();
     },
     getAlarm(gameId) {
       return rooms.get(gameId)?.alarmAt ?? null;
+    },
+    getAlarmWrites(gameId) {
+      return rooms.get(gameId)?.alarmWrites ?? 0;
     },
     restart(gameId) {
       return instantiateRoom(gameId);

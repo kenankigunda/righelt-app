@@ -214,9 +214,21 @@ test("/api/shell/games/:id/ws heartbeat does not persist or append events when p
 
     const persistedBeforeHeartbeat = env.DB.getGameState(gameId);
     const eventCountBeforeHeartbeat = env.DB.getEvents(gameId).length;
-
-    client.send(JSON.stringify({ type: "heartbeat", identityId: "id-heartbeat", sessionId: "session-heartbeat", lastEventSeq: 0 }));
-    await flushAsync();
+    const alarmWritesBeforeHeartbeat = env.GAME_ROOMS.getAlarmWrites(gameId);
+    const copy = globalThis.structuredClone;
+    let gameCopies = 0;
+    globalThis.structuredClone = (value, ...args) => {
+      if (value?.id === gameId && Array.isArray(value.moves)) gameCopies++;
+      return copy(value, ...args);
+    };
+    try {
+      client.send(JSON.stringify({ type: "heartbeat", identityId: "id-heartbeat", sessionId: "session-heartbeat", lastEventSeq: 0 }));
+      await flushAsync();
+    } finally {
+      globalThis.structuredClone = copy;
+    }
+    assert.equal(gameCopies, 0, "unchanged liveness must not copy game history");
+    assert.equal(env.GAME_ROOMS.getAlarmWrites(gameId), alarmWritesBeforeHeartbeat, "an existing expiry check covers a renewed session");
 
     const persistedAfterHeartbeat = env.DB.getGameState(gameId);
     const eventCountAfterHeartbeat = env.DB.getEvents(gameId).length;
@@ -388,7 +400,7 @@ test("/api/shell/games/:id/presence marks only the matching session inactive", a
   }
 });
 
-test("GameRoomDO alarm clears stale active sessions and does not keep dormant games scheduled", async () => {
+test("GameRoomDO keeps renewed sessions alive at an earlier alarm and later clears stale sessions", async () => {
   const realWebSocketPair = globalThis.WebSocketPair;
   const RealResponse = globalThis.Response;
   const realNow = Date.now;
@@ -413,10 +425,22 @@ test("GameRoomDO alarm clears stale active sessions and does not keep dormant ga
     );
     const { game } = await create.json();
 
-    await handleApiRequest(new Request(wsUrl(game.id, "id-alarm", "session-alarm")), env);
-    assert.ok(env.GAME_ROOMS.getAlarm(game.id));
+    const response = await handleApiRequest(new Request(wsUrl(game.id, "id-alarm", "session-alarm")), env);
+    const firstAlarm = env.GAME_ROOMS.getAlarm(game.id);
+    assert.ok(firstAlarm > fakeNow);
 
-    fakeNow += 96_000;
+    fakeNow += 5_000;
+    response.webSocket.send(JSON.stringify({ type: "heartbeat", identityId: "id-alarm", sessionId: "session-alarm", lastEventSeq: 0 }));
+    await flushAsync();
+    assert.equal(env.GAME_ROOMS.getAlarm(game.id), firstAlarm);
+
+    fakeNow = firstAlarm;
+    await env.GAME_ROOMS.fireAlarm(game.id);
+    assert.equal(env.DB.getGameState(game.id).player1.connected, true);
+    const renewedAlarm = env.GAME_ROOMS.getAlarm(game.id);
+    assert.ok(renewedAlarm > fakeNow, "the earlier check must preserve a renewed session's future expiry");
+
+    fakeNow = renewedAlarm + 1;
     await env.GAME_ROOMS.fireAlarm(game.id);
 
     const state = env.DB.getGameState(game.id);
