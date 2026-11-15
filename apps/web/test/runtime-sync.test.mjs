@@ -155,6 +155,20 @@ test("shell board mount skips reload when runtime already matches current snapsh
   );
 });
 
+test("a newly claimed deliberate History presentation bypasses otherwise matching runtime keys once", () => {
+  const matching = {
+    runtimeSnapshotKey: '{"turnIndex":64}',
+    runtimeLegalActionsKey: '[]',
+    snapshotKey: '{"turnIndex":64}',
+    legalActionsKey: '[]',
+    mountedOverlayKey: '{"mode":"recorded-turn"}',
+    overlayKey: '{"mode":"recorded-turn"}',
+    resetSelection: false,
+  };
+  assert.equal(shouldSkipBoardRuntimeReload({...matching,forceReload:true}),false);
+  assert.equal(shouldSkipBoardRuntimeReload({...matching,forceReload:false}),true);
+});
+
 test("shell board mount reloads when selection reset or snapshot inputs differ", () => {
   assert.equal(
     shouldSkipBoardRuntimeReload({

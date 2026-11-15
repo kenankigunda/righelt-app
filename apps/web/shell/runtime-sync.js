@@ -43,7 +43,9 @@ export const shouldSkipBoardRuntimeReload = ({
   mountedOverlayKey,
   overlayKey,
   resetSelection,
+  forceReload = false,
 }) =>
+  forceReload !== true &&
   runtimeSnapshotKey === snapshotKey &&
   runtimeLegalActionsKey === legalActionsKey &&
   mountedOverlayKey === overlayKey &&

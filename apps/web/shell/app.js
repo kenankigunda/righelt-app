@@ -164,7 +164,7 @@ import {
 import { renderHomeCardIdentity, renderHomeCardTurn } from "./home-card-identity.js";
 import {renderScenarioPlayerCopy} from "./scenario-player-copy.js";
 import { buildStaticGameCardFromScenario } from "./static-game-cards.js";
-import { historyTurnSide, buildMovePreview, buildTurnPreview, buildDestroyedPieceOverlays, findRecordedActionStartPiece } from "./history-preview.js";
+import { historyTurnSide, buildMovePreview, buildTurnPreview, buildDestroyedPieceOverlays, findRecordedActionStartPiece, createHistoryDestructionAnimationOwner } from "./history-preview.js";
 import { resolveInitialSelectionHydration } from "./selection-hydration.js";
 import { shouldResetBoardSelection, shouldSkipBoardRuntimeReload } from "./runtime-sync.js";
 import { buildScenarioStaticPreviewModel } from "./static-preview-model.js";
@@ -994,6 +994,7 @@ const historySelectionActions = createHistorySelectionActions({
     });
   },
 });
+const historyDestructionAnimationOwner = createHistoryDestructionAnimationOwner();
 document.addEventListener('visibilitychange', () => { if (document.hidden) historySelectionTransition.cancel(); });
 window.addEventListener('hashchange', () => historySelectionTransition.cancel());
 window.addEventListener('pagehide', () => historySelectionTransition.cancel());
@@ -3045,6 +3046,11 @@ const mountBoardForGame = (game) => {
   const snapshotKey = toStableKey(snapshot);
   const legalActionsKey = toStableKey(effectiveLegalActions);
   const historyDestroyedPieces = capturing ? [] : historyPreview?.overlay.destroyedPieces ?? getHistoryDestroyedPieceOverlays(game);
+  const animateHistoryDestruction = !capturing && historyDestructionAnimationOwner.claim(
+    game,
+    historySelectionActions.snapshot(),
+    (historyPreview?.overlay.animatedDestroyedPieces?.length ?? 0) > 0,
+  );
   const historyRecordedActionStartPiece = capturing ? null : historyPreview?.overlay.recordedActionStartPiece ?? getHistoryRecordedActionStartPiece(game);
   const forceClickTargetSelection = Boolean(capturing);
   const frozenCapture = capturing && scenarioCapture.mode === 'frozen';
@@ -3159,6 +3165,7 @@ const mountBoardForGame = (game) => {
       recordedAction: historySelectionAction,
       recordedActionStartPiece: historyRecordedActionStartPiece,
       destroyedPieces: historyDestroyedPieces,
+      animateHistoryDestruction,
     });
     return;
   }
@@ -3190,6 +3197,7 @@ const mountBoardForGame = (game) => {
     mountedOverlayKey,
     overlayKey,
     resetSelection,
+    forceReload: animateHistoryDestruction,
   })) {
     mountedSnapshotKey = snapshotKey;
     mountedLegalActionsKey = legalActionsKey;
@@ -3201,6 +3209,7 @@ const mountBoardForGame = (game) => {
     return;
   }
   const shouldReloadSnapshot =
+    animateHistoryDestruction ||
     mountedSnapshotKey !== snapshotKey ||
     mountedLegalActionsKey !== legalActionsKey ||
     mountedOverlayKey !== overlayKey ||
@@ -3226,6 +3235,7 @@ const mountBoardForGame = (game) => {
     recordedAction: historySelectionAction,
     recordedActionStartPiece: historyRecordedActionStartPiece,
     destroyedPieces: historyDestroyedPieces,
+    animateHistoryDestruction,
   });
 };
 

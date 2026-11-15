@@ -58,6 +58,7 @@ const OVERLAY_MODE = {
   INTERACTIVE: "interactive",
   NONE: "none",
   RECORDED_ACTION: "recorded-action",
+  RECORDED_TURN: "recorded-turn",
 };
 
 export function createBoardRuntime({
@@ -1231,17 +1232,19 @@ export function createBoardRuntime({
     renderBoard();
   };
 
-  const startHistoryDestructionTransition = (records) => {
-    const nextDestroyedPieces = Array.isArray(records) ? structuredClone(records) : [];
+  const startHistoryDestructionTransition = ({animatedRecords, staticRecords, settledRecords}) => {
+    const nextAnimatedDestroyedPieces = Array.isArray(animatedRecords) ? structuredClone(animatedRecords) : [];
+    const nextStaticDestroyedPieces = Array.isArray(staticRecords) ? structuredClone(staticRecords) : [];
+    const nextDestroyedPieces = Array.isArray(settledRecords) ? structuredClone(settledRecords) : [...nextStaticDestroyedPieces, ...nextAnimatedDestroyedPieces];
     if (nextDestroyedPieces.length === 0) {
       destroyedPieces = [];
       pendingHistoryDestroyedPieces = [];
       return;
     }
     clearRemovalEffects();
-    destroyedPieces = [];
-    pendingHistoryDestroyedPieces = nextDestroyedPieces;
-    showRemovalEffects(buildHistoryRemovalEffects(nextDestroyedPieces), null, {
+    destroyedPieces = nextStaticDestroyedPieces;
+    pendingHistoryDestroyedPieces = nextAnimatedDestroyedPieces;
+    showRemovalEffects(buildHistoryRemovalEffects(nextAnimatedDestroyedPieces), null, {
       onComplete: () => {
         destroyedPieces = nextDestroyedPieces;
         pendingHistoryDestroyedPieces = [];
@@ -1736,6 +1739,9 @@ export function createBoardRuntime({
       endpointRoles: nextEndpointRoles = [],
       recordedActionStartPiece: nextRecordedActionStartPiece = null,
       destroyedPieces: nextDestroyedPieces = [],
+      animatedDestroyedPieces: nextAnimatedDestroyedPieces = null,
+      staticDestroyedPieces: nextStaticDestroyedPieces = null,
+      animateHistoryDestruction: nextAnimateHistoryDestruction = nextOverlayMode === OVERLAY_MODE.RECORDED_ACTION,
     } = {},
   ) => {
     if (destroyed) return;
@@ -1763,11 +1769,18 @@ export function createBoardRuntime({
     if (!preserveRemovalEffects) {
       clearRemovalEffects();
     }
-    if (nextOverlayMode === OVERLAY_MODE.RECORDED_ACTION && Array.isArray(nextDestroyedPieces) && nextDestroyedPieces.length > 0) {
-      startHistoryDestructionTransition(nextDestroyedPieces);
+    const finalHistoryDestroyedPieces = Array.isArray(nextDestroyedPieces) ? nextDestroyedPieces : [];
+    const animatedHistoryDestroyedPieces = Array.isArray(nextAnimatedDestroyedPieces) ? nextAnimatedDestroyedPieces : finalHistoryDestroyedPieces;
+    const staticHistoryDestroyedPieces = Array.isArray(nextStaticDestroyedPieces) ? nextStaticDestroyedPieces : [];
+    if ([OVERLAY_MODE.RECORDED_ACTION, OVERLAY_MODE.RECORDED_TURN].includes(nextOverlayMode) && nextAnimateHistoryDestruction && animatedHistoryDestroyedPieces.length > 0) {
+      startHistoryDestructionTransition({
+        animatedRecords:animatedHistoryDestroyedPieces,
+        staticRecords:staticHistoryDestroyedPieces,
+        settledRecords:finalHistoryDestroyedPieces,
+      });
     } else {
       pendingHistoryDestroyedPieces = [];
-      destroyedPieces = Array.isArray(nextDestroyedPieces) ? structuredClone(nextDestroyedPieces) : [];
+      destroyedPieces = structuredClone(finalHistoryDestroyedPieces);
     }
     if (resetSelection) {
       clearSelection();
