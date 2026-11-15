@@ -337,44 +337,44 @@
   },
   "/shell/app.js": {
     "file": "apps/web/shell/app.js",
-    "sourceSha256": "f465178058ef9453c833dd953f86a8783ffc1a9fb6c909f371e6daaab41a9e3b",
-    "outputSha256": "540bbc71f990ff6b39911cb71412c2de379bde30eec2ac80388e7fccbdf10edf",
+    "sourceSha256": "6a353a0bd6549c3efb51f54fbddf5a9abb4dad5785f65413fa3f25eeb61e0cc6",
+    "outputSha256": "00707b79687dc678df9a58b30607d2d98cd4090805740b30f2e10b40058c7042",
     "operations": [
       {
-        "start": 162882,
-        "end": 162882,
+        "start": 163760,
+        "end": 163760,
         "before": "",
         "after": "    boardAdmissionProbe(\"shell-runtime-replace\", () => ({hadRuntime:Boolean(boardRuntime)}), boardRuntime);\n",
         "anchor": "ountedBoardGameId !== game.id || !boardRuntime) {\n    if (boardRuntime) {\n      boardRuntime.destroy",
         "anchorCount": 1
       },
       {
-        "start": 178942,
-        "end": 179016,
+        "start": 179818,
+        "end": 179892,
         "before": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;\n",
         "after": "  if (boardAdmissionValue(\"shell-render-deferred\", renderGesture.defer({ animatePanels, includeBoard }))) return false;\n",
         "anchor": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;\n",
         "anchorCount": 1
       },
       {
-        "start": 243074,
-        "end": 243144,
+        "start": 243950,
+        "end": 244020,
         "before": "  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n",
         "after": "  if (boardAdmissionValue(\"shell-on-board\", event.target.closest?.(\"#shell-board\")) && boardAdmissionValue(\"shell-account-denied\", !account.canPlay())) {\n",
         "anchor": "\nappEl.addEventListener(\"pointerdown\", event => {\n  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n    event.preventDefault();event.stopImmediateProp",
         "anchorCount": 1
       },
       {
-        "start": 243339,
-        "end": 243409,
+        "start": 244215,
+        "end": 244285,
         "before": "  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n",
         "after": "  if (boardAdmissionValue(\"shell-on-board\", event.target.closest?.(\"#shell-board\")) && boardAdmissionValue(\"shell-account-denied\", !account.canPlay())) {\n",
         "anchor": "true);\nappEl.addEventListener(\"click\", event => {\n  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n    event.preventDefault();event.stopImmediateProp",
         "anchorCount": 1
       },
       {
-        "start": 290880,
-        "end": 290880,
+        "start": 291781,
+        "end": 291781,
         "before": "",
         "after": "    boardAdmissionProbe(\"shell-release-bounce\", () => ({connected:Boolean(pressedControlEl.isConnected)}), pressedControlEl);\n",
         "anchor": "\n  if (pressedControlEl instanceof HTMLElement) {\n    playControlReleaseBounce(pressedControlEl);\n  ",
