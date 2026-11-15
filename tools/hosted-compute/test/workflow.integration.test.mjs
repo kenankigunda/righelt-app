@@ -112,6 +112,8 @@ test('real Worker/DO/R2 and child process complete without an attached submitter
   worker.json=(action,body)=>originalJson(action,action==='finish' && body?.kind==='complete' ? {kind:'infrastructure',files:body.files} : body);
   const result = await runWorker({ env: { ...process.env, ...env }, root, client: worker, cleanup: async () => {}, snapshotter: publishSnapshot });
   assert.equal(result.kind, 'complete', JSON.stringify(result));
+  const executionContext=JSON.parse(await fs.readFile(path.join(root,manifest.phases[0].runDir,'execution-context.json')));
+  assert(Number.isFinite(executionContext.phaseDeadline));assert.equal(executionContext.phaseSeconds,manifest.phases[0].seconds);
   const logged = (await admin.json('logs')).latestLog; assert(logged);
   assert.match(new TextDecoder().decode(await admin.download(logged)), /compute-result/);
   const resultReceipt=JSON.parse(await fs.readFile(path.join(root,'.ai-runs/pilot/run/result.json')));

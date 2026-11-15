@@ -39,3 +39,9 @@ test('verified attempt must match exact authoritative frozen start identity',asy
  row.startIdentity.stateHash='0'.repeat(64);receipt.evidenceSha256=await f.put(row);result.artifacts.push({role:'attempt',sha256:receipt.evidenceSha256});proofArtifact.sha256=await f.put(proof);arm.evaluationResultSha256=await f.put(result);
  await assert.rejects(validateComparisonEvidence(report,{read:f.read,...f.request}),/row differs from schedule/);
 });
+
+test('combined assessment and game IDs are all accounted while only verified games score',async()=>{
+ const f=await comparisonFixture({assessment:true}),report=await native(f);assert.equal((await validateComparisonEvidence(report,{read:f.read,...f.request})).eligibleArm,'treatment');
+ const result=JSON.parse(new TextDecoder().decode(f.objects.get(report.armResults.treatment.evaluationResultSha256)));result.accountedWorkIds.shift();report.armResults.treatment.evaluationResultSha256=await f.put(result);
+ await assert.rejects(validateComparisonEvidence(report,{read:f.read,...f.request}),/assessment IDs/);
+});

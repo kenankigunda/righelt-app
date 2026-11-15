@@ -144,7 +144,8 @@ test('repair time excludes healthy operation and the phase deadline cannot reset
   const originalDeadline = (await f.state()).phaseDeadline;
   await f.core.finish('pilot', 1, { kind: 'infrastructure' });
   f.advance(60000); await f.core.reconcile(); await f.core.reconcile(); await f.core.reconcile();
-  await f.core.heartbeat('pilot', 2, { restoredSnapshotId: 'snapshot-1' });
+  const ready=await f.core.heartbeat('pilot', 2, { restoredSnapshotId: 'snapshot-1' });
+  assert.equal(ready.phaseDeadline,originalDeadline);
   const recovered = await f.state();
   assert.equal(recovered.phaseDeadline, originalDeadline); assert.equal(recovered.repairSpentMs, 60000);
   assert.equal(recovered.repairStartedAt, undefined); assert.equal(recovered.recovering, false);

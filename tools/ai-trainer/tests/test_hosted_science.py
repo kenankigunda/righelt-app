@@ -60,6 +60,8 @@ class HostedScienceTest(unittest.TestCase):
     def test_stage_and_nested_final_material_cannot_escape_adapter(self):
         for command,stage,plan in [('training','evaluation',{}),('teacher','training',{}),('training','calibration',{'nativeManifest':{'finalFamilies':{}}}),('teacher','teacher-screen',{'nested':[{'partition':'final'}]})]:
             with self.subTest(command=command,stage=stage),self.assertRaises(ValueError):validate_adapter_stage({'scientific':{'stage':stage}},command,plan)
+        with self.assertRaisesRegex(ValueError,'only to frozen validation'):
+            validate_adapter_stage({'scientific':{'stage':'evaluation','evaluationScope':'final'}},'evaluation',{'developmentAssessment':{}})
         validate_adapter_stage({'scientific':{'stage':'calibration'}},'training',{})
         validate_adapter_stage({'scientific':{'stage':'calibration'}},'evaluation',{})
 
@@ -135,6 +137,45 @@ class HostedScienceTest(unittest.TestCase):
                 bad=copy.deepcopy(plan);bad['profile']['simulations']=32
                 with self.assertRaisesRegex(ValueError,'exact teacher target profile'):
                     teacher(bad,run,execution,['development1','policy1'],seconds=30)
+
+    def test_candidate_assessment_uses_original_phase_origin_on_replacement(self):
+        import os
+        from contextlib import ExitStack
+        from righelt_training.hosted_science import evaluate
+        class Export:
+            runtime={'kind':'caller-boundary-stub'}
+        root=Path.cwd()/'.ai-runs';root.mkdir(exist_ok=True)
+        for generation,wall,mono in [(1,1000,100),(2,1050,200),(3,1100,300)]:
+            with self.subTest(generation=generation),tempfile.TemporaryDirectory(dir=root) as temp,ExitStack() as stack:
+                directory=Path(temp)
+                def bound(name,value):
+                    path=directory/name;path.write_text(json.dumps(value));return {'path':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+                index=bound('index.json',{'cases':[],'profiles':[]})
+                component={'schema':1,'indexSha256':index['sha256'],'seconds':60}
+                execution={'scientific':{'stage':'evaluation','evaluationScope':'validation','arm':'treatment'},'generation':generation,'seed':107,'phase':'validate','manifestSha256':'e'*64,'sourceRevision':'f'*40}
+                context=bound('context.json',{'execution':execution,'inputObjects':[index],'phaseDeadline':1600000,'phaseSeconds':600})
+                report=bound('assessment.json',{'kind':'synthetic-caller-boundary-receipt'})
+                plan={'evaluationScope':'validation','schedule':[],'models':{'candidate':{'sha256':'a'*64},'opponent':{'sha256':'b'*64}},'candidateSha256':'a'*64,'profiles':{'sourceSha256':'c'*64},'developmentAssessment':component,'developmentTrainingProofs':[{'sha256':'d'*64}]}
+                after,before=Export(),Export()
+                def assessed(comp,actual,**kwargs):
+                    self.assertIs(kwargs['model'],after);self.assertIs(kwargs['before_model'],before)
+                    self.assertEqual((kwargs['purpose'],kwargs['arm']),('candidate-regression','treatment'))
+                    self.assertEqual(kwargs['training_proofs'],[{'sha256':'d'*64}])
+                    self.assertEqual(kwargs['deadline']-mono+wall,1060)
+                    self.assertEqual(kwargs['deadline']<=mono,generation==3)
+                    return {'qualified':False,'reportSha256':report['sha256'],'workReceipts':[{'workId':'assessment1','status':'unfinished','evidenceSha256':report['sha256']}],'artifactPaths':[Path(report['path'])]}
+                stack.enter_context(patch.dict(os.environ,{'RIGHELT_EXECUTION_CONTEXT':context['path']}))
+                stack.enter_context(patch('righelt_training.hosted_science.time.monotonic',return_value=mono))
+                stack.enter_context(patch('righelt_training.hosted_science.time.time',return_value=wall))
+                stack.enter_context(patch('righelt_training.hosted_science.authoritative_profiles',return_value={}))
+                stack.enter_context(patch('righelt_training.hosted_science.validate_schedule',return_value=[]))
+                stack.enter_context(patch('righelt_training.development_assessment.work_ids',return_value=['assessment1']))
+                stack.enter_context(patch('righelt_training.development_assessment.produce_assessment',side_effect=assessed))
+                stack.enter_context(patch('righelt_training.export_runtime.ExportedModel',side_effect=[after,before]))
+                stack.enter_context(patch('righelt_training.evaluation.prospective_report',return_value={}))
+                result=evaluate(plan,directory,execution,['assessment1'],seconds=600)
+                self.assertEqual(result['developmentReportSha256'],report['sha256']);self.assertEqual(result['accountedWorkIds'],['assessment1'])
+                self.assertFalse(result['allWorkComplete'])
 
     def test_entrypoint_rejects_plan_bytes_that_differ_from_bound_execution(self):
         from righelt_training.hosted_science import main

@@ -31,10 +31,14 @@ def arm_records(store,bindings):
     proof=store.read(next(a['sha256'] for a in result['artifacts'] if a['role']=='proof'))
     models=[a for a in training['artifacts'] if a['role']=='model']
     if len(models)!=1 or plan.get('candidateSha256')!=models[0]['sha256'] or plan.get('models',{}).get('candidate',{}).get('sha256')!=models[0]['sha256'] or plan.get('models',{}).get('opponent',{}).get('sha256')!='f5b0f38763f290eaecf7f1958738342bb327f42efe95b5021b1f59b2b78f8a0f':raise ValueError('validation requires exact actual arm output and original opponent')
-    schedule=plan['schedule'];receipts=proof['workReceipts']
+    schedule=plan['schedule'];all_receipts=proof['workReceipts'];assessment_ids=[]
+    if plan.get('developmentAssessment'):
+        from .development_assessment import work_ids
+        assessment_ids=work_ids(store.read(plan['developmentAssessment']['indexSha256']))
+    expected_ids=assessment_ids+[j['id'] for j in schedule];receipts=all_receipts[len(assessment_ids):]
     if (result.get('kind')!='compute-result' or result.get('disposition')!='complete' or proof.get('kind')!='evaluation-proof'
-            or proof['execution']!=result['execution'] or result['accountedWorkIds']!=[j['id'] for j in schedule]
-            or [r['workId'] for r in receipts]!=[j['id'] for j in schedule]
+            or proof['execution']!=result['execution'] or result['accountedWorkIds']!=expected_ids
+            or [r['workId'] for r in all_receipts]!=expected_ids
             or any(j['partition']!='validation' for j in schedule)):raise ValueError('complete validation inventory required')
     artifacts={a['sha256'] for a in result['artifacts']};rows=[]
     for job,receipt in zip(schedule,receipts):

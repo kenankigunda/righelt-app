@@ -135,7 +135,7 @@ export class Controller {
     c.lastHeartbeat = this.now(); c.status = 'running';
     a.workStartedAt ??= this.now(); c.phaseDeadline ??= this.now() + phase.seconds * 1000;
     a.leaseExpires = Math.min(this.now() + POLICY.leaseMs, c.manifest.deadline, c.phaseDeadline, a.cutoff ?? Infinity); await this.save(db);
-    return { leaseExpires: a.leaseExpires };
+    return { leaseExpires: a.leaseExpires, phaseDeadline:c.phaseDeadline };
   }
   async claim(id, generation, body) {
     const db = await this.load(), c = this.campaign(db, id); this.fence(c, generation);

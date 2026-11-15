@@ -207,6 +207,7 @@ async function preparationEvidence(record,load){
   const teacherSuite=await load(record.developmentSuites.teacherSha256),candidateSuite=await load(record.developmentSuites.candidateSha256);
   for(const index of [teacherSuite,candidateSuite])await validateDevelopmentSuite(index,{read:load.read,expectedCoverageSha256:load.coverageSha256});
   const publicProfiles=await Promise.all(['babs','tau','horus'].map(name=>developmentDigest(profiles.profiles[name])));
+  for(const profile of publicProfiles)await load(profile);
   assert(canonical([...candidateSuite.profiles].sort())===canonical([...publicProfiles].sort())&&(!candidateSuite.beforeProfiles||publicProfiles.every(p=>candidateSuite.beforeProfiles[p]===p)),'candidate tactical floor must use all unchanged public profiles');
   assert(plan.developmentSuiteSha256===record.developmentSuites.teacherSha256&&qualification.developmentSuiteSha256===record.developmentSuites.teacherSha256,'teacher preparation omits frozen useful-correction suite');
   const afterProfile=await developmentDigest(plan.profile),component=plan.developmentAssessment;
@@ -215,6 +216,9 @@ async function preparationEvidence(record,load){
   assert(fields(component,['schema','indexSha256','beforeProfileSha256','seed','stepSeconds','maxActions','milliseconds','maxOperations'])&&component.schema===1&&component.indexSha256===record.developmentSuites.teacherSha256&&component.beforeProfileSha256===qualification.beforeProfileSha256&&component.seed===common.start.seed&&Number.isFinite(component.stepSeconds)&&component.stepSeconds>0&&component.stepSeconds<=plan.searchSeconds&&Number.isFinite(component.milliseconds)&&component.milliseconds>0&&positive(component.maxActions)&&positive(component.maxOperations),'bounded same-allocation teacher assessment required');
   assert(canonical(await load(afterProfile))===canonical(plan.profile),'teacher profile bytes differ');
   await load(qualification.beforeProfileSha256);
+  const assessment=record.validationAssessment;
+  assert(fields(assessment,['schema','indexSha256','seed','stepSeconds','maxActions','milliseconds','maxOperations','seconds'])&&assessment.schema===1&&assessment.indexSha256===record.developmentSuites.candidateSha256&&assessment.seed===common.start.seed&&['stepSeconds','milliseconds','seconds'].every(k=>Number.isFinite(assessment[k])&&assessment[k]>0)&&positive(assessment.maxActions)&&positive(assessment.maxOperations)&&record.campaigns.filter(c=>c.stage==='evaluation'&&c.evaluationScope==='validation').every(c=>assessment.seconds<c.seconds),'frozen bounded candidate assessment inside both validation allocations required');
+
 
   const validationSchedules=new Map();
   for(const c of record.campaigns.filter(c=>c.stage==='evaluation')){
@@ -295,6 +299,7 @@ export async function validateScientificAdmission(manifest,{read,coveragePolicy=
     assert(canonical(record.commonStart)===canonical(preregistered.commonStart)&&canonical(normalizedCampaigns(record.campaigns))===canonical(preregistered.campaigns),'post-teacher freeze changed common state, campaigns, budgets or schedules');
     for(const key of ['rulesSha256','qualificationRuleSha256','selectionRuleSha256','publicProfilesSha256','evaluationFamilyInventorySha256','publicOpponentSha256'])assert(record[key]===preregistered[key],'post-teacher freeze changed preregistered rules or evaluation');
     assert(canonical(record.reserves)===canonical(preregistered.reserves)&&canonical(record.continuation)===canonical(preregistered.continuation)&&canonical(record.developmentSuites)===canonical(preregistered.developmentSuites),'post-teacher freeze changed reserves, continuation or tactical suite');
+    assert(canonical(record.validationAssessment)===canonical(preregistered.validationAssessment),'post-teacher freeze changed validation assessment');
     projectExperimentBudget(record,prep.rule);await teacherEvidence(record,prep,load);
   }
   const campaign=record.campaigns.find(c=>c.id===manifest.id);assert(campaign,'unregistered campaign');const phase=await matchManifest(manifest,prep.start,campaign);
@@ -312,17 +317,26 @@ export async function validateScientificAdmission(manifest,{read,coveragePolicy=
       assert(manifest.scientific.candidateLockSha256===undefined,'validation is exact arm evaluation, not final candidate nomination');
       const selected=await registeredTrainingOutput(manifest.scientific.sourceTrainingResultSha256,record,prep,load,manifest.scientific.experimentSha256);
       assert(selected.campaign.arm===campaign.arm&&selected.modelSha256===modelSha256,'validation does not evaluate its exact registered arm output');
+      assert(canonical(plan.developmentAssessment)===canonical(record.validationAssessment),'validation changed frozen candidate assessment');
+      assert(canonical(phase.workIds)===canonical([...(await developmentWorkIds(prep.candidateSuite)),...plan.schedule.map(j=>j.id)]),'validation omits ordered assessment/game work');
+      const dose=campaign.arm==='treatment'?selected.result.artifacts.filter(a=>a.role==='proof').map(a=>({sha256:a.sha256})):[];
+      assert(canonical(plan.developmentTrainingProofs)===canonical(dose),'validation assessment dose differs from registered training');
+
     }else{
+      assert(plan.developmentAssessment===undefined&&plan.developmentTrainingProofs===undefined&&canonical(phase.workIds)===canonical(plan.schedule.map(j=>j.id)),'final evaluation contains unregistered assessment or work');
       const lock=await load(manifest.scientific.candidateLockSha256);
       assert(lock.schema===1&&lock.kind==='locked-comparison-candidate'&&lock.comparisonSha256===manifest.scientific.experimentSha256&&lock.selectionRuleSha256===record.selectionRuleSha256&&lock.selectionReviewed===true&&lock.candidateSha256===modelSha256,'candidate selection is not locked to this comparison');
       const selected=await registeredTrainingOutput(lock.sourceTrainingResultSha256,record,prep,load,manifest.scientific.experimentSha256);
       const actualComparison=await load(lock.comparisonReportSha256),selection=await validateComparisonEvidence(actualComparison,{read:load.read,
         comparisonSha256:manifest.scientific.experimentSha256,rulesSha256:record.rulesSha256,selectionRuleSha256:record.selectionRuleSha256});
       assert(selected.modelSha256===modelSha256&&selection.eligibleArm===selected.campaign.arm&&selection.candidateSha256===modelSha256,'final nominee is not supported by actual paired validation');
+      assert(actualComparison.armResults[selected.campaign.arm].trainingResultSha256===lock.sourceTrainingResultSha256,'candidate training result differs from paired validation');
+      const evaluated=await load(actualComparison.armResults[selected.campaign.arm].evaluationResultSha256),evaluationProof=await resultProof(evaluated,load,'evaluation-proof');
+      assert(evaluated.developmentReportSha256===lock.developmentReportSha256&&evaluationProof.developmentReportSha256===lock.developmentReportSha256&&evaluated.artifacts.some(a=>a.sha256===lock.developmentReportSha256),'candidate floor is not its actual validation assessment');
       const tactical=await load(lock.developmentReportSha256),floor=await validateDevelopmentSuiteReport(prep.candidateSuite,tactical,{read:load.read,
         expectedCoverageSha256:load.coverageSha256,expectedPurpose:'candidate-regression',expectedModelSha256:modelSha256,
         expectedSourceRevision:prep.start.sourceRevision,expectedDependencySha256:prep.start.dependencySha256});
-      assert(lock.developmentSuiteSha256===record.developmentSuites.candidateSha256&&tactical.arm===selected.campaign.arm&&tactical.before.sourceRevision===prep.start.sourceRevision&&tactical.before.dependencySha256===prep.start.dependencySha256&&floor.qualified,'candidate lacks actual all-profile critical tactical floor');
+      assert(lock.developmentSuiteSha256===record.developmentSuites.candidateSha256&&tactical.arm===selected.campaign.arm&&tactical.before.modelSha256===ORIGINAL_INCUMBENT.publicOnnxSha256&&tactical.before.sourceRevision===prep.start.sourceRevision&&tactical.before.dependencySha256===prep.start.dependencySha256&&floor.qualified,'candidate lacks actual all-profile critical tactical floor');
     }
     const schedule=await load(campaign.scheduleSha256);
     assert(Array.isArray(schedule)&&schedule.every(j=>j.partition===campaign.evaluationScope),'evaluation schedule crosses validation/final boundary');

@@ -84,7 +84,7 @@ export async function assessmentBridge(job){
  if(job.mode==='report'){
   const {validateDevelopmentSuiteReport}=await import('./development-suite.mjs');
   const report={...job.report,indexSha256:await developmentDigest(job.index)};
-  const checked=await validateDevelopmentSuiteReport(job.index,report,{read:async b=>new TextEncoder().encode(job.objects[b.sha256]),expectedPurpose:'teacher-qualification'});
+  const checked=await validateDevelopmentSuiteReport(job.index,report,{read:async b=>new TextEncoder().encode(job.objects[b.sha256]),expectedPurpose:report.purpose});
   await put(report);return {report,checked,objectStrings};
  }
  throw new Error('unsupported bounded assessment command');

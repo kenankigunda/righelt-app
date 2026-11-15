@@ -31,9 +31,13 @@ def search_reference(state,model,device,seed,profile,bound_seconds=10):
                     raw,buffer=buffer.split(b'\n',1);message=json.loads(raw)
                     if message['type']=='searched':return message['result']
                     if message['type']!='evaluate':raise RuntimeError(str(message))
-                    x=torch.tensor(message['input'],dtype=torch.float32,device=device).reshape(1,CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize'])
-                    with torch.inference_mode():policy,value=model(x)
-                    reply={'type':'evaluation','id':message['id'],'policyLogits':policy[0].cpu().tolist(),'value':value[0].item()}
+                    if hasattr(model,'infer_export'):
+                        policy,value=model.infer_export(message['input'])
+                    else:
+                        x=torch.tensor(message['input'],dtype=torch.float32,device=device).reshape(1,CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize'])
+                        with torch.inference_mode():policy_tensor,value_tensor=model(x)
+                        policy,value=policy_tensor[0].cpu().tolist(),value_tensor[0].item()
+                    reply={'type':'evaluation','id':message['id'],'policyLogits':policy,'value':value}
                     p.stdin.write((json.dumps(reply,allow_nan=False)+'\n').encode());p.stdin.flush()
         raise TimeoutError('search parity budget exhausted')
     finally:selector.close();stop_worker(p)

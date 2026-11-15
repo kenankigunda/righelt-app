@@ -1,6 +1,6 @@
 // Portable admission over retained native proof, without engine or statistics subprocesses.
 import {assert,canonical,sha256} from './policy.mjs';
-import {developmentDigest,readSuiteObject} from './development-suite.mjs';
+import {developmentDigest,readSuiteObject,developmentWorkIds} from './development-suite.mjs';
 const equal=(a,b)=>canonical(a)===canonical(b);
 const pairKey=j=>canonical([j.role,j.pairId,j.profile,j.startKind,j.candidateSeat]);
 const identityKeys=['pairId','candidateSeat','profile','familyId','sourceFamily','role','seed','startKind','startIdentity'];
@@ -22,8 +22,9 @@ export async function loadComparisonArm(comparison,arm,bindings,{read,comparison
  const proofs=evaluation.artifacts.filter(a=>a.role==='proof');assert(proofs.length===1,'evaluation proof required');const proof=await load(proofs[0].sha256);
  assert(proof.kind==='evaluation-proof'&&equal(proof.execution,evaluation.execution)&&proof.candidateSha256===modelSha256,'evaluation proof identity differs');
  assert(Array.isArray(schedule)&&schedule.length>0&&new Set(schedule.map(j=>j.id)).size===schedule.length&&schedule.every(j=>j.partition==='validation'),'only unique preregistered validation work allowed');
- assert(equal(evaluation.accountedWorkIds,schedule.map(j=>j.id))&&equal(proof.workReceipts.map(r=>r.workId),schedule.map(j=>j.id)),'all validation IDs must be accounted');
- const rows=[];for(const [i,r]of proof.workReceipts.entries()){
+ const assessmentIds=plan.developmentAssessment?await developmentWorkIds(await load(plan.developmentAssessment.indexSha256)):[],allIds=[...assessmentIds,...schedule.map(j=>j.id)];
+ assert(equal(evaluation.accountedWorkIds,allIds)&&equal(proof.workReceipts.map(r=>r.workId),allIds),'all validation and assessment IDs must be accounted');
+ const rows=[];for(const [i,r]of proof.workReceipts.slice(assessmentIds.length).entries()){
   const j=schedule[i];assert(['complete','unfinished','failed','unstarted'].includes(r.status),'invalid work disposition');
   if(r.status==='unstarted'){rows.push({jobId:j.id,status:'unstarted'});continue;}
   assert(evaluation.artifacts.some(a=>a.role==='attempt'&&a.sha256===r.evidenceSha256),'work receipt lacks retained attempt');const row=await load(r.evidenceSha256);

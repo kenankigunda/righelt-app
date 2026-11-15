@@ -115,7 +115,7 @@ ADOPTION_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for n
 HOSTED_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for name in (
     'backup_closure','device','hosted_receipts','source_image','hosted_cleanup','hosted_snapshot','execution_recipe','hosted_canary',
     'portable','attention_method','attention_audit','export_runtime','policy_pool','runtime_probe','pilot_recipe','architecture','board_attention','sequence_targets','hosted_science',
-    'prospective_durability','evaluation_start','development_assessment','comparison_report','evaluation','arena')) + (
+    'prospective_durability','evaluation_start','development_assessment','comparison_report','evaluation','arena','search_parity')) + (
     'tools/ai-trainer/righelt_training/local-teaching-v2.json','tools/ai-trainer/righelt_training/followup-teaching-v1.json',
     'tools/ai-trainer/training-teaching.mjs','tools/ai-trainer/evaluation-protection.mjs','tools/ai-trainer/public-evaluation-profiles.mjs',
     'tools/ai-trainer/verify-teacher-exit.mjs','tools/ai-trainer/turn-certificate.mjs','tools/ai-trainer/evaluation-start.mjs',

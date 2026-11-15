@@ -102,3 +102,46 @@ f.index.packets[0].preparationSha256=await f.put({kind:'development-evidence',pa
             with patch('righelt_training.development_assessment.bridge',side_effect=AssertionError('expired subprocess')):
                 result=produce_assessment(component,execution,search=unexpected,**args)
             self.assertFalse(result['qualified']);self.assertTrue(all(not create for _,create in barrier.claims));self.assertEqual(result['workReceipts'][0]['status'],'unstarted')
+    def test_actual_exported_candidate_floor_needs_no_teacher_gain_and_recovers_both_endpoints(self):
+        import torch
+        from righelt_training.config import CONFIG
+        from righelt_training.export import export_onnx
+        from righelt_training.export_runtime import ExportedModel
+        torch.set_num_threads(1)
+        class ExportFixture(torch.nn.Module):
+            def __init__(self,bias):super().__init__();self.bias=bias
+            def forward(self,x):
+                signal=x.mean(dim=(1,2,3));policy=signal[:,None]*1e-6+torch.zeros((1,CONFIG['actionCount']),device=x.device)
+                # The synthetic root has an actual legal terminal EndTurn; all
+                # choices and both runtime calls still execute through search.
+                policy[:,-1]+=self.bias
+                return policy,torch.tanh(signal*1e-6)
+        with tempfile.TemporaryDirectory() as temp:
+            base=Path(temp);before_asset=export_onnx(ExportFixture(10).eval(),base/'before.onnx');after_asset=export_onnx(ExportFixture(20).eval(),base/'after.onnx')
+            before=ExportedModel({'path':str(base/'before.onnx'),'sha256':before_asset['sha256']});after=ExportedModel({'path':str(base/'after.onnx'),'sha256':after_asset['sha256']})
+            barrier=Barrier();component,execution,args=self.args(barrier,base/'first')
+            args.update(model=after,model_sha256=after_asset['sha256'],device='cpu-onnxruntime')
+            options={'purpose':'candidate-regression','arm':'control','before_model':before,'before_model_sha256':before_asset['sha256']}
+            with patch.object(before,'infer_export',wraps=before.infer_export) as before_infer,patch.object(after,'infer_export',wraps=after.infer_export) as after_infer:
+                result=produce_assessment(component,execution,**options,**args)
+                self.assertTrue(result['qualified']);self.assertGreater(before_infer.call_count,0);self.assertGreater(after_infer.call_count,0)
+                self.assertEqual(result['report']['purpose'],'candidate-regression');self.assertEqual(result['report']['before']['modelSha256'],before_asset['sha256']);self.assertEqual(result['report']['after']['modelSha256'],after_asset['sha256'])
+                self.assertEqual(result['report']['inferenceRuntime']['after']['providers'],['CPUExecutionProvider'])
+                records=[json.loads((base/'first'/'.objects'/row[key]).read_bytes()) for row in result['report']['rows'] for key in ('beforeSha256','afterSha256')]
+                self.assertTrue(all(a['goalSatisfied'] and a['acceptableActionMass']==1 for a in records)) # No fabricated improvement.
+                def forbidden(*a,**k):raise AssertionError('candidate probe repeated')
+                recovered=produce_assessment(component,{**execution,'generation':2},**options,**{**args,'output':base/'restored','search':forbidden})
+                self.assertEqual(recovered['report']['rows'],result['report']['rows']);self.assertTrue(recovered['qualified'])
+                with self.assertRaisesRegex(ValueError,'binding differs'):
+                    produce_assessment(component,execution,**{**options,'before_model':after,'before_model_sha256':after_asset['sha256']},**{**args,'output':base/'changed','search':forbidden})
+                expired=produce_assessment(component,execution,**options,**{**args,'output':base/'expired','barrier':Barrier(),'deadline':time.monotonic()-1,'search':forbidden})
+                self.assertFalse(expired['qualified']);self.assertEqual(expired['report']['before']['modelSha256'],before_asset['sha256'])
+            # Treatment exposure is a separate typed recovered training artifact;
+            # these synthetic counters test binding, not real training efficacy.
+            proof={'schema':1,'kind':'training-proof','recoveryPassed':True,'modelSha256':after_asset['sha256'],'execution':{**execution,'phase':'training'},'policyRefreshDose':{'schema':1,'phase':'training','byFamily':[{'familyId':'synthetic-family','sourceFamily':'synthetic-parent','sampledPositions':2,'uniquePositions':1}],'totalPositions':2}}
+            raw=json.dumps(proof,sort_keys=True,separators=(',',':')).encode();sha=hashlib.sha256(raw).hexdigest();original_read=args['read_object']
+            read=lambda digest:raw if digest==sha else original_read(digest)
+            treatment=produce_assessment(component,execution,**{**options,'arm':'treatment','training_proofs':[{'sha256':sha}]},**{**args,'output':base/'treatment','barrier':Barrier(),'read_object':read})
+            self.assertTrue(treatment['qualified']);self.assertEqual(treatment['report']['dose']['trainingProofs'],[{'sha256':sha}])
+            with self.assertRaisesRegex(ValueError,'actual candidate training dose'):
+                produce_assessment(component,execution,**{**options,'arm':'treatment','training_proofs':[{'sha256':sha}]},**{**args,'output':base/'wrong-dose','barrier':Barrier(),'model_sha256':before_asset['sha256'],'model':before,'read_object':read,'search':forbidden})

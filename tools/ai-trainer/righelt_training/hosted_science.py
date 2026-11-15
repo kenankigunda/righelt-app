@@ -63,6 +63,7 @@ def validate_adapter_stage(execution,command,plan):
         return False
     final_bearing=carries_final(plan)
     scope=execution.get('scientific',{}).get('evaluationScope')
+    if command=='evaluation' and plan.get('developmentAssessment') is not None and (stage!='evaluation' or scope!='validation'):raise ValueError('candidate assessment belongs only to frozen validation')
     if command=='evaluation' and scope is not None and plan.get('evaluationScope')!=scope:raise ValueError('evaluation scope differs from executed adapter')
     if final_bearing and (command!='evaluation' or stage!='evaluation' or scope not in (None,'final')):
         raise ValueError('final material requires locked evaluation-only adapter')
@@ -73,6 +74,16 @@ def frozen_context():
     execution=value['execution'];science=execution.get('scientific')
     if not science:raise ValueError('explicit hosted scientific admission required')
     return execution,value['completedWorkIds']
+
+
+def execution_objects(execution):
+    context=json.loads(resolve_reference(os.environ['RIGHELT_EXECUTION_CONTEXT']).read_bytes())
+    if context.get('execution')!=execution:raise ValueError('development context differs from executed phase')
+    inputs={b['sha256']:b for b in context['inputObjects']}
+    def read(sha):
+        if sha not in inputs:raise ValueError('development input absent from frozen execution')
+        return read_bound(inputs[sha])
+    return context,read
 
 
 def authoritative_profiles():
@@ -146,13 +157,34 @@ def evaluate(plan,directory,execution,work_ids,*,seconds,player=None):
     from .arena import play_game, verify_game
     from .evaluation import prospective_report
     from .export_runtime import ExportedModel
-    schedule=validate_schedule(plan,authoritative_profiles(),work_ids,execution)
+    component=plan.get('developmentAssessment');assessment=None;assessment_ids=[]
+    if component is not None:
+        from .development_assessment import work_ids as development_work_ids
+        context,read_object=execution_objects(execution)
+        index=json.loads(read_object(component['indexSha256']));assessment_ids=development_work_ids(index)
+        if work_ids!=assessment_ids+[j['id'] for j in plan.get('schedule',[])]:raise ValueError('frozen validation assessment/game inventory differs')
+    elif execution.get('scientific',{}).get('evaluationScope')=='validation':raise ValueError('actual candidate assessment required for validation')
+    schedule=validate_schedule(plan,authoritative_profiles(),[j['id'] for j in plan.get('schedule',[])] if component else work_ids,execution)
     directory=Path(directory);directory.mkdir(parents=True,exist_ok=True)
     models={};device='cpu-onnxruntime'
     for role in ('candidate','opponent'):
         models[role]=ExportedModel(plan['models'][role])
     if plan['models']['candidate']['sha256']!=plan['candidateSha256']:raise ValueError('evaluation candidate differs from lock')
     deadline=started+seconds;records=[];receipts=[];paths=[]
+    if component is not None:
+        from .development_assessment import produce_assessment
+        phase_end=context.get('phaseDeadline');phase_seconds=context.get('phaseSeconds')
+        if (type(phase_end) not in (int,float) or not math.isfinite(phase_end) or type(phase_seconds) not in (int,float)
+                or not math.isfinite(phase_seconds) or not 0<component['seconds']<phase_seconds):raise ValueError('original bounded validation phase clock required')
+        # The controller keeps this origin unchanged through every replacement.
+        wall_remaining=phase_end/1000-time.time()
+        deadline=min(deadline,time.monotonic()+wall_remaining)
+        assessment_deadline=min(deadline,time.monotonic()+wall_remaining-phase_seconds+component['seconds'])
+        assessment=produce_assessment(component,execution,model=models['candidate'],model_sha256=plan['candidateSha256'],device=device,
+            before_model=models['opponent'],before_model_sha256=plan['models']['opponent']['sha256'],purpose='candidate-regression',
+            arm=execution['scientific']['arm'],training_proofs=plan.get('developmentTrainingProofs',[]),deadline=assessment_deadline,
+            read_object=read_object,output=directory/'development')
+        receipts.extend(assessment['workReceipts']);paths.extend(assessment['artifactPaths'])
     namespace='prospective:'+execution['manifestSha256']+':'+execution['phase']
     profile_artifact=digest(json.dumps(plan['profiles'],sort_keys=True,allow_nan=False).encode())
     for job in schedule:
@@ -188,11 +220,12 @@ def evaluate(plan,directory,execution,work_ids,*,seconds,player=None):
     report['lineageFamilies']=sorted({job['sourceFamily'] for job in schedule})
     paths.append(write_json(directory/f"prospective-report-{execution['generation']}.json",report))
     return emit_result(directory,'evaluation',execution,receipts,paths,{'candidateSha256':plan['candidateSha256'],
-        'unfinishedIsDraw':False,'prospective':True,'reportSha256':digest(paths[-1].read_bytes()),
+        'unfinishedIsDraw':False,'prospective':True,'developmentReportSha256':assessment['reportSha256'] if assessment else None,'reportSha256':digest(paths[-1].read_bytes()),
         'inferenceRuntime':{role:model.runtime for role,model in models.items()},'browserWasmQualified':False,
         'opponentIdentity':{'kind':'original-incumbent-weights-under-common-search',
             'weightsSha256':plan['models']['opponent']['sha256'],'searchSourceRevision':execution['sourceRevision'],
-            'searchPolicyVersion':plan['profiles'].get('searchPolicyVersion'),'exactProductionBehaviorReplica':False}})
+            'searchPolicyVersion':plan['profiles'].get('searchPolicyVersion'),'exactProductionBehaviorReplica':False}},
+        result_fields={'developmentReportSha256':assessment['reportSha256'] if assessment else None})
 
 
 def completed_teacher_work(position,answer,profile,*,proof_seconds=5,retained_proof=None,source_revision=None):
@@ -347,11 +380,7 @@ def teacher(plan,directory,execution,work_ids,*,seconds):
         component=plan.get('developmentAssessment',{})
         if component.get('indexSha256')!=plan.get('developmentSuiteSha256') or not component.get('indexSha256'):
             raise ValueError('frozen teacher development assessment required')
-        context=json.loads(resolve_reference(os.environ['RIGHELT_EXECUTION_CONTEXT']).read_bytes())
-        inputs={b['sha256']:b for b in context['inputObjects']}
-        def read_object(sha):
-            if sha not in inputs:raise ValueError('development input absent from frozen execution')
-            return read_bound(inputs[sha])
+        context,read_object=execution_objects(execution)
         index=json.loads(read_object(component['indexSha256']))
         profile_sha=index.get('profiles',[None])[0] if len(index.get('profiles',[]))==1 else None
         if (profile_sha is None or index.get('beforeProfiles',{}).get(profile_sha)!=component.get('beforeProfileSha256')

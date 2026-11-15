@@ -117,11 +117,12 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
   const recipe = manifest.inputs.find(a => a.sha256 === manifest.recipeSha256);
   assert(recipe, 'approved recipe artifact missing');
   const contextPath = await containedFile(root, `${phase.runDir}/execution-context.json`, { createParents: true });
-  await fs.writeFile(contextPath, JSON.stringify({ execution: executionIdentity(manifest, work.manifestSha256, phase, work.generation), completedWorkIds: phase.workIds, inputObjects:manifest.inputs, recoveryFiles: work.snapshot?.phaseIndex === work.phaseIndex ? work.snapshot.files : [] }), { mode: 0o600 });
+  const ready = await client.json('heartbeat', { restoredSnapshotId: work.snapshot?.id });
+  await fs.writeFile(contextPath, JSON.stringify({ phaseDeadline:ready.phaseDeadline,phaseSeconds:phase.seconds,execution: executionIdentity(manifest, work.manifestSha256, phase, work.generation), completedWorkIds: phase.workIds, inputObjects:manifest.inputs, recoveryFiles: work.snapshot?.phaseIndex === work.phaseIndex ? work.snapshot.files : [] }), { mode: 0o600 });
   const executionRecipe = manifest.inputs.find(a => a.sha256 === manifest.executionRecipeSha256);
   assert(executionRecipe, 'execution recipe artifact missing');
   const failurePath = `${phase.runDir}/hosted-infrastructure-${work.generation}.json`;
-  let lease = (await client.json('heartbeat', { restoredSnapshotId: work.snapshot?.id })).leaseExpires;
+  let lease = ready.leaseExpires;
   const argv = work.resume || work.snapshot?.phaseIndex === work.phaseIndex ? phase.resumeArgv : phase.argv;
   const child = spawn(argv[0], argv.slice(1), { cwd: root, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: {
     ...runtimeEnvironment(env), LANG: 'C.UTF-8', PYTHONPATH: 'tools/ai-trainer',
