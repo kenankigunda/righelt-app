@@ -1,6 +1,6 @@
 // Durable Object KV values have a size limit. A run inventory can exceed it,
 // so commit bounded binary chunks and their head in one storage transaction.
-const CHUNK_BYTES = 48 * 1024;
+export const LEDGER_CHUNK_BYTES = 48 * 1024;
 export class LedgerStorage {
   constructor(storage) { this.storage = storage; }
   async get(key) {
@@ -18,10 +18,10 @@ export class LedgerStorage {
     return JSON.parse(new TextDecoder().decode(bytes));
   }
   async put(key, value) {
-    const bytes = new TextEncoder().encode(JSON.stringify(value)), count = Math.ceil(bytes.length / CHUNK_BYTES);
+    const bytes = new TextEncoder().encode(JSON.stringify(value)), count = Math.ceil(bytes.length / LEDGER_CHUNK_BYTES);
     await this.storage.transaction(async tx => {
       const old = await tx.get(`${key}/head`), updates = {};
-      for (let i = 0; i < count; i++) updates[`${key}/${i}`] = bytes.slice(i * CHUNK_BYTES, (i + 1) * CHUNK_BYTES);
+      for (let i = 0; i < count; i++) updates[`${key}/${i}`] = bytes.slice(i * LEDGER_CHUNK_BYTES, (i + 1) * LEDGER_CHUNK_BYTES);
       updates[`${key}/head`] = { chunks: count, bytes: bytes.length };
       await tx.put(updates);
       if (old?.chunks > count) await tx.delete(Array.from({ length: old.chunks - count }, (_, i) => `${key}/${count + i}`));

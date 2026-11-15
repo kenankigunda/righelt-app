@@ -11,6 +11,7 @@ test('a failed subprocess retains diagnostic logs before its host is deleted', a
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'compute-failed-log-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const f = await fixture();
+  f.manifest.phases[0].device = 'cpu';
   f.manifest.phases[0].argv = [process.execPath, '-e', "console.error('specific trainer failure');process.exit(1)"];
   await f.launch();
   await fs.writeFile(path.join(root, '.compute-source.json'), JSON.stringify({ sourceRevision: f.manifest.sourceRevision, dependencySha256: f.manifest.dependencySha256 }));
@@ -35,6 +36,7 @@ test('a failed subprocess retains diagnostic logs before its host is deleted', a
   assert.equal(inventory.status.status, 'failed');
   assert.match(new TextDecoder().decode(await client.download(inventory.status.latestLog)), /specific trainer failure/);
   assert(inventory.files.some(a => a.path.endsWith('.log')));
-  await f.core.clear('pilot', { verified: true, manifestSha256: inventory.manifestSha256, inventorySha256: await sha256(encode(canonical(inventory))) });
+  const receipt={verified:true,manifestSha256:inventory.manifestSha256,inventorySha256:await sha256(encode(canonical(inventory)))};
+  await f.protect(receipt);await f.core.clear('pilot',receipt);
   assert.equal((await f.state()).latestLog, null);
 });

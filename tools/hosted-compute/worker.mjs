@@ -8,8 +8,18 @@ import { Client, InfrastructureError } from './client.mjs';
 import { POLICY, assert, canonical, encode, safeRunPath, sha256 } from './policy.mjs';
 
 import { executionIdentity, verifyResult } from './result.mjs';
+import {probeRuntime,verifyRuntime,runtimeEnvironment} from './runtime.mjs';
 
 const exec = promisify(execFile);
+// Uploads have bounded request timeouts. Renew at the ordinary heartbeat
+// cadence rather than saving the whole controller ledger once per file.
+export function snapshotLeaseRenewal(heartbeat, clock = Date.now) {
+  let renewedAt = -Infinity;
+  return async () => {
+    if (clock() - renewedAt < POLICY.heartbeatMs) return;
+    await heartbeat(); renewedAt = clock();
+  };
+}
 export async function containedFile(root, relative, { createParents = false } = {}) {
   assert(safeRunPath(relative), 'unsafe run path');
   let parent = root;
@@ -63,15 +73,24 @@ async function hydrate(client, root, files) {
     await fs.writeFile(target, bytes, { mode: 0o600 });
   }
 }
-export async function runWorker({ env = process.env, root = process.cwd(), client, clock = Date.now, cleanup, snapshotter } = {}) {
+export async function runWorker({ env = process.env, root = process.cwd(), client, clock = Date.now, cleanup, snapshotter, runtimeProbe=probeRuntime } = {}) {
   root = await fs.realpath(root);
   client ??= new Client({ url: env.COMPUTE_URL, id: env.COMPUTE_ID, token: env.COMPUTE_WORKER_TOKEN, generation: Number(env.COMPUTE_GENERATION) });
   const work = await client.json('work'), { manifest, phase } = work;
   assert(await sha256(encode(canonical(manifest))) === work.manifestSha256, 'campaign manifest changed');
   const imageIdentity = JSON.parse(await fs.readFile(path.join(root, '.compute-source.json'), 'utf8'));
   assert(imageIdentity.sourceRevision === manifest.sourceRevision && imageIdentity.dependencySha256 === manifest.dependencySha256, 'container/source provenance mismatch');
+  let runtime;
+  if(phase.device==='cuda'){
+    try{runtime=await verifyRuntime(await runtimeProbe(root,env),imageIdentity,manifest);}
+    catch{
+      await client.json('finish',{kind:'correctness',outputs:{},files:[]});
+      return {kind:'correctness',exitCode:null,reason:'unqualified CUDA runtime before input hydration'};
+    }
+  }
   await hydrate(client, root, manifest.inputs);
   if (work.snapshot) await hydrate(client, root, work.snapshot.files);
+  if(runtime)await fs.writeFile(await containedFile(root,`${phase.runDir}/runtime-${work.generation}.json`,{createParents:true}),canonical(runtime)+'\n',{flag:'wx',mode:0o600});
   // Completed durable phase evidence is reusable, with its original identity.
   // Do not rerun immutable jobs or relabel it as work from this generation.
   if (work.snapshot?.phaseIndex === work.phaseIndex && phase.outputs.every(name => work.snapshot.files.some(f => f.path === phase.outputPaths[name]))) {
@@ -105,8 +124,9 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
   let lease = (await client.json('heartbeat', { restoredSnapshotId: work.snapshot?.id })).leaseExpires;
   const argv = work.resume || work.snapshot?.phaseIndex === work.phaseIndex ? phase.resumeArgv : phase.argv;
   const child = spawn(argv[0], argv.slice(1), { cwd: root, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: {
-    PATH: env.PATH, HOME: env.HOME, LANG: 'C.UTF-8', PYTHONPATH: 'tools/ai-trainer',
+    ...runtimeEnvironment(env), LANG: 'C.UTF-8', PYTHONPATH: 'tools/ai-trainer',
     RIGHELT_TRAINING_DEVICE: phase.device, RIGHELT_HOSTED: '1',
+    ...(manifest.portableClosureSha256 ? {RIGHELT_PORTABLE_CLOSURE_PATH:path.join(root,manifest.inputs.find(a=>a.sha256===manifest.portableClosureSha256).path),RIGHELT_PORTABLE_CLOSURE_SHA256:manifest.portableClosureSha256,RIGHELT_PORTABLE_ROOT:root}:{}),
     RIGHELT_EXPECTED_RECIPE_PATH: path.join(root, recipe.path), RIGHELT_EXPECTED_RECIPE_SHA256: manifest.recipeSha256,
     RIGHELT_EXECUTION_CONTEXT: contextPath,
     RIGHELT_EXECUTION_RECIPE_PATH: path.join(root, executionRecipe.path), RIGHELT_EXECUTION_RECIPE_SHA256: manifest.executionRecipeSha256,
@@ -147,9 +167,10 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
     if (!done) args.push('--pid', String(child.pid), '--parent', String(process.pid));
     const { stdout } = await exec('tools/ai-trainer/.venv/bin/python', args, { cwd: root, env: { ...env, PYTHONPATH: 'tools/ai-trainer' }, timeout: 30000 });
     const snapshotRoot = JSON.parse(stdout).directory;
-    try { return await publishSnapshot(client, snapshotRoot, phase.runDir, root, phase.kind === 'training', async () => {
+    const renew = snapshotLeaseRenewal(async () => {
       lease = (await client.json('heartbeat', { restoredSnapshotId: work.snapshot?.id })).leaseExpires;
-    }); }
+    }, clock);
+    try { return await publishSnapshot(client, snapshotRoot, phase.runDir, root, phase.kind === 'training', renew); }
     finally { await fs.rm(snapshotRoot, { recursive: true }); }
   };
   const publishLog = async () => {

@@ -1,10 +1,15 @@
+import { validateOperatorAttestation } from './operator-attestation.mjs';
+import { qualifyPilot } from './report.mjs';
+import { qualificationIdentity } from './qualification.mjs';
+import { cashPlan } from './cash.mjs';
+import { validateScientificAdmission } from './experiment.mjs';
 import { verifyResult } from './result.mjs';
 import { POLICY, TERMINAL, assert, artifact, canonical, encode, safeName, sha256, validateManifest, reserveCents } from './policy.mjs';
 
 const stopping = new Set(['stopping', 'cleanup-uncertain']);
 export class Controller {
-  constructor({ storage, bucket, providers, config, now = Date.now, token }) {
-    Object.assign(this, { storage, bucket, providers, config, now, token });
+  constructor({ storage, bucket, providers, config, externalControl, now = Date.now, token }) {
+    Object.assign(this, { storage, bucket, providers, config, externalControl, now, token });
   }
   async load() { return await this.storage.get('ledger') ?? { schema: 1, campaigns: {}, months: {} }; }
   async save(db) { await this.storage.put('ledger', db); }
@@ -35,16 +40,33 @@ export class Controller {
     const db = await this.load(), c = this.campaign(db, id), now = this.now();
     if (c.status !== 'staged') return this.status(c);
     assert(this.config.enabled === true && this.config.authorizedCents >= c.manifest.maxCents, 'paid compute is not activated or authorized');
-    assert(c.manifest.deadline > now && c.manifest.deadline - now <= 72 * 3600000, 'pilot deadline must be within 72 hours');
+    assert(c.manifest.deadline > now && c.manifest.deadline - now <= POLICY.campaignMs, 'pilot deadline must be within 24 hours');
     assert(!Object.values(db.campaigns).some(x => x !== c && !TERMINAL.has(x.status) && x.status !== 'staged'), 'another campaign owns compute');
     for (const input of c.manifest.inputs) assert(c.objects[input.sha256]?.bytes === input.bytes, 'input upload incomplete');
-    for (const p of c.manifest.phases) assert(p.host.quoteExpires > now, 'host quote expired');
-    const month = new Date(now).toISOString().slice(0, 7), committed = db.months[month] ?? 0;
+    if(c.manifest.purpose==='scientific-comparison')await validateScientificAdmission(c.manifest,{read:async input=>{
+      const object=await this.bucket.get(`${id}/${input.sha256}`);assert(object,'scientific prerequisite missing');
+      return object.arrayBuffer();
+    }});
+    for (const p of c.manifest.phases) assert(p.host.quoteObservedAt<=now && p.host.quoteExpires > now, 'host quote expired or unknown');
+    assert(this.externalControl, 'external cleanup prearm unavailable');
+    await this.externalControl(c.manifest).authorizeLaunch(c.manifest, { phaseIndex: 0, generation: 1 });
+    if(c.manifest.mode==='unattended'){
+      const raw=await this.bucket.get(`${id}/${c.manifest.readinessSha256}`);assert(raw,'readiness evidence missing');
+      const report=JSON.parse(new TextDecoder().decode(await raw.arrayBuffer()));
+      assert((await qualifyPilot(report)).qualified,'supervised reliability qualification is incomplete');
+      assert(c.manifest.phases.every(p=>p.device==='cuda' && canonical(qualificationIdentity(c.manifest,p.host,c.manifest.runtimeSha256))===canonical(qualificationIdentity(report,report.host,report.runtimeSha256))),'readiness source, runtime, backend or host differs');
+    }
+    const cash=cashPlan(c.manifest.cash,c.manifest.maxCents);
+    const {computeUsageCapCents,cloudflareUsageCapCents,...funding}=c.manifest.cash;
+    assert(!db.cashFunding || canonical(db.cashFunding)===canonical(funding),'pilot funding plan is frozen');
+    assert((db.creditAllocatedCents??0)+c.manifest.maxCents<=cash.fundedCreditCents,'allocated credit exhausted');
+    assert((db.cloudflareAllocatedCents??0)+cloudflareUsageCapCents<=cash.cloudflareReservedCents,'Cloudflare allocated funding exhausted');
+    db.cashFunding=funding;db.cashCommittedCents=cash.cashCommittedCents;
+    db.creditAllocatedCents=(db.creditAllocatedCents??0)+c.manifest.maxCents;
+    db.cloudflareAllocatedCents=(db.cloudflareAllocatedCents??0)+cloudflareUsageCapCents;
     assert((db.pilotReservedCents ?? 0) + c.manifest.maxCents <= this.config.authorizedCents, 'pilot authorization exhausted');
     db.pilotReservedCents = (db.pilotReservedCents ?? 0) + c.manifest.maxCents;
-    assert(committed + c.manifest.maxCents <= POLICY.monthlyCents, 'monthly envelope exhausted');
-    // Conservative reservation remains committed, even if a provider is unreachable.
-    db.months[month] = committed + c.manifest.maxCents; c.month = month;
+    assert(c.manifest.cash.cloudflare.fundedFrom <= now && c.manifest.cash.cloudflare.reviewAt > now, 'Cloudflare retention review is overdue');
     c.status = 'queued'; this.event(c, 'authorized', { reference: c.manifest.authorizationReference });
     await this.save(db); return this.status(c);
   }
@@ -56,6 +78,9 @@ export class Controller {
     assert(bytes.byteLength === a.bytes && await sha256(bytes) === a.sha256, 'artifact checksum mismatch');
     assert(Object.keys(c.objects).length < POLICY.maxArtifacts || c.objects[a.sha256], 'artifact inventory full');
     if (generation === null && !c.pendingObjects?.[a.sha256]) assert(c.manifest.inputs.some(x => x.sha256 === a.sha256 && x.bytes === a.bytes), 'unlisted input');
+    // Identical committed bytes still pass every authorization and integrity
+    // check, but need no pending/commit writes of the growing ledger.
+    if (c.objects[a.sha256]?.bytes === a.bytes && !c.pendingObjects?.[a.sha256]) return a;
     const key = `${id}/${a.sha256}`;
     c.pendingObjects ??= {};
     c.pendingObjects[a.sha256] = { bytes: a.bytes }; await this.save(db);
@@ -67,6 +92,7 @@ export class Controller {
     assert(c.generation === generation && ['provisioning', 'running'].includes(c.status) && a &&
       this.now() < (a.leaseExpires ?? a.startedAt + POLICY.startupMs) && this.now() < c.manifest.deadline &&
       (!c.phaseDeadline || this.now() < c.phaseDeadline), 'worker fenced');
+    assert(!a.cutoff || this.now() < a.cutoff, 'external funded cutoff reached');
   }
   durabilityAt(c, attempt) {
     return Math.max(attempt.workStartedAt, c.snapshot?.phaseIndex === c.phase ? c.snapshot.capturedAt : attempt.workStartedAt);
@@ -74,8 +100,17 @@ export class Controller {
   recoveryReady(c) {
     return c.manifest.phases[c.phase].kind !== 'training' || c.snapshot?.phaseIndex === c.phase;
   }
+  async qualifyAttempt(db,c) {
+    const a=c.attempts.at(-1),phase=c.manifest.phases[c.phase];
+    if(!a.placement){
+      const record=await this.providers.inspect(a.provider,a.resourceId);
+      try{a.placement=this.providers.qualify(record,phase.host,a.name);await this.save(db);}
+      catch(error){c.status='stopping';c.nextStatus='failed';c.failure='unapproved-placement';await this.save(db);throw error;}
+    }
+  }
   async work(id, generation) {
     const db = await this.load(), c = this.campaign(db, id); this.fence(c, generation);
+    await this.qualifyAttempt(db,c);
     return { manifest: c.manifest, manifestSha256: c.manifestSha256, phaseIndex: c.phase, generation,
       phase: c.manifest.phases[c.phase], resume: c.attempts.at(-1)?.recovery === true, snapshot: c.snapshot ?? null, previousOutputs: c.outputs,
       leaseExpires: this.now() + POLICY.leaseMs };
@@ -84,6 +119,7 @@ export class Controller {
     const db = await this.load(), c = this.campaign(db, id); this.fence(c, generation);
     assert(c.manifest.deadline > this.now(), 'campaign expired');
     const phase = c.manifest.phases[c.phase], a = c.attempts.at(-1);
+    await this.qualifyAttempt(db,c);
     const reserve = Math.ceil(phase.host.hourlyCents * POLICY.startupMs / 3600000);
     assert(this.cost(c) + reserve < c.manifest.maxCents - reserveCents(c.manifest.maxCents), 'compute budget exhausted');
     assert(!c.phaseDeadline || this.now() < c.phaseDeadline, 'phase deadline exceeded');
@@ -98,15 +134,17 @@ export class Controller {
     }
     c.lastHeartbeat = this.now(); c.status = 'running';
     a.workStartedAt ??= this.now(); c.phaseDeadline ??= this.now() + phase.seconds * 1000;
-    a.leaseExpires = Math.min(this.now() + POLICY.leaseMs, c.manifest.deadline, c.phaseDeadline); await this.save(db);
+    a.leaseExpires = Math.min(this.now() + POLICY.leaseMs, c.manifest.deadline, c.phaseDeadline, a.cutoff ?? Infinity); await this.save(db);
     return { leaseExpires: a.leaseExpires };
   }
   async claim(id, generation, body) {
     const db = await this.load(), c = this.campaign(db, id); this.fence(c, generation);
     assert(/^[a-f0-9]{64}$/.test(body?.key), 'invalid work claim');
+    assert(body.allowCreate===undefined||typeof body.allowCreate==='boolean','invalid claim creation policy');
     c.claims ??= {};
     assert(Object.keys(c.claims).length < POLICY.maxArtifacts || c.claims[body.key], 'claim inventory full');
     if (c.claims[body.key]) return { created: false, record: c.claims[body.key] };
+    if (body.allowCreate===false) return {created:false,unclaimed:true};
     c.claims[body.key] = { generation, at: this.now(), phaseIndex: c.phase };
     await this.save(db); return { created: true };
   }
@@ -146,6 +184,7 @@ export class Controller {
       const prior = c.snapshot?.phaseIndex === c.phase && c.snapshot.files.find(f => f.path === file.path && f.sha256 === file.sha256 && f.bytes === file.bytes);
       return { ...file, originGeneration: prior ? (prior.originGeneration ?? c.snapshot.generation) : generation };
     });
+    if(c.snapshot?.phaseIndex===c.phase && c.snapshot.files.find(f=>f.path.endsWith('/latest.json'))?.sha256 !== snapshot.files.find(f=>f.path.endsWith('/latest.json'))?.sha256)c.previousSnapshot=c.snapshot;
     c.snapshot = { ...snapshot, files, phaseIndex: c.phase, generation }; this.event(c, 'checkpoint-published', { id: snapshot.id });
     await this.save(db); return { accepted: true };
   }
@@ -204,7 +243,7 @@ export class Controller {
   }
   async step(db, c) {
     const now = this.now(), phase = c.manifest.phases[c.phase], a = c.attempts.at(-1);
-    if (now >= c.manifest.deadline || this.cost(c) >= c.manifest.maxCents - reserveCents(c.manifest.maxCents) || !this.config.enabled) {
+    if (now >= c.manifest.deadline || (a?.cutoff && now >= a.cutoff) || this.cost(c) >= c.manifest.maxCents - reserveCents(c.manifest.maxCents) || !this.config.enabled) {
       c.status = 'stopping'; c.nextStatus = 'failed'; c.failure = 'deadline-budget-or-disabled';
     }
     if (['provisioning', 'running'].includes(c.status)) {
@@ -227,6 +266,13 @@ export class Controller {
       if (matches.length && a.uncertain) { a.uncertain = false; await this.save(db); }
       for (const resource of matches) await this.providers.remove(a.provider, resource.id, a.name);
       if (matches.length) { c.cleanupVerified = false; await this.save(db); return; }
+      if (a.resourceId) {
+        const remaining = await this.providers.inspect(a.provider, a.resourceId);
+        if (remaining) {
+          await this.providers.remove(a.provider, a.resourceId, a.name);
+          c.cleanupVerified = false; await this.save(db); return;
+        }
+      }
       if (a.uncertain) { c.status = 'cleanup-uncertain'; c.failure = 'uncertain-create-requires-reconciliation'; await this.save(db); return; }
       a.endedAt ??= now; c.cleanupVerified = true;
       c.status = c.nextStatus ?? 'failed'; delete c.nextStatus;
@@ -234,7 +280,7 @@ export class Controller {
       this.event(c, 'cleanup-verified'); await this.save(db); return;
     }
     if (c.status === 'repairing') {
-      if (!this.repairAvailable(c)) { c.status = 'failed'; c.failure = 'repair-allowance-exhausted'; await this.save(db); return; }
+      if (!this.repairAvailable(c) || (c.replacementAttempts ?? 0) >= POLICY.maxReplacementAttempts) { c.status = 'failed'; c.failure = 'repair-allowance-exhausted'; await this.save(db); return; }
       c.status = 'queued'; c.recovering = true;
     }
     if (c.status !== 'queued') return;
@@ -245,9 +291,13 @@ export class Controller {
     if (this.cost(c) + projected > c.manifest.maxCents - reserveCents(c.manifest.maxCents)) {
       c.status = 'failed'; c.failure = 'insufficient-phase-budget'; await this.save(db); return;
     }
-    if (c.recovering) assert(this.repairAvailable(c), 'repair allowance exhausted');
+    if (c.recovering) assert(this.repairAvailable(c) && (c.replacementAttempts ?? 0) < POLICY.maxReplacementAttempts, 'repair allowance exhausted');
+    assert(this.externalControl, 'external cleanup prearm unavailable');
+    const authority = await this.externalControl(c.manifest).authorizeLaunch(c.manifest, { phaseIndex: c.phase, generation: c.generation + 1 });
+    assert(typeof authority?.name === 'string' && Number.isSafeInteger(authority.cutoff) && now < authority.cutoff && this.now() < authority.cutoff, 'external cleanup fence or cutoff');
+    if (c.recovering) c.replacementAttempts = (c.replacementAttempts ?? 0) + 1;
     c.generation++; c.lastHeartbeat = null; c.cleanupVerified = false; c.status = 'provisioning';
-    const launch = { name: `righelt-${c.manifest.id}-${c.generation}`, provider: phase.host.provider, startedAt: now,
+    const launch = { quote: structuredClone(phase.host), name: authority.name, prearmSha256: authority.prearmSha256, cutoff: authority.cutoff, provider: phase.host.provider, startedAt: now,
       hourlyCents: phase.host.hourlyCents, recovery: c.recovering === true, uncertain: true };
     c.attempts.push(launch); this.event(c, 'launch-requested', { generation: c.generation }); await this.save(db);
     try {
@@ -302,7 +352,7 @@ export class Controller {
       assert(!page.truncated || cursor, 'incomplete artifact inventory');
     } while (cursor);
     await this.save(db);
-    return { id, manifestSha256: c.manifestSha256, manifest: c.manifest, status: this.status(c), claims: c.claims ?? {}, attempts: c.attempts, files: c.files ?? [], fileHistory: c.fileHistory ?? [], missingUploads: c.missingUploads ?? {},
+    return { id, manifestSha256: c.manifestSha256, manifest: c.manifest, status: this.status(c), claims: c.claims ?? {}, counters:c.counters??{}, recoveryPoints:[c.previousSnapshot,c.snapshot].filter(Boolean), attempts: c.attempts, files: c.files ?? [], fileHistory: c.fileHistory ?? [], missingUploads: c.missingUploads ?? {},
       objects: Object.entries(c.objects).map(([hash, value]) => ({ name: hash, sha256: hash, bytes: value.bytes })) };
   }
   async clear(id, receipt) {
@@ -310,6 +360,8 @@ export class Controller {
     if (prior.cleared) { assert(canonical(prior.collection) === canonical(receipt), 'collection receipt differs'); return this.status(prior); }
     const inventory = await this.inventory(id), db = await this.load(), c = this.campaign(db, id);
     assert(receipt?.manifestSha256 === c.manifestSha256 && receipt.inventorySha256 === await sha256(encode(canonical(inventory))) && receipt.verified === true, 'verified collection receipt required');
+    validateOperatorAttestation(receipt.backup, { campaign: id, manifestSha256: c.manifestSha256,
+      inventorySha256: receipt.inventorySha256, recoveryPoints: inventory.recoveryPoints });
     // Keep the inventory and hashes until every deletion succeeds. Interrupted
     // clearing is repeatable and can never re-open artifact writes.
     for (const a of inventory.objects) await this.bucket.delete(`${id}/${a.sha256}`);

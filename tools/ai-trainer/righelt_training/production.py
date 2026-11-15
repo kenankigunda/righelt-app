@@ -3,12 +3,13 @@ import hashlib
 import json
 from pathlib import Path
 from .replay import partition_for_family
+from .portable import read_bound
 
 
 def corpus_record(binding):
     if not isinstance(binding, dict) or set(binding) != {'path', 'sha256'}:
         raise ValueError('invalid production corpus binding')
-    raw = Path(binding['path']).read_bytes()
+    raw = read_bound(binding)
     if hashlib.sha256(raw).hexdigest() != binding['sha256']:
         raise ValueError('production corpus checksum mismatch')
     corpus = json.loads(raw)

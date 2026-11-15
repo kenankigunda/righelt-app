@@ -116,6 +116,7 @@ def open_plan(path,*,experiment_root=None):
 def infer(model,encoded,device,monitor=None):
     # Include device transfers and synchronization inside the same hard bound.
     with monitor.operation('arena-inference',30) if monitor else nullcontext():
+        if hasattr(model,'infer_export'):return model.infer_export(encoded)
         x=torch.tensor(encoded,dtype=torch.float32,device=device).reshape(1,CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize'])
         with torch.inference_mode():policy,value=model(x)
         if not torch.isfinite(policy).all() or not torch.isfinite(value).all():raise ValueError('nonfinite arena inference')
@@ -126,6 +127,9 @@ def play_game(job,models,deadline,device,*,allocation=lambda:{'paused':False,'wo
     remaining=deadline-time.monotonic()
     if remaining<20:return {'status':'unfinished','reason':'budget'}
     game_seconds=FOLLOWUP_POLICY['gameSeconds'] if job.get('evaluationWorkload')==FOLLOWUP_POLICY['workload'] else 600
+    if job.get('prospectiveEvaluation') is True:
+        game_seconds=job.get('gameSeconds')
+        if not isinstance(game_seconds,(int,float)) or not 0<game_seconds<=3600:raise ValueError('invalid prospective whole-game budget')
     game_deadline=min(deadline-10,time.monotonic()+game_seconds)
     job={**job,'command':'arena','budgetMs':max(1,(game_deadline-time.monotonic())*1000)}
     process=subprocess.Popen(['node','--import','tsx',str(ROOT/'tools/ai-trainer/engine-worker.mjs')],cwd=ROOT,

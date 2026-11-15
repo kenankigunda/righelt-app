@@ -12,17 +12,8 @@ test('Runpod uses API v2, digest-pinned image and one noninterruptible CPU-rich 
   assert.equal(calls.length, 1); assert.equal(calls[0].url, 'https://api.runpod.io/v2/pods');
   const body = JSON.parse(calls[0].body);
   assert.equal(body.gpu.count, 1); assert.equal(body.gpu.minVcpuCountPerGpu, 16);
+  assert.deepEqual(body.dataCenterIds,['US-TEST-1']);assert.equal(body.gpu.minCudaVersion,'13.0');
   assert.equal(body.cloud, 'SECURE'); assert.equal(body.interruptible, undefined); assert.deepEqual(body.ports, []);
-});
-test('Hetzner bootstrap uses valid JSON cloud-config and keeps worker secrets out of shell code', async () => {
-  let body;
-  const p = new Providers({ HETZNER_API_TOKEN: 'private' }, async (_url, options) => { body = JSON.parse(options.body); return Response.json({ server: { id: 1, name: 'owned' } }); });
-  const f = await fixture(); await p.create(f.manifest.phases[0].host, 'owned', { COMPUTE_WORKER_TOKEN: 'sensitive-123' });
-  const config = JSON.parse(body.user_data.slice('#cloud-config\n'.length));
-  assert.equal(config.write_files[0].permissions, '0600');
-  assert.equal(config.write_files[0].content, '{"COMPUTE_WORKER_TOKEN":"sensitive-123"}');
-  assert(!JSON.stringify(config.runcmd).includes('sensitive-123'));
-  assert(!config.runcmd.flat().includes('sh')); assert.equal(body.server_type, 'ccx23');
 });
 test('inventory follows every opaque cursor and deletion requires matching ownership', async () => {
   const calls = [];
@@ -40,4 +31,12 @@ test('provider errors redact response bodies and never repeat create calls', asy
   let calls = 0; const p = new Providers({ RUNPOD_API_KEY: 'private' }, async () => { calls++; return new Response('secret echoed by provider', { status: 500 }); });
   await assert.rejects(p.request('runpod', '/pods', 'POST', {}), e => !e.message.includes('secret') && /500/.test(e.message));
   assert.equal(calls, 1);
+});
+
+test('actual placement and quote must match before input access',async()=>{
+ const p=new Providers({RUNPOD_API_KEY:'test'}),f=await fixture(),h=f.manifest.phases[0].host;
+ const r={id:'owned',name:'owned',image:h.image,cudaVersion:h.minCudaVersion,dataCenterId:h.dataCenterId,cloud:'SECURE',gpu:{id:h.gpu,count:1,vcpuCount:16,memory:64},disk:h.diskGb,cost:1};
+ assert.equal(p.qualify(r,h,'owned').dataCenterId,h.dataCenterId);
+ for(const bad of [{cudaVersion:'12.8'},{cudaVersion:null},{dataCenterId:'EU-OTHER-1'},{image:'unapproved'},{cost:2},{gpu:{...r.gpu,count:0}}])assert.throws(()=>p.qualify({...r,...bad},h,'owned'),/differs/);
+ await assert.rejects(p.request('hetzner','/servers'),/only Runpod/);
 });

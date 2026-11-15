@@ -46,8 +46,13 @@ def completed_search(answer):
 def repair_cache(previous,current,revision):
     for field in ('configSha256','referenceDevice','modelSha256','corpusSha256','profile','modelSeed'):
         if previous.get(field)!=current.get(field):raise ValueError('repair reference identity mismatch: '+field)
-    subprocess.run(['git','rev-parse','--verify',revision+'^{commit}'],cwd=ROOT,check=True,stdout=subprocess.DEVNULL)
-    subprocess.run(['git','diff','--exit-code',revision,'--','packages/computer-player/src','packages/game-engine/src','packages/shared-types/src'],cwd=ROOT,check=True,stdout=subprocess.DEVNULL)
+    from .source_image import source_image
+    image=source_image()
+    if image is None:
+        subprocess.run(['git','rev-parse','--verify',revision+'^{commit}'],cwd=ROOT,check=True,stdout=subprocess.DEVNULL)
+        subprocess.run(['git','diff','--exit-code',revision,'--','packages/computer-player/src','packages/game-engine/src','packages/shared-types/src'],cwd=ROOT,check=True,stdout=subprocess.DEVNULL)
+    elif revision!=image['sourceRevision']:
+        raise ValueError('historical repair source is not in this source-only image')
     rows={row['id']:row for row in previous['states']}
     if len(rows)!=len(previous['states']):raise ValueError('duplicate reference state')
     return rows

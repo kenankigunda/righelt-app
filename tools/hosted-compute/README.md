@@ -1,249 +1,133 @@
-# Hosted computer-player jobs (T-132)
+# Runpod computer-player jobs (T-132)
 
-Run the existing trainer on one remote host while the Mac does other work or
-sleeps. A separate Cloudflare controller owns admission, budget reservations,
-durable attempt claims, recovery and deletion. There is no hosted language-model
-agent. New experiments and code repairs wait for an active development agent.
+One Runpod Secure Cloud on-demand GPU Pod runs the learner and game workers. The existing Cloudflare Worker/SQLite Durable Object owns budgets, fenced worker leases, durable work receipts and recovery. A private GitHub cleanup workflow can terminate exact prearmed Pods when the Mac or Cloudflare is unavailable. There is no hosted language-model agent and no Hetzner adapter.
 
-**The checked-in service is disabled.** Implementation and local fault tests do
-not authorize deployment, paid jobs, production export, model promotion or an
-existing paused schedule. The paid pilot and actual CUDA/browser/provider proof
-remain activation gates.
+Activation is disabled in the checked-in configuration. Code and local tests do not establish live CUDA, account, image, cleanup or playing-strength qualification. Account setup belongs to the deployment planning operator. Do not activate schedules, publish images, deploy, spend or promote a model without the applicable launch package authority.
 
-## Operator commands
+## Commands and credentials
 
-Use `pnpm ai:hosted COMMAND ...`. Every command returns JSON. Controller requests
-use `COMPUTE_URL` and the private `COMPUTE_ADMIN_TOKEN`; do not put either token in
-a manifest, Git, command arguments or chat. Local `plan` and `compare` need no
-credentials.
+Use `pnpm ai:hosted COMMAND`. Operator credentials stay in the dedicated macOS Keychain entries prepared by the setup helper. Never put secrets in arguments, manifests, chat or shell exports. The existing GitHub CLI uses its own keyring login directly for prearming. Its token is never extracted.
 
-| Command | Effect |
+| Command | Purpose |
 | --- | --- |
-| `plan campaign.json` | Validate and hash a frozen campaign without uploading or spending |
-| `submit campaign.json --inputs /absolute/prepared-checkout` | Verify inputs, upload, reserve the authorized budget and queue a remote alarm |
-| `status ID` / `logs ID` | Inspect phase, estimated spend, failures and durable transition events |
-| `cancel ID` | Fence the worker and request provider deletion |
-| `collect ID --out /absolute/new-directory` | Download all blobs and evidence after verified compute cleanup, then publish a local checksum receipt |
-| `clear ID --collection /absolute/collection` | Reverify the local inventory and every object before clearing remote artifacts |
-| `compare cpu-report.json --against gpu-report.json` | Compare a matched two-host workload, rejecting incompatible inputs or unqualified hosts |
+| `plan MANIFEST` | Validate and hash frozen work without spending |
+| `qualify REPORT_JSON` | Check raw operational drill receipts and cumulative cost feasibility |
+| `submit MANIFEST --inputs CHECKOUT` | Verify frozen input bytes, stage and request authorized work |
+| `status ID` / `logs ID` | Read status, estimated usage and bounded failure logs |
+| `cancel ID` | Fence work and request exact Pod termination |
+| `collect ID --out NEW_DIRECTORY` | Require verified compute cleanup, then download and re-read all objects |
+| `backup ID --collection DIRECTORY` | Upload through the operator-only S3 adapter and verify a fresh cloud-only restore |
+| `backup ID --collection DIRECTORY --accepted-output PHASE/OUTPUT` | Pin an explicitly accepted model and its essential proof |
+| `backup-status ID` / `backup-abort ID` | Inspect or abandon pending operator backup work |
+| `restore ID --root ROOT_ID --download NEW_DIRECTORY --out NEW_DIRECTORY` | Restore from private cloud objects into an empty destination |
+| `accepted ID --out NEW_DIRECTORY` | Retrieve pinned accepted-model essentials |
+| `clear ID --collection DIRECTORY --backup-attestation FILE` | Reverify local collection and submit the exact operator restore attestation before clearing temporary campaign objects |
 
-The collection contains `inventory.json`, `collection.json` and content-addressed
-files in `objects/`. Inventory paths reconstruct recovery files under the same
-`/workspace/righelt/.ai-runs/` layout. Never relocate a historical checkpoint by
-editing its ancestry or rewriting archive hashes. Prepare and audit a portable
-warm start under a new allocation instead. Preserve the original evidence.
+Nonsecret operator settings are `COMPUTE_BACKUP_ENDPOINT`, `COMPUTE_BACKUP_BUCKET` and the public `COMPUTE_LINEAGE_RECIPIENT`. The backup credential provider reads only `com.righelt.hosted-compute.backup-access-key-id`, `.backup-secret-access-key` and `.lineage-age-identity`, account `operator`. Controller administration uses its dedicated credential through the approved operator wrapper. A credential provider can also be injected in process, without exporting secrets.
 
-## Build and qualify the execution image
+The controller gets `ADMIN_TOKEN`, `WORKER_SIGNING_KEY`, restricted `RUNPOD_API_KEY` and a read-only `COMPUTE_CONTROL_READ_TOKEN`. The training host gets only its generation-fenced controller token. Neither controller nor training host has the backup bucket binding, S3 credentials, lineage decryption key or GitHub write authority.
 
-Commit source first. From the candidate checkout:
+## Cash and bounded execution
 
-```
-node tools/hosted-compute/prepare-context.mjs /absolute/new-source-context
-```
+The schema-2 cash plan has separate, nontransferable ceilings:
 
-This creates an independent local source clone, including Git provenance required
-by existing trainer gates. Build `tools/hosted-compute/Dockerfile` from that
-context. Supply the returned revision as `SOURCE_REVISION`, reviewed digest-pinned
-`NODE_IMAGE` and `PYTHON_IMAGE`, and the PyTorch wheel index appropriate to the
-backend. The default index is CPU. CUDA qualification must select a compatible
-CUDA index and verify the host driver. The campaign accepts only a digest-pinned
-resulting image. The build records both dependency-lock hashes in
-`.compute-source.json`; their canonical combined SHA256 is `dependencySha256`.
-The worker rejects a different source or dependency identity.
+- Runpod: at most $100 cash, including purchased unused credit and taxes. Spending prepaid credit is usage, not another cash payment.
+- Cloudflare: at most $20 TOTAL attributable subscription, Workers, DO, active R2, backups, lineage, fees and taxes. Existing account base fees count once. Shared included allowances are not assumed unused.
 
-Run `righelt_training.preflight --device cpu` and `--device cuda` on the respective
-images. Backend selection is explicit through `RIGHELT_TRAINING_DEVICE`.
-Unavailable backends fail instead of falling back. Historical local commands
-still require MPS by default. Device selection does not change model/search
-configuration. Checkpoints save CUDA random state for every device, retain
-optimizer/replay/cursor lineage, and reject incompatible CUDA device counts.
-Cross-backend continuation does not promise bit-identical future trajectories.
+`runpod` records `cashCeilingCents`, `purchasedCreditCents`, `openingCreditCents`, `taxReserveCents`. `cloudflare` records its ceiling, `subscriptionCents`, `workersCents`, `durableObjectsCents`, `activeR2Cents`, `backupR2Cents`, `taxFeesCents`, `retentionDays:30`, `fundedFrom`, `reviewAt` and `owner`. The dated owner review must be within the funded thirty days. Pausing writes does not stop storage or subscription charges. No automatic deletion, monthly renewal, top-ups or extra funding is implied.
 
-## Prepare data without giving workers production access
+Each campaign has `computeUsageCapCents` and `cloudflareUsageCapCents`. Controller reservations accumulate across campaign IDs and never reset at a calendar boundary. Their sum must fit the funded pilot. Reserve qualification, failures, startup, repair, full evaluation, export, collection, backup, restore and cleanup before deciding what learning fits. There is no automatic settlement that reallocates an unused campaign maximum.
 
-Use an already authorized, revision-fenced local export. This tool never queries
-production:
+A campaign's original absolute deadline is at most 24 hours, including startup and repairs. Recovery cannot renew it or a phase deadline. There are at most two automatic replacement attempts per campaign, still inside the $10/two-hour repair allowance and all original caps. An uncertain create is reconciled, never blindly retried. Worker leases last two minutes, checkpoints are requested every four minutes, publication every two minutes, and admitted work must satisfy the ten-minute lost-work bound.
 
-```
-pnpm ai:hosted:curate PREPARED_EXPORT HELD_OUT_GAME_IDS_JSON CORPUS_OUT PRIVATE_INCLUSION_OUT
-```
+## Exact ownership and independent cleanup
 
-Agents select games with complete replay lineage and no replay exclusions. Keep
-declared held-out families fixed before selection. The existing replay checker
-verifies states and transitions and excludes held-out positions/encodings. The
-projection removes account metadata, historical action labels and computer
-proofs, pseudonymizes game/decision IDs, and caps each game/category at 20 starts.
-Held-out exclusion guards remain in the minimized corpus. Keep the source-ID
-inclusion/exclusion mapping local. Upload only the minimized corpus, approved
-checkpoint/replay bundle, frozen plans and correctness evidence.
-
-## Freeze a campaign
-
-`policy.mjs` validates the complete contract. Required top-level fields are:
-
-- `schema: 1`, a unique `id`, `purpose: "reliability-pilot"`, a spending
-  `authorizationReference`, `seed`, `maxCents` and an absolute `deadline` in Unix
-  milliseconds, at most 72 hours after admission.
-- `sourceRevision` (40 hex characters), and SHA256 identities for dependencies,
-  checkpoint, corpus and the unchanged learning recipe.
-- `inputs`: `{name, path, sha256, bytes}` records. Paths are explicit files under
-  `.ai-runs/`. The named checkpoint, corpus and recipe binding must appear in this inventory.
-- `phases`: ordered frozen work, each with `id`, `kind`, `device`, `seconds`,
-  initial `argv`, `resumeArgv`, `runDir`, required output names, `outputPaths`,
-  top-level JSON acceptance predicates in `expect`, and one `host` configuration.
-
-Commands are argument arrays, never interpolated shell commands. Use the existing
-trainer supervisor/stage and arena entrypoints with new allocations, current
-launch proof and frozen development plans. Preserve their independent budgets,
-canary, replay, numeric/browser parity and source-amendment gates. Uploaded old
-launch proof is not current-source or current-backend proof. Do not reopen the
-October campaign. A zero process exit alone cannot complete a phase: every
-required JSON artifact must match its frozen predicates.
-
-Host records contain a digest-pinned image, `diskGb` (at least 80), an all-in
-upper-bound `hourlyCents` and `quoteExpires`. Obtain and retain current complete
-quotes, including machine storage and networking. Unknown or expired pricing
-blocks admission. Hetzner uses a dedicated x86 `ccx` server type and explicit
-location. Runpod uses API v2, Secure Cloud, one noninterruptible GPU, explicit GPU
-type, at least eight vCPUs and 48 GiB RAM. Actual availability and billed pricing
-must be confirmed during the paid pilot. The adapter does not claim that a
-catalog headline price is an all-in quote.
-
-## Pilot and autonomy boundaries
-
-Allocate no more than $100 across pilot campaigns, including infrastructure and
-repairs. Suggested allocation: $20 comparison, $40 rehearsal/training, $10 repair,
-$10 controller/storage and $20 completion reserve. Reservations are conservative
-and are not automatically refunded after a cheap or failed run. The monthly
-ceiling is $500, not permission to use the remaining $400.
-
-Compare the identical short workload on a dedicated CPU VM and a CPU-rich Runpod
-GPU host. Record verified terminal games, useful targets, completed evaluation
-pairs, startup/search/inference/replay/update/checkpoint/upload times, operator
-steps and total cost. Preserve unfinished work. Disqualify correctness, recovery
-or cleanup failures. Choose useful targets per total dollar; within 10%, prefer
-fewer operator steps, then faster turnaround. `report.mjs` implements that rule.
-An active agent reviews this comparison before submitting the winner's campaign.
-
-On the winner, rehearse paired development evaluation for all three profiles and
-both seats. Repair completion/accounting before a short unchanged-recipe training
-continuation. Prove host replacement, checkpoint recovery, export correctness and
-cleanup. Report operational outcomes separately from strength. The small learning
-menu remains a separate T-122 planning decision and cannot run through this pilot
-as an unreviewed recipe change.
-
-## Failure and retention contract
-
-- One controller ledger reserves the complete campaign amount before launch and
-  admits only one active campaign. A new host waits for verified deletion of the
-  old one. Provider names and IDs establish exact ownership.
-- An uncertain create is never blindly retried. Reconcile the exact launch name.
-  If no authoritative resource is found, leave cleanup uncertain for agent review.
-  Provider inventory/deletion failures preserve ownership, estimated billing and
-  cleanup alarms. No unrelated resource is selected for cleanup.
-- Workers renew a two-minute lease every 20 seconds. Expiry stops their owned
-  process groups, including trainer children with separate sessions. A stale
-  generation cannot claim work or publish artifacts. The phase deadline survives
-  worker replacement.
-- Coherent checkpoint copies temporarily suspend task-owned processes. Only a
-  verified complete remote bundle advances recovery. During training its source checkpoint must be younger than ten minutes of active
-  work. A verified restored bundle starts a new active-work window after downtime.
-  Training writes checkpoints every four minutes and publishes copies every two
-  minutes. Evaluation/export use durable work receipts rather than a moving
-  training-checkpoint timestamp. Missing durability blocks further admission.
-- Remote claims precede training and evaluation execution. Monotonic remote
-  counters prevent checkpoint/job-ID reuse after rollback. Completed evaluation
-  receipts are durably stored and replay-verified on recovery. A consumed attempt
-  without a result remains unfinished and is never silently replayed.
-- Infrastructure repair consumes at most $10 or two elapsed hours per campaign,
-  whichever comes first. Healthy work does not consume repair time. Correctness
-  failures stop the campaign for tested agent repair. No extra allocation appears
-  through retries. The outer cap and all trainer gates remain authoritative.
-- Budget estimates retain a 20% reserve, capped at $20 per campaign. Quotes,
-  storage reserve and local watchdogs reduce overspend risk, but cannot impose a
-  provider-side hard spending guarantee during a provider/control-plane outage.
-- Compute is deleted before collection, while artifacts remain in private R2.
-  Failed downloads retain remote copies. Interrupted uploads with no stored blob
-  produce explicit incomplete-upload receipts, without blocking collection of
-  surviving evidence. Clear requires the exact inventory hash
-  and a locally reverified receipt. Keep the collected evidence locally. The
-  controller retains minimal campaign/collection audit information.
-
-## Activation and validation
-
-Use a separate Cloudflare service, bucket and provider projects. Configure
-`ADMIN_TOKEN`, `WORKER_SIGNING_KEY` (at least 32 characters), `HETZNER_API_TOKEN`
-and `RUNPOD_API_KEY` as secrets. Workers receive only a generation-scoped token.
-Do not reuse production credentials or give workers repository write access.
-
-After explicit deployment and spending approval, set a real HTTPS
-`CONTROLLER_URL`, `AUTHORIZED_PILOT_CENTS=10000` and `COMPUTE_ENABLED=true` in the
-reviewed deployment configuration. Enable a one-minute reconciliation cron for
-this new service only. Durable alarms are armed by submission. Leave all existing
-paused schedules unchanged. Disable admission to stop new work; retain controller
-cleanup until deletion is verified. Exported models may produce draft integration
-PRs through the normal active-agent workflow, never automatic promotion.
-
-`pnpm test:hosted-compute` covers controller/provider faults and the local
-Worker/DO/R2/child-process lifecycle. `pnpm test:trainer` covers adjacent training,
-checkpoint, replay and export contracts. The real paid CPU/CUDA comparison,
-provider-loss rehearsal, Mac-disconnection proof and candidate browser/phone
-checks are separate evidence. Local simulated-provider proof does not satisfy them.
-
-## Three bounded flows after the learning-menu review
-
-1. **Readiness fixture (T-132).** `righelt_training.hosted_canary` exercises the real engine and independent replay, real Python masked/value and policy updates, optimizer/RNG/checkpoint recovery, ONNX export and numeric proof. It uses generated training-only roots and an initial checkpoint. It is disposable fixture evidence. It does not count toward live training, health, strength or final evaluation. `test/workflow.integration.test.mjs` runs it through the real local Worker/DO/R2, worker subprocess, collection and clearing with simulated providers. The trainer venv is required, and the trained-play CI model job installs it. Node-only tooling lanes report this fixture as skipped if the venv is absent.
-2. **Frozen comparison (T-122).** Scientific admission is still disabled by the controller. Audit the actual retained source and incumbent, qualify evaluation and teaching, freeze one intervention and unchanged continuation before any run. Use the shared backlog contract `backlog/docs/tickets/t-122/hosted-learning-contract-20261109.md`. No learning algorithm was transplanted from a dirty retained branch.
-3. **Locked candidate review.** Assemble the compact candidate packet specified in that contract. A promising diagnostic is distinct from another bounded learning stage, tactical qualification, and owner acceptance. No run must select a winner.
-
-### Prepare the supported fixture
-
-Run under the resource supervisor, from this checkout:
+Prepare a private immutable ownership record BEFORE every create:
 
 ```sh
-node scripts/resources/cli.mjs run --kind heavy -- env PYTHONPATH=tools/ai-trainer tools/ai-trainer/.venv/bin/python -m righelt_training.hosted_canary --prepare .ai-runs/UNIQUE/input
+node tools/hosted-compute/prearm.mjs MANIFEST REVIEWED_PREARM_CONFIG NEW_PRIVATE_OUTPUT
 ```
 
-Save the JSON output privately. The local builder CLI is `node tools/hosted-compute/canary-manifest.mjs PREPARED_JSON REVIEWED_CONFIG_JSON NEW_MANIFEST_JSON`. Its config contains the fields listed next. Alternatively import `canaryManifest` from `canary-manifest.mjs` and pass that prepared inventory, a unique `id`, exact committed `sourceRevision`/dependency hash, a reviewed fresh `host` quote, absolute deadline, total cap and actual authorization reference. The builder supplies supported `argv`, `resumeArgv`, scheduled work identities and output requirements. Call the existing `plan` command to review it. This is a fixture manifest, not a complete live pilot or spending authorization. After interruption before a completed result, the fixture stops rather than overwriting its checkpoint or manufacturing a successful retry. Agent review chooses a new separately accounted fixture attempt.
+Run this operator command with the approved outside-process access used for GitHub CLI operations. It uses the existing `gh` keyring session. Configuration binds the verified Runpod account, evidence, random nonce, exact image/configuration, finite phase/generation names, reviewed cleanup runtime revision and earlier funded cutoff. The prearm launch digest excludes only the external-control reference, avoiding a circular hash. The normal full manifest digest still covers that reference.
 
-`execution_recipe.py` adds a separate `execution-recipe` record. It preserves the meaning of historical root-exploration hashes. It binds the initial checkpoint payload (weights, architecture, optimizer, RNG, replay and cursor), source files, data, complete ordinary trainer configuration, masks/loss heads and coefficients, sampling, teaching and automatic curriculum switches. Runtime settings and optimizer/architecture are checked without consuming training RNG. Hosted continuation requires the exact incumbent or a checkpoint in its durable recovery inventory. The retained attention/teaching worktree at `4aa3b3c` has different loss wiring plus uncommitted curriculum/recipe edits. It remains outside this baseline adapter until explicitly audited.
+Copy the returned `externalControl` reference into a NEW manifest. Install only the independently reviewed template in the PRIVATE `righelt-compute-control` repository. Freeze the exact prearm commit/path/hash and operator arming variables there. Never replace those variables while a previous campaign has unresolved ownership. Verify private access, default branch, runtime pin, shared GitHub included compute/storage allowance for existing CI/image builds/cleanup/retries, and billing policy before activation. The job condition skips runner allocation when unarmed. No paid GitHub overage is authorized.
 
-All newly submitted manifests require an execution-recipe input and phase work IDs. Typed `compute-result` receipts replace flag-only success. Both worker and controller verify execution, scheduled work, actual artifact bytes, matching exported-model/proof identity, positive updates and recoverable training proof. Completed original receipts may survive a host replacement through exact durable snapshot membership. A current generation number alone cannot redeem missing consumed work.
+`githubUsage.observedAt` records when the allowance evidence was observed. `expiresAt` is the reviewed allocation's validity, not a requirement to refresh a billing screenshot during the run. `autonomousUntil` must cover the campaign cutoff plus its finite cleanup margin. A separate funded `ownerResponseMarginMs`, at least one cleanup interval, extends the forecast beyond that window. Allocation validity and the current billing period must cover the entire forecast. Review starts at `autonomousUntil`, with the full response margin still funded. Unfunded coverage fails before prearm publication. Reserve other CI, image work, full-timeout cleanup jobs and retries explicitly. Storage uses conservative effective included capacity through billing-period end. Overage blocking needs classified user attestation or API evidence. Shared allowance is never treated as exclusively ours.
 
-### Portable bundle admission before a paid launch
+After the autonomous window, the cleanup job surfaces an overdue-review flag and a failing status while continuing exact owned-Pod cleanup. It stays armed through unresolved ownership. The finite reserve does not fund an arbitrarily long outage or late-create tail and does not authorize new payment, replenishment or automatic storage deletion.
 
-Measure a representative full portable run tree, including checkpoint companions, optimizer/RNG, replay archives, logs, manifests and export. `bundlePreflight` in `bundle.mjs` accepts its inventory plus projected end-of-stage file count/bytes and cumulative distinct uploaded object count (including prior snapshots), measured copy time, sustained transfer rate and per-object request overhead. It rejects objects over 64 MiB, more than 2,000 projected files, publication slower than the two-minute cadence, or checkpoint age plus publication reaching the ten-minute loss window. These limits come from `policy.json`.
+The primary rechecks the external record before every create. Missing, unavailable, ambiguous, expired or terminal authority blocks new work. It does not block cleanup of known owned resources. The fallback has no create, replace or renewal operations. Its underlying Runpod `pods:write` and GitHub contents grants are broader than the code, so keep them isolated.
 
-The fixture test prints actual file/byte/max-object measurements. Local R2 timing does not qualify provider transfers. Before paid submission, retain real CPU/CUDA bundle estimates, measured upload/download times, expected replay/checkpoint growth and total cost including startup/export/verification/cleanup. Run `bundlePreflight` on those measurements and retain its output beside the reviewed manifest. A small passing fixture is not a full-stage growth estimate. Whole-tree publication remains in place. If the projected bundle is infeasible, narrow the bounded stage or split oversized artifacts before considering differential storage.
+The workflow runs nominally every five minutes and on manual dispatch, only on the reviewed default branch, with one concurrency group and no cancellation of an in-flight cleanup. GitHub can delay or drop schedules. Native running-Pod expiry is not supported in the inspected interfaces. Neither the schedule nor a cleanup reserve guarantees an exact billing cutoff through arbitrary outages.
 
-### Fresh data and host comparison
+At the immutable cutoff, the fallback records a terminal fence and terminates only exact owned Pods. If the fence write fails after a valid prearm read, deadline-based cleanup still proceeds. The original cutoff independently forbids new launches. Failed fence/receipt writes remain unresolved, not success. Termination requires DELETE/GET absence and complete inventory evidence. One empty scan cannot disprove a late uncertain create. Keep checks armed until authoritative reconciliation and later billing review. Never use stop or add independent volumes for this pilot.
 
-Curation now uses a fixed-seed bottom-k reservoir per game/category instead of earliest decisions. Freeze curated bytes once for both arms/hosts. New CLI exports emit only hash/encoding exclusion guards for protected positions, with no raw protected states. Historical corpora remain readable. The curation record binds selection rule/seed, source export manifest digest, verified source digest, private inclusion-map digest and corpus digest. The private inclusion map preserves original source game IDs across random salts. Before a **fresh research freeze**, reconcile source/branch/ancestor overlap against prior maps and fill ancestry in that local record. Unknown ancestry cannot be certified as independent. No hosted ID or new salt is independence evidence.
+## Qualification and useful work per dollar
 
-Host reports must include the frozen `workload` object (`workIds` and named minima), matching `workloadSha256`, attempted/completed/verified IDs, failed/unfinished IDs, policy-usable positions, terminal-value positions, distinct outcome trajectories/families and actual sampled positions. Set minima from the declared short workload before measuring. Policy and value counts overlap, and positions are not independent outcomes. Exclude forced-only roots from strategic-choice yield. Report startup, all attempts, repair, transfer, export, verification and cleanup in total cost. A zero-yield or selectively completed run returns `insufficient-evidence`. Mechanical qualification alone permits an explicitly manual operational preference, not a measured-yield claim. The ten-percent tie rule applies only to eligible hardware reports. It is not a scientific throughput-loss cutoff.
+Freeze an actual fresh all-in quote: exact Secure Cloud GPU/data center, at least eight vCPU, 48 GiB RAM and 80 GB disk, explicit units, digest-pinned image and approved hourly ceiling. Prefer US. Europe is allowed only within the approved set. Freeze `host.minCudaVersion` (CUDA 13.0 for this image) as well. The scheduler request includes that minimum. Actual returned image, GPU count, CPU/RAM/disk, location, CUDA capability, cloud tier and price must match BEFORE exposing input bytes. A real container kernel/driver probe then verifies the qualified runtime hash before hydration. No automatic hardware/location fallback.
 
-## Exploratory and continuation evidence (November 14)
+Operational qualification binds source, dependency locks, image, CUDA/driver/runtime hash and exact placement/resources. A normal quote timestamp or approved-rate refresh does not invalidate unchanged hardware/runtime proof. A changed configuration invalidates affected proof.
 
-Curation accepts an optional local source registry as its fifth CLI argument. Each game entry declares `sourcePurpose` (`competitive`, `exploratory`, `unclassified`), one `sourceFamily`, optional `actorProvenance`, and optional per-decision actor/label annotations. Family and purpose are fixed for the whole source game. Computer archive provenance is preserved separately from purpose. A seat setting does not identify an actor, and unspecified actors remain unknown. Registry and private inclusion-map hashes bind these annotations. The raw source export is preserved locally.
+The supervised report must include hash-verified raw drill receipts for correctness, recovery, cleanup, CUDA, disconnected Mac, real host loss and backup restoration. Fixture-only receipts and booleans alone cannot qualify unattended work. A report is trusted operator evidence bound to raw artifacts, not a substitute for performing the drills.
 
-Fresh qualified corpora carry actor, purpose, family and exact label scope. They admit verified active-line **starts**, never raw historical imitation targets, exploratory winners as optimal nonterminal values, or competitive W/D/L. Replayed discarded branches retain hash guards but cannot become learning starts. A verified prefix may remain usable when a later archive/live boundary is unresolved, with its terminal boundary quarantined. Family grouping is applied to sampling and held-out exclusion before pseudonymization, then independently checked in the Python reader. S08's updated game remains the earlier S08 family. S06/S09 reproductions remain one family. Previously retained corpora with true absence of the new qualification schema remain readable. Unknown explicit versions reject.
+`projectCampaign` checks both cumulative objects and claims against 2,000, every object against 64 MiB, publication/loss time, 720 two-minute publication passes plus retries, growing ledger chunks/reads/writes, repeated copy/hash/transfer and thirty-day retained storage. Supply measured growth, real transfer/overhead, actual all-in account rates/headroom and a reserved Cloudflare campaign allowance. Snapshot renewal is rate limited to the normal heartbeat cadence. Identical committed uploads still pass every fence/checksum check but avoid duplicate pending/commit ledger writes.
 
-Prepare approved development packets using the common engine, without starting training:
+Measure the ACTUAL attention pipeline on normal, developed, full-board, long/repetitive and continuation games across all public profiles and both seats. Include search/rules, inference/IPC, replay, updates, checkpoint suspension/copy/upload, export, startup, hydration, deletion, backup and failed work. A tiny canary or headline GPU price cannot size a meaningful learning comparison. Required work/cost/attempt/proof records are complete. Optional detailed observability is sampled at one percent.
+
+## Audited source-only CUDA image
+
+`prepare-context.mjs` exports an explicit allowlist of clean committed source blobs, not a clone or Git history. It excludes credentials, `.ai-runs`, production exports, models, test data and operator backup/control modules. `.compute-source.json` binds exported source, proof-source inventories, dependency locks and reviewed build configuration. Both JavaScript and Python verify that identity. Native historical inventories retain their original Git behavior.
 
 ```sh
-node --import tsx tools/hosted-compute/prepare-development.mjs PREPARED_PACKET_DIR EXACT_CURRENT_SOURCE_REVISION NEW_RECEIPT_JSON
+node tools/hosted-compute/prepare-context.mjs NEW_CONTEXT_DIRECTORY REVIEWED_BUILD_CONFIG
 ```
 
-Use the resource supervisor. This command verifies retained packet/proof-file hashes, checks the supplied source revision against the checkout and inventories the actual engine and verifier bytes. Dirty source is labeled. It independently replays legal witness actions with actual controllers, complete continuation state, deadlines, action and work caps. It verifies the S10 defense certificate by covering every legal opposing choice until the next complete opposing-turn boundary. Its conclusion is one-turn survival only. Missing alternatives, false boundaries, illegal actions, horizons and interrupted work cannot become safety claims.
+The build configuration requires digest-pinned Node/Python bases, `linux/amd64`, Python 3.14, PyTorch 2.14.1 and a qualified CUDA wheel index. The `cuda-wheel-check` Docker target proves Linux/Python wheel availability and import without renting a GPU. It does not prove driver or GPU execution. Pin the final reviewed source/configuration and resulting image digest before paid work. Publish only through the approved temporary GitHub Actions publishing token. No CPU image, SSH or registry password is required by design.
 
-The helper returns exact `receiptBytes`, `packetBytes`, `contractBytes` and hashes for staging. The CLI also writes `.packet.json` and `.contract.json` companions beside the new receipt. The staged packet omits source game/decision IDs and retains the original packet checksum for local audit. Keep the original packet and source-ID mapping local. The CLI writes those receipt bytes without modification. The source contract is `tools/ai-trainer/learning-evidence-contract.json`. Freeze the sanitized packet companion, receipt and contract companion as ordinary inputs, then bind their exact raw-byte hashes in optional manifest `developmentEvidence: {schema:1, packetSha256, receiptSha256, contractSha256}`. Execution context and result identity preserve this binding through recovery and collection. These references do not authorize training or turn additional output metadata into tactical proof. Fresh teacher/target admission remains disabled pending the T-122 method/recipe review.
+## Actual incumbent and portable recovery
 
-The adopted cases retain these limits:
+The public incumbent `trained-20261029-1086` is `board-attention-48x2-v1`, not the disposable residual fixture. Its checkpoint hash is `fece7b0b299f3980e257c6c1f29e6f5e5162e32026d73875e78e6c38719c4e44`, round 118, 55,040 updates. The historical root recipe does not fully describe its inherited training method.
 
-- G54's specified push plus four legal Follow actions wins. A four-action horizon remains unresolved. Five is the retained shortest completion **within that push branch**, not a global shortest-win result. The new verifier checks the winning line, not a fresh minimality search.
-- Moving Blue's friendly blocker opens a retreat against that exact push despite reducing group strength. It proves no global safe defense.
-- G64's projection adds a barrier and wins. Moving its endpoint differs. After the later wall, the top-row dependency concerns 13 of 15 Blue pieces, not every piece. The retained topology cross-check is a separate proof artifact, not inferred from a shortest path or a square-control heuristic.
-- Red's northern projection wins if Blue passes. Blue instead has a winning corner rush plus End Turn. The nearby non-corner rush does not win. Full settlement matters even when the winner retains only four pieces.
-- The extra commander advance is legal preparation with an available Blue counterpush. Strategic improvement remains unproved. Supply, command, group strength, escape availability and occupancy-enabled enemy rushes are separate facts. No reward proxy is added.
+The compatible method descriptor must qualify its actual attention architecture, future-fact objective/masks, LR 0.0001/optimizer, teacher roles, curriculum, supplemental observed-value rows at their original replay age, all source inventories and RNG/recovery state. The 955 archive references require a hash-bound portable resolver at EVERY consumer. Preserve original checkpoint/runner bytes. Never reconstruct Mac absolute paths or fall back to them. Unknown/missing archives fail closed.
 
-`T-107.01/.02/.16/.08` retain ownership of public-search discovery, target admission, reusable development starts and profile/phone qualification. This change reuses shared rules and adds offline proof/transport safeguards. It does not increase public search budgets, change model/loss, qualify a stronger teacher, repair the missing historical terminal events, reopen October, or establish browser/human strength. Common correctness changes must apply to both arms before a new comparison is frozen.
+Operator preparation strips private source IDs from the 28 supplemental rows without changing model inputs, observed labels, masks, order or eviction boundary. Qualification and encrypted lineage bind original versus sanitized projections. Transfer of the closed historical state consumes old pending/unissued identities honestly in a new namespace. It never resumes October's allocation, resets its clock or retries an old ID.
+
+CPU empty-root restoration is separate from engine replay, CUDA/RNG recovery and method admission. A fresh source fix regenerates affected proof/image/manifest/prearm bindings before launch. Active and historical manifests remain immutable.
+
+## Scientific admission and learning
+
+Reliability can proceed independently of unqualified scientific inputs. `purpose:"scientific-comparison"` requires frozen experiment, actual method and family inventories, an explicit stage/arm, a locked candidate for final evaluation, and a hash-bound phase plan. Each phase executes the reviewed `righelt_training.hosted_science` adapter with exact plan, run directory, runtime and recovery arguments. Stage/phase mismatches fail. Automatic transitions require `allWorkComplete:true`; incomplete and missing work remain visible.
+
+The selected first experiment is one qualified policy-target teaching change. This is an exploratory promising-direction screen, not a forced decisive-strength demonstration. The control uses the audited actual incumbent/inherited method. A deeper requested budget is not qualification: the teacher must finish useful corrections on declared enclosure, repair and harder development motifs, with legality/controller/complete-turn and actual effective-work evidence. Node-limit/fallback/unfinished results do not qualify.
+
+Only eligible fresh self-play policy rows can refresh. Original observed values and every mask remain unchanged. Teacher-estimated values are separate metadata. Historical human/computer observations and legal witnesses are not automatically optimal policy targets, optimal nonterminal values, computer defenses or strength wins.
+
+Control and treatment share initial weights/optimizer/RNG/replay/cursor, architecture, inherited loss, starts, source, host and public budgets. Treatment target generation counts inside equal TOTAL caps for each provider. The overall Runpod and Cloudflare ceilings remain separate. Freeze sample sizes, useful-effect/uncertainty rules, scheduled IDs, missing bounds, family correlation, candidate lock and stop rules BEFORE arm outcomes. This initial implementation requires `continuation.maximum:0`. A later paired continuation needs descendant checkpoint transfer and its own reviewed implementation. No checkpoint/menu shopping. If meaningful arms plus full evaluation cannot fit after reserves, stop with infrastructure readiness/calibration.
+
+Admission uses three hash-bound records: `common-calibration` freezes the original incumbent and fixed calibration endpoint, `policy-target-preparation` freezes numeric rules and budgets before teacher outcomes, and `policy-target-exploratory-comparison` binds the completed teacher output before either arm trains. Future training plan hashes remain explicitly deferred until that output exists. All stages preserve the original deadline. Both local submission and the controller validate the referenced bytes before admitting a scientific campaign.
+
+Teacher selections come from executed fresh self-play in the common calibration checkpoint. Training proves that treatment rows were actually sampled. Evaluation loads the exact exported ONNX candidate and original public opponent, then records every scheduled game, including missing or incomplete work.
+
+Training and teacher manifests contain only guard-only final exclusions. Raw final material enters a separate evaluation-only campaign AFTER candidate lock, and never returns through snapshots to training. Evaluate all public profiles/both seats with frozen prospective accounting. Old arena defaults are not this schedule. Native/export numeric proof, actual exported inference, browser/phone proof and human acceptance are separate evidence.
+
+After exact launch package approval, routine gated stages and in-scope repairs/reviews proceed automatically while Kenan is offline. New scientific choices, extra funds/services, widened privacy/access, material architecture/public-budget changes and promotion outside scope require review. Agents still need an awake execution surface for engineering or numerical preregistration. With the Mac asleep, finish/stop frozen hosted work, clean up and await agent availability.
+
+## Development evidence and S11
+
+The canonical scientific contract is in the shared T-122 backlog, including the November 14 regional-enclosures/repair amendment. Keep whole source families, active/discarded branches and descendants together across salts. Updated S11 is exposed development, not fresh final or a new start-distribution intervention. Retain S06/S09's shared family, updated S08 identity and older S07/S10 terminal quarantines.
+
+`prepare-development.mjs` accepts only supported, checksum-bound packet shapes. The S11 adapter requires explicit family/purpose/actor provenance and nonzero intended/executed witness coverage. It replays supplied lines, but command/group/projection/paired-effect assertions and the new two-action-prelude certificate remain reference-only until separately supported. No certificate search is repeated per training batch.
+
+The replay-only automatic rush-ending adapter requires complete relevant-continuation proof, persistable settlement, matching recorded cause and exact recorded board. It inserts no End Turn. Unknown/limited/mismatched proof stays quarantined. The S11 packet adapter conservatively keeps terminal-value admission quarantined even when a separate explicit End-Turn witness wins.
+
+G54's five-action push/Follow win is branch-specific, not global shortest proof or autonomous discovery. S10's certificate covers only the next opposing complete turn. S11 captures and command restoration are effects, not forced eventual wins. Its rejected 512-simulation enclosure probe and insufficient repair root are not qualified teachers. Public search budgets, architecture and inherited loss remain unchanged.
+
+## Backup, encrypted lineage and closeout
+
+The operator S3 adapter uses only the separate private backup bucket. It serializes operators with conditional writes and a create-only lock. A crash-held lock requires exact owner/process reconciliation before an authorized operator clears that lock. Never expire it blindly while an old writer may still run.
+
+A root is published only after complete cloud-read restoration verifies weights, optimizer, RNG, replay/cursor and receipts in an empty checkout. The latest two complete roots overall are retained. Accepted models keep small essential proof independently. Encryption uses `age`, an opaque ciphertext reference and independently recoverable key. Minimal lineage contains only necessary original source/family/ancestry/exposure links. Family exposure cannot split, unknown ancestry cannot become independence, and ciphertext/key remain while any retained recovery or accepted-provenance record references them.
+
+Use `--lineage-scope PRIVATE_JSON --recovery-evidence PRIVATE_JSON` for encrypted backup and `--lineage-version VERSION --recovery-evidence PRIVATE_JSON` for restore. These are private regular files. Off-Mac key recovery is an explicit operator assertion backed by the actual recovery exercise, not something a synthetic test proves. The controller validates the exact authenticated operator attestation. It cannot independently inspect the backup bucket or detect a false authorized assertion.
+
+Bulk temporary logs/intermediate artifacts clear only after verified local collection AND verified cloud recovery. No command deletes production games or revives an old allocation. Keep readiness, research promise, tactical floor and owner acceptance distinct. Release consideration requires all three profiles to pass every frozen critical case. Six serious normal-start human games, three per seat, are an experience signal toward the Horus one-in-three aspiration, not statistical certification. Human games can wait until hosts are deleted and backups verified. Promotion is never automatic.

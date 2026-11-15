@@ -1,3 +1,4 @@
+import { cashPlan } from './cash.mjs';
 // Operational limits are independent of model/search configuration.
 import policy from './policy.json' with { type: 'json' };
 export const POLICY = Object.freeze(policy);
@@ -25,24 +26,52 @@ export function validateManifest(m) {
     assert(new RegExp(key === 'sourceRevision' ? '^[a-f0-9]{40}$' : '^[a-f0-9]{64}$').test(m[key]), `missing ${key}`);
   }
   assert(typeof m.authorizationReference === 'string' && m.authorizationReference.length >= 8, 'explicit spending authorization reference required');
-  assert(Number.isSafeInteger(m.seed) && m.purpose === 'reliability-pilot', 'only the fixed-recipe reliability pilot is enabled');
+  assert(Number.isSafeInteger(m.seed) && ['reliability-pilot','scientific-comparison'].includes(m.purpose), 'explicit supported campaign purpose required');
   assert(Number.isSafeInteger(m.maxCents) && m.maxCents > 0 && m.maxCents <= POLICY.pilotCents, 'invalid pilot cap');
+  assert(['supervised-qualification','unattended'].includes(m.mode),'explicit pilot mode required');
+  cashPlan(m.cash,m.maxCents);
   assert(Number.isSafeInteger(m.deadline) && m.deadline > 0, 'absolute deadline required');
   assert(Array.isArray(m.inputs) && m.inputs.length && m.inputs.length <= POLICY.maxArtifacts, 'input inventory required');
+  if(m.externalControl !== undefined) assert(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(m.externalControl.repository) && /^[a-f0-9]{40}$/.test(m.externalControl.commit) && /^control\/prearms\/[a-f0-9]{32}\.json$/.test(m.externalControl.path) && /^[a-f0-9]{64}$/.test(m.externalControl.sha256), 'immutable private cleanup reference required');
   m.inputs.forEach(a => { artifact(a); assert(safeRunPath(a.path), 'input must have an explicit run-relative path'); });
   assert(new Set(m.inputs.map(a => a.path)).size === m.inputs.length, 'duplicate input path');
   assert(new Set(m.inputs.map(a => a.name)).size === m.inputs.length, 'duplicate input name');
   assert(m.inputs.some(a => a.sha256 === m.checkpointSha256) && m.inputs.some(a => a.sha256 === m.corpusSha256) && m.inputs.some(a => a.sha256 === m.recipeSha256), 'checkpoint, corpus and recipe must be in input inventory');
   assert(m.inputs.some(a => a.sha256 === m.executionRecipeSha256), 'execution recipe input required');
+  if(m.portableClosureSha256!==undefined) assert(/^[a-f0-9]{64}$/.test(m.portableClosureSha256)&&m.inputs.some(a=>a.sha256===m.portableClosureSha256),'portable closure must be a frozen input');
+  if(m.purpose==='scientific-comparison'){
+    const s=m.scientific;
+    assert(s?.schema===1 && ['calibration','teacher-screen','training','evaluation','export'].includes(s.stage) && ['control','treatment','shared'].includes(s.arm),'scientific stage and arm required');
+    for(const key of ['experimentSha256','methodSha256','familyInventorySha256'])assert(/^[a-f0-9]{64}$/.test(s[key])&&m.inputs.some(a=>a.sha256===s[key]),'scientific method, freeze and family inventories must be frozen inputs');
+    assert(s.stage!=='evaluation'||/^[a-f0-9]{64}$/.test(s.candidateSha256),'locked candidate required for final evaluation');
+    assert(s.stage==='evaluation'||m.inputs.every(a=>a.role!=='protected-final'),'raw final material forbidden before candidate lock');
+    const allowed={calibration:['training','evaluation','benchmark'], 'teacher-screen':['teacher'],training:['training'],evaluation:['evaluation'],export:['export']}[s.stage];
+    const commands={training:'training',teacher:'teacher',evaluation:'evaluation'};
+    assert(Array.isArray(m.phases)&&m.phases.length>0,'scientific phases required');
+    for(const phase of m.phases){
+      assert(allowed.includes(phase.kind),'scientific stage and executable phase differ');
+      const command=commands[phase.kind];
+      assert(command,'scientific phase requires an implemented audited adapter');
+      const plan=m.inputs.find(a=>a.sha256===phase.planSha256);
+      assert(/^[a-f0-9]{64}$/.test(phase.planSha256)&&plan,'scientific phase plan must be a frozen input');
+      for(const [index,argv] of [phase.argv,phase.resumeArgv].entries()){
+        assert(Array.isArray(argv)&&argv[0]==='tools/ai-trainer/.venv/bin/python'&&argv[1]==='-m'&&argv[2]==='righelt_training.hosted_science'&&argv[3]===command,'scientific command must use the admitted phase adapter');
+        const expected=['tools/ai-trainer/.venv/bin/python','-m','righelt_training.hosted_science',command,'--plan',plan.path,'--run-dir',phase.runDir,'--seconds',String(phase.seconds),...(index===1?['--resume']:[])];
+        assert(canonical(argv)===canonical(expected),'scientific plan, directory and runtime argv must match the frozen phase');
+      }
+      assert(phase.outputs?.length>0&&phase.outputs.every(name=>phase.expect?.[name]?.allWorkComplete===true),'automatic scientific transition requires all work complete');
+    }
+  }
   if (m.developmentEvidence !== undefined) {
     assert(m.developmentEvidence?.schema===1 && Object.keys(m.developmentEvidence).sort().join(',')==='contractSha256,packetSha256,receiptSha256,schema', 'invalid development evidence binding');
     for(const key of ['contractSha256','packetSha256','receiptSha256']) assert(/^[a-f0-9]{64}$/.test(m.developmentEvidence[key]) && m.inputs.some(a=>a.sha256===m.developmentEvidence[key]),'development evidence must be a frozen input');
   }
-  assert(Array.isArray(m.phases) && m.phases.length > 0 && m.phases.length <= 12, 'bounded phases required');
+  if(m.mode==='unattended'){assert(/^[a-f0-9]{64}$/.test(m.runtimeSha256),'qualified runtime required');assert(/^[a-f0-9]{64}$/.test(m.readinessSha256)&&m.inputs.some(a=>a.sha256===m.readinessSha256),'supervised readiness input required');}
+  assert(Array.isArray(m.phases) && m.phases.length > 0 && m.phases.length <= POLICY.maxPhases, 'bounded phases required');
   assert(new Set(m.phases.map(p => p.id)).size === m.phases.length, 'duplicate phase');
   for (const p of m.phases) {
     assert(Array.isArray(p.workIds) && p.workIds.length > 0 && p.workIds.every(safeName) && new Set(p.workIds).size === p.workIds.length, 'scheduled work identities required');
-    assert(safeName(p.id) && ['rehearsal', 'training', 'evaluation', 'export', 'benchmark'].includes(p.kind), 'invalid phase');
+    assert(safeName(p.id) && ['rehearsal', 'training', 'evaluation', 'export', 'benchmark', 'teacher'].includes(p.kind), 'invalid phase');
     assert(['cpu', 'cuda'].includes(p.device), 'hosted device must be explicit');
     assert(Number.isSafeInteger(p.seconds) && p.seconds > 0 && p.seconds <= 86400, 'invalid phase runtime');
     for (const argv of [p.argv, p.resumeArgv]) assert(Array.isArray(argv) && argv.length && argv.every(v => typeof v === 'string' && v.length < 4096 && !v.includes('\0')), 'explicit command and recovery argv required');
@@ -53,12 +82,14 @@ export function validateManifest(m) {
       assert(p.expect?.[name] && Object.keys(p.expect[name]).length > 0, 'output acceptance predicates required');
     }
     const h = p.host;
-    assert(h && ['hetzner', 'runpod'].includes(h.provider), 'unsupported provider');
+    assert(h?.provider === 'runpod', 'only Runpod is supported');
     assert(typeof h.image === 'string' && /^[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}$/.test(h.image), 'container image must be digest-pinned');
     assert(Number.isSafeInteger(h.hourlyCents) && h.hourlyCents > 0 && h.hourlyCents <= 500, 'all-in hourly quote required');
     assert(Number.isSafeInteger(h.quoteExpires) && Number.isSafeInteger(h.diskGb) && h.diskGb >= 80, 'fresh quote and disk required');
-    if (h.provider === 'hetzner') assert(p.device === 'cpu' && /^ccx\d+$/.test(h.serverType) && /^[a-z0-9-]+$/.test(h.location), 'dedicated x86 Hetzner configuration required');
-    else assert(p.device === 'cuda' && typeof h.gpu === 'string' && Number.isSafeInteger(h.minVcpu) && h.minVcpu >= 8 && Number.isSafeInteger(h.minRamGb) && h.minRamGb >= 48, 'CPU-rich Runpod configuration required');
+    assert((p.device === 'cuda' || p.kind==='rehearsal' && p.device==='cpu') && typeof h.gpu === 'string' && Number.isSafeInteger(h.minVcpu) && h.minVcpu >= 8 && Number.isSafeInteger(h.minRamGb) && h.minRamGb >= 48, 'CPU-rich Runpod configuration required');
+    assert(typeof h.dataCenterId==='string' && /^(US|EU)-[A-Z0-9-]+$/.test(h.dataCenterId), 'approved US or Europe data center required');
+    assert(typeof h.minCudaVersion==='string' && /^\d+\.\d+$/.test(h.minCudaVersion),'explicit compatible minimum CUDA driver capability required');
+    assert(typeof h.quoteReference==='string' && h.quoteReference.length>=8 && Number.isSafeInteger(h.quoteObservedAt) && h.quoteObservedAt<h.quoteExpires, 'actual quote evidence required');
   }
   return structuredClone(m);
 }

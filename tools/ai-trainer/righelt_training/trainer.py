@@ -6,6 +6,7 @@ import time
 import torch
 from .config import CONFIG
 from .model import training_loss
+from .sequence_targets import future_batch,FUTURE_LOSS_WEIGHT
 
 
 def make_optimizer(model):
@@ -49,7 +50,10 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
                 on_batch=lambda metrics: None, clock=time.monotonic, start_batch=0, operation=lambda name,seconds:nullcontext(),
                 evidence_game_ids=None):
     from .execution_recipe import verify_runtime
-    verify_runtime(model=model, optimizer=optimizer)
+    execution=verify_runtime(model=model, optimizer=optimizer)
+    if execution and execution['settings'].get('policyRefresh'):
+        from .hosted_science import apply_policy_refresh
+        positions=apply_policy_refresh(positions,execution['settings']['policyRefresh'],annotate=True)
     order = list(range(len(positions)))
     random.Random(seed).shuffle(order)
     batch_size = CONFIG['training']['batchSize']
@@ -68,12 +72,23 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
             before = clock()
             batch = [positions[i] for i in order[start:start + batch_size]]
             inputs, legal, target, value, mask, policy_mask = tensor_batch(batch, device)
-            if not (mask.any() or policy_mask.any()):
+            future_values,future_masks=future_batch(batch)
+            has_future=hasattr(model,'forward_with_future') and any(any(row) for row in future_masks)
+            if not (mask.any() or policy_mask.any() or has_future):
                 result['skippedUnsupervisedBatches'] += 1
                 continue
             optimizer.zero_grad(set_to_none=True)
-            logits, values = model(inputs)
+            future_loss=None
+            if hasattr(model,'forward_with_future'):
+                logits,values,future=model.forward_with_future(inputs)
+                if not torch.isfinite(future).all():raise ValueError('Nonfinite future predictions')
+                if has_future:
+                    future_target=torch.tensor(future_values,dtype=torch.float32,device=device)
+                    future_mask=torch.tensor(future_masks,dtype=torch.bool,device=device)
+                    future_loss=((future[future_mask]-future_target[future_mask])**2).mean()
+            else:logits, values = model(inputs)
             loss, policy_loss, value_loss = training_loss(logits, values, legal, target, value, mask, policy_mask)
+            if future_loss is not None:loss=loss+FUTURE_LOSS_WEIGHT*future_loss
             if not torch.isfinite(loss):
                 raise ValueError('nonfinite loss')
             loss.backward()
@@ -81,7 +96,8 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
             head_gradients = {head: sum(float(p.grad.detach().abs().sum()) for name,p in model.named_parameters()
                 if p.grad is not None and name.startswith(prefixes))
                 for head,prefixes in {'policy': ('policy.', 'pass_head.'),
-                                      'terminalValue': ('value_spatial.', 'value_hidden.', 'value_out.')}.items()}
+                                      'terminalValue': ('value_spatial.', 'value_hidden.', 'value_out.', 'value.'),
+                                      'futureFacts': ('future_facts.',)}.items()}
             previous = [p.detach().clone() for p in model.parameters()]
             optimizer.step()
             delta = sum((p.detach() - old).abs().sum().item() for p, old in zip(model.parameters(), previous))
@@ -91,6 +107,11 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
                        'gradientNorm': norm.item(), 'parameterDelta': delta, 'positions': len(batch),
                        'seconds': clock() - before, 'batchIndex': start // batch_size,
                        'policyPositions': int(policy_mask.sum()), 'valuePositions': int(mask.sum())}
+            if execution and execution['settings'].get('policyRefresh'):
+                metrics['policyRefreshBindingSha256']=execution['settings']['policyRefresh']['sha256']
+                metrics['policyRefreshSampledIds']=[p['_policyRefreshId'] for p in batch if p.get('_policyRefreshId') and p.get('policyMask',True)]
+            if future_loss is not None:
+                metrics.update(futureFactLoss=future_loss.item(),futureFactLabels=sum(sum(row) for row in future_masks))
             # Aggregate the actual sampled rows, without changing order, masks,
             # loss or RNG. Legacy fixtures without game identities stay unknown.
             if all(p.get('gameId') for p in batch):

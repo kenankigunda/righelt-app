@@ -1,0 +1,48 @@
+# SOURCE TEMPLATE ONLY. Install in the dedicated PRIVATE control repository
+# after review, included-minute reservation and exact runtime/source pinning.
+# Do not place this template in the public app repository's .github/workflows.
+# Scheduled runs may be delayed or dropped. This is not a provider billing TTL.
+# Schedule/timeout mirror policy.json cleanupEveryMs/cleanupJobMinutes. A policy
+# change requires a regenerated reviewed template and a fresh usage forecast.
+# The prearm forecast funds the complete autonomous window plus an owner-response
+# margin. A late review warning fails the job but never suppresses owned cleanup.
+name: Hosted compute deadline cleanup
+on:
+  schedule:
+    - cron: '2-57/5 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: hosted-compute-cleanup
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    # Job-level condition runs before runner allocation. Only the operator sets
+    # this flag, and only disarms after all uncertainty has been resolved.
+    if: ${{ vars.COMPUTE_CONTROL_ARMED == 'true' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          repository: kenankigunda/righelt-app
+          ref: REPLACE_WITH_REVIEWED_40_CHARACTER_RUNTIME_COMMIT
+          persist-credentials: false
+          sparse-checkout: tools/hosted-compute
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.23.4'
+      - name: Fence expired campaign and terminate only prearmed Pods
+        run: node tools/hosted-compute/cleanup-run.mjs
+        env:
+          COMPUTE_RUNTIME_REVISION: REPLACE_WITH_REVIEWED_40_CHARACTER_RUNTIME_COMMIT
+          COMPUTE_CONTROL_ARMED: ${{ vars.COMPUTE_CONTROL_ARMED }}
+          COMPUTE_CONTROL_REPOSITORY: ${{ github.repository }}
+          COMPUTE_CONTROL_BRANCH: main
+          COMPUTE_CONTROL_WRITE_TOKEN: ${{ github.token }}
+          COMPUTE_PREARM_COMMIT: ${{ vars.COMPUTE_PREARM_COMMIT }}
+          COMPUTE_PREARM_PATH: ${{ vars.COMPUTE_PREARM_PATH }}
+          COMPUTE_PREARM_SHA256: ${{ vars.COMPUTE_PREARM_SHA256 }}
+          RUNPOD_ACCOUNT_ID: ${{ vars.RUNPOD_ACCOUNT_ID }}
+          RUNPOD_CLEANUP_API_KEY: ${{ secrets.RUNPOD_CLEANUP_API_KEY }}

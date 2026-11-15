@@ -54,7 +54,8 @@ class HostedContractsTest(unittest.TestCase):
         from righelt_training.model import PolicyValueNet
         from righelt_training.trainer import make_optimizer
         from righelt_training.execution_recipe import record, verify_start
-        with tempfile.TemporaryDirectory() as d:
+        parent=Path.cwd()/'.ai-runs';parent.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=parent) as d:
             root=Path(d); cp=root/'initial.pt'; model=PolicyValueNet(); optimizer=make_optimizer(model)
             save_checkpoint(cp,model,optimizer,round_index=0,updates=0,replay_ids=[],manifest_sha256='incumbent')
             recipe=record(cp,'d'*64,mode='ordinary-continuation'); recipe_path=root/'recipe.json';recipe_path.write_text(json.dumps(recipe))
@@ -64,3 +65,16 @@ class HostedContractsTest(unittest.TestCase):
                 verify_start(cp,model,optimizer)
                 with torch.no_grad():model.stem.weight.add_(1.)
                 with self.assertRaisesRegex(ValueError,'weights differ'):verify_start(cp,model,optimizer)
+
+    def test_correct_weights_do_not_allow_original_checkpoint_outside_hosted_root(self):
+        from righelt_training.checkpoint import save_checkpoint
+        from righelt_training.model import PolicyValueNet
+        from righelt_training.trainer import make_optimizer
+        from righelt_training.execution_recipe import record,verify_start
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);cp=root/'original.pt';model=PolicyValueNet();optimizer=make_optimizer(model)
+            save_checkpoint(cp,model,optimizer,round_index=0,updates=0,replay_ids=[],manifest_sha256='outside-fixture')
+            recipe=record(cp,'d'*64,mode='ordinary-continuation');path=root/'recipe.json';path.write_text(json.dumps(recipe))
+            context=root/'context.json';context.write_text(json.dumps({'execution':{'inputCheckpointSha256':recipe['incumbent']['checkpointSha256'],'dataSha256':'d'*64},'recoveryFiles':[]}))
+            env={'RIGHELT_HOSTED':'1','RIGHELT_EXECUTION_RECIPE_PATH':str(path),'RIGHELT_EXECUTION_RECIPE_SHA256':hashlib.sha256(path.read_bytes()).hexdigest(),'RIGHELT_EXECUTION_CONTEXT':str(context)}
+            with patch.dict(os.environ,env),self.assertRaisesRegex(ValueError,'outside run root'):verify_start(cp,model,optimizer)

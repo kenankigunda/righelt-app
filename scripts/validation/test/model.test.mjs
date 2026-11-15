@@ -47,6 +47,20 @@ test('AI tooling selects dedicated checks without accepting similarly named dire
  assert.equal(coverage(['docs/ai/PR_WORKFLOW.md']).areas.includes('ai-trainer'),false);
 });
 
+test('hosted compute tooling maps exact paths while product acceptance and unknown tools stay distinct',()=>{
+ const known=['tools/hosted-compute/worker.mjs','tools/hosted-compute/policy.json','tools/hosted-compute/cleanup-workflow.yml.template','tools/hosted-compute/test/controller.test.mjs'];
+ const selected=coverage(known);
+ assert.deepEqual(selected.areas,['core','tooling']);
+ assert.deepEqual(selected.unmapped,[]);
+ assert.ok(selected.files.includes('e2e/workflows/reconnect-recovery.spec.mjs'));
+ const unknown=['tools/hosted-compute-other/worker.mjs','tools/hosted-compute.mjs','tools/hosted-computex/worker.mjs','tools/unknown/worker.mjs'];
+ assert.deepEqual(coverage([...known,...unknown]).unmapped,unknown);
+ const mixed=coverage([...known,'apps/compute-controller/index.mjs']);
+ assert.deepEqual(mixed.areas,['core','tooling','app']);
+ assert.deepEqual(mixed.files,[]);
+ assert.deepEqual(mixed.unmapped,[]);
+});
+
 test('account proof directory is mapped without accepting unrelated validation folders',()=>{
  const known=['validation-account-e2e/accounts.spec.mjs','playwright.validation-account.config.mjs'];
  assert.deepEqual(coverage(known).unmapped,[]);

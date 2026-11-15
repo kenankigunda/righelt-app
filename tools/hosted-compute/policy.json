@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "pilotCents": 10000,
-  "monthlyCents": 50000,
+  "cloudflareCents": 2000,
   "repairCents": 1000,
   "repairMs": 7200000,
   "checkpointMs": 600000,
@@ -15,5 +15,11 @@
   "shutdownReserveCents": 2000,
   "reserveBasisPoints": 2000,
   "trainerCheckpointSeconds": 240,
-  "snapshotEveryMs": 120000
+  "snapshotEveryMs": 120000,
+  "campaignMs": 86400000,
+  "backupRecoveryPoints": 2,
+  "maxReplacementAttempts": 2,
+  "maxPhases": 12,
+  "cleanupEveryMs": 300000,
+  "cleanupJobMinutes": 5
 }

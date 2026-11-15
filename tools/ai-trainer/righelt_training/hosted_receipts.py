@@ -58,10 +58,10 @@ def claim(namespace, identity):
     return request('claim', {'key': key})['created'] is True
 
 
-def evaluation_claim(namespace, identity):
-    if not enabled(): return {'created': True}
+def evaluation_claim(namespace, identity, *, create=True):
+    if not enabled(): return {'created': True} if create else {'created':False,'unclaimed':True}
     key = hashlib.sha256((namespace + ':' + identity).encode()).hexdigest()
-    record = request('claim', {'key': key})
+    record = request('claim', {'key': key,'allowCreate':create})
     result = record.get('record', {}).get('result')
     if result:
         raw = request('objects/' + result['sha256'], method='GET')

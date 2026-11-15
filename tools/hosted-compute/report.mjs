@@ -1,37 +1,25 @@
-import { assert, canonical } from './policy.mjs';
+import { assert } from './policy.mjs';
+import { projectCampaign } from './bundle.mjs';
+import { cashPlan, actualCash } from './cash.mjs';
+import { verifyQualificationReceipts } from './qualification.mjs';
 
-// Requirements come from the preregistered short workload, not observed winners.
-export function evidenceComplete(r) {
-  const w = r.workload;
-  if (!w || !Array.isArray(w.workIds) || !w.workIds.length || new Set(w.workIds).size !== w.workIds.length) return false;
-  for (const key of ['attemptedWorkIds', 'completedWorkIds', 'verifiedWorkIds']) {
-    if (!Array.isArray(r[key]) || new Set(r[key]).size !== r[key].length || canonical([...r[key]].sort()) !== canonical([...w.workIds].sort())) return false;
-  }
-  for (const key of ['policyUsablePositions', 'terminalValuePositions', 'distinctOutcomeTrajectories', 'distinctFamilies', 'sampledPositions']) {
-    if (!Number.isSafeInteger(r[key]) || r[key] < 0 || !Number.isSafeInteger(w.minimum?.[key]) || w.minimum[key] < 0 || r[key] < w.minimum[key]) return false;
-  }
-  return r.policyUsablePositions > 0 && r.distinctOutcomeTrajectories > 0 &&
-    r.failedWorkIds?.length === 0 && r.unfinishedWorkIds?.length === 0;
-}
-export function recommend(reports) {
-  assert(Array.isArray(reports) && reports.length === 2, 'exactly two pilot host reports required');
-  const [a, b] = reports;
-  for (const field of ['sourceRevision', 'checkpointSha256', 'corpusSha256', 'recipeSha256', 'executionRecipeSha256', 'workloadSha256', 'seed', 'workload']) assert(a[field] !== undefined && canonical(a[field]) === canonical(b[field]), `comparison differs: ${field}`);
-  for (const r of reports) {
-    assert(Number.isFinite(r.elapsedSeconds) && r.elapsedSeconds > 0 && Number.isFinite(r.totalCents) && r.totalCents > 0, 'complete cost and timing required');
-    assert(Number.isFinite(r.operatorSteps) && r.operatorSteps >= 0, 'operator effort required');
-  }
-  const mechanicallyQualified = reports.filter(r => r.correctnessPassed === true && r.recoveryPassed === true && r.cleanupVerified === true);
-  const eligible = mechanicallyQualified.filter(evidenceComplete);
-  const measurements = reports.map(r => ({ ...r, evidenceComplete: evidenceComplete(r), policyPositionsPerDollar: evidenceComplete(r) ? r.policyUsablePositions / r.totalCents * 100 : null }));
-  if (!eligible.length) return { outcome: mechanicallyQualified.length ? 'insufficient-evidence' : 'repair-required', winner: null, strengthEstablished: false, measurements };
-  let winner = eligible[0], reason = 'only configuration completed the frozen workload and qualification';
-  if (eligible.length === 2) {
-    const ordered = [...eligible].sort((x, y) => y.policyUsablePositions / y.totalCents - x.policyUsablePositions / x.totalCents);
-    const best = ordered[0], second = ordered[1];
-    const close = (best.policyUsablePositions / best.totalCents) <= 1.1 * (second.policyUsablePositions / second.totalCents);
-    winner = close ? [...eligible].sort((x, y) => x.operatorSteps - y.operatorSteps || x.elapsedSeconds - y.elapsedSeconds || x.totalCents - y.totalCents || x.provider.localeCompare(y.provider))[0] : best;
-    reason = close ? 'yield within 10%; simpler operation then turnaround' : 'verified policy-usable positions per total cent';
-  }
-  return { outcome: 'recommendation', winner: winner.provider, reason, strengthEstablished: false, measurements };
+export async function qualifyPilot(report){
+ assert(report?.provider==='runpod','one Runpod configuration required');
+ cashPlan(report.cash,report.cash?.computeUsageCapCents);
+ assert(Number.isFinite(report.elapsedSeconds)&&report.elapsedSeconds>0&&report.elapsedSeconds<=86400,'bounded campaign elapsed time required');
+ const w=report.workload;
+ assert(w&&Array.isArray(w.workIds)&&w.workIds.length&&new Set(w.workIds).size===w.workIds.length,'frozen short workload required');
+ const identical=ids=>Array.isArray(ids)&&new Set(ids).size===ids.length&&JSON.stringify([...ids].sort())===JSON.stringify([...w.workIds].sort());
+ const complete=['attemptedWorkIds','completedWorkIds','verifiedWorkIds'].every(k=>identical(report[k]))&&report.failedWorkIds?.length===0&&report.unfinishedWorkIds?.length===0;
+ const required=['correctnessPassed','recoveryPassed','cleanupVerified','cudaPassed','macDisconnectedPassed','hostLossPassed','backupRestorePassed'];
+ let projectionPassed=false;
+ try{const projected=projectCampaign(report.bundleProjection?.files,report.bundleProjection?.measurements);projectionPassed=projected.qualified===true && report.bundleProjection.measurements.cloudflareReserveCents<=report.cash.cloudflareUsageCapCents && projected.cloudflareProjectedCents<=report.cash.cloudflareUsageCapCents;}catch{}
+ let receiptIdentity=null;
+ try{receiptIdentity=await verifyQualificationReceipts(report);}catch{}
+ const qualified=projectionPassed&&!!receiptIdentity&&complete&&required.every(k=>report[k]===true);
+ const actual=report.actualCash;
+ const {withinBudget,cashOutlayCents,runpodPaidCents,cloudflarePaidCents}=actualCash(report.cash,actual);
+ return {outcome:qualified&&withinBudget?'operationally-qualified':'insufficient-evidence',qualified:qualified&&withinBudget,
+   cashOutlayCents,runpodPaidCents,cloudflarePaidCents,qualification:receiptIdentity,providerUsageCents:actual.providerUsageCents,unusedPrepaidCreditCents:actual.unusedCreditCents,
+   missing:[...required.filter(k=>report[k]!==true),...(projectionPassed?[]:['measured24HourBundleProjection']),...(receiptIdentity?[]:['rawQualificationDrillReceipts'])],workloadComplete:complete,withinBudget,strengthEstablished:false};
 }

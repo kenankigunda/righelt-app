@@ -8,6 +8,7 @@ import torch
 from .config import CONFIG_SHA256
 from .training_recipe import recipe_binding, validate_recipe, record_recipe
 from .architecture import BASELINE, model_architecture, record_architecture
+from .portable import resolve_reference,ChecksumMismatch
 
 
 def weights_sha256(state):
@@ -49,7 +50,7 @@ def save_checkpoint(path, model, optimizer, *, round_index, updates, replay_ids,
         data['explorationAdoption'] = exploration_adoption
     if recovery_state is not None:
         state=json.loads(json.dumps(recovery_state,sort_keys=True,allow_nan=False))
-        archives={name:hashlib.sha256((path.parent.parent/name).read_bytes()).hexdigest() for name in state['archives']}
+        archives={name:hashlib.sha256(resolve_reference(name, base=path.parent.parent).read_bytes()).hexdigest() for name in state['archives']}
         data['recovery']={'schema':1,'state':state,'archives':archives}
         data['recoverySha256']=hashlib.sha256(json.dumps(data['recovery'],sort_keys=True,allow_nan=False).encode()).hexdigest()
     if torch.backends.mps.is_available(): data['mpsRng']=torch.mps.get_rng_state()
@@ -72,7 +73,7 @@ def save_checkpoint(path, model, optimizer, *, round_index, updates, replay_ids,
 
 
 def inspect_checkpoint(path, *, manifest_sha256, require_recovery=False, training_recipe=None):
-    path=Path(path);meta=json.loads(path.with_suffix('.json').read_text())
+    path=resolve_reference(path);meta=json.loads(resolve_reference(path.with_suffix('.json')).read_text())
     if hashlib.sha256(path.read_bytes()).hexdigest()!=meta['sha256']: raise ValueError('checkpoint checksum mismatch')
     data=torch.load(path,map_location='cpu',weights_only=True)
     if (record_architecture(data) != record_architecture(meta)
@@ -96,7 +97,7 @@ def inspect_checkpoint(path, *, manifest_sha256, require_recovery=False, trainin
     recovery=data.get('recovery')
     if require_recovery and recovery is None:raise ValueError('checkpoint lacks bound recovery bundle')
     if recovery is not None:
-        companion=json.loads(path.with_suffix('.runner.json').read_text())
+        companion=json.loads(resolve_reference(path.with_suffix('.runner.json')).read_text())
         digest=hashlib.sha256(json.dumps(recovery,sort_keys=True,allow_nan=False).encode()).hexdigest()
         if (digest!=data['recoverySha256'] or digest!=companion.get('recoverySha256')
             or companion.get('checkpointSha256')!=meta['sha256'] or companion.get('state')!=recovery['state']):
@@ -105,7 +106,8 @@ def inspect_checkpoint(path, *, manifest_sha256, require_recovery=False, trainin
         if (recovery['state']['updates']!=data['updates'] or recovery['state']['round']!=data['round']
             or recovery['state']['archives']!=data['replayIds']):raise ValueError('recovery cursor/payload mismatch')
         for name,expected in recovery['archives'].items():
-            if hashlib.sha256((path.parent.parent/name).read_bytes()).hexdigest()!=expected:raise ValueError('recovery archive checksum mismatch')
+            try:resolve_reference(name, base=path.parent.parent, expected_sha256=expected)
+            except ChecksumMismatch as error:raise ValueError('recovery archive checksum mismatch') from error
     return data
 
 

@@ -8,6 +8,7 @@ import platform
 import subprocess
 import sys
 from .config import CONFIG,CONFIG_SHA256,ROOT
+from .source_image import source_image, proof_inventory
 from .checkpoint import atomic_json
 from .resource_policy import manifest_fields
 from .training_recipe import recipe_binding, validate_recipe, record_recipe
@@ -16,9 +17,13 @@ from .training_recipe import recipe_binding, validate_recipe, record_recipe
 def build_manifest(seed,stage,*,training_recipe=None):
     if stage not in ('initial','overnight') or not isinstance(seed,int) or not 0<=seed<2**32:
         raise ValueError('invalid stage or seed')
-    dirty=subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True)
-    if dirty.strip():raise ValueError('commit experiment source before launch')
-    revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
+    image=source_image()
+    if image is None:
+        dirty=subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True)
+        if dirty.strip():raise ValueError('commit experiment source before launch')
+        revision=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
+    else:
+        revision=image['sourceRevision']
     recipe=recipe_binding() if training_recipe is None else validate_recipe(training_recipe)
     verify_recipe(recipe)
     return {'schema':1,'sourceRevision':revision,'configSha256':CONFIG_SHA256,'config':CONFIG,'trainingRecipe':recipe,
@@ -108,7 +113,10 @@ ADOPTION_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for n
     'tools/ai-trainer/tests/test_sequence.py','tools/ai-trainer/tests/test_eight_hour.py','tools/ai-trainer/tests/test_fresh_health.py','tools/ai-trainer/tests/test_stage.py')
 
 HOSTED_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for name in (
-    'device','hosted_receipts','hosted_cleanup','hosted_snapshot','execution_recipe','hosted_canary'))
+    'backup_closure','device','hosted_receipts','source_image','hosted_cleanup','hosted_snapshot','execution_recipe','hosted_canary',
+    'portable','attention_method','attention_audit','export_runtime','policy_pool','runtime_probe','pilot_recipe','architecture','board_attention','sequence_targets','hosted_science')) + (
+    'tools/ai-trainer/righelt_training/local-teaching-v2.json','tools/ai-trainer/righelt_training/followup-teaching-v1.json',
+    'tools/ai-trainer/training-teaching.mjs','tools/ai-trainer/evaluation-protection.mjs','tools/ai-trainer/public-evaluation-profiles.mjs')
 
 PROOF_PATHS=('tools/ai-trainer/learning-evidence-contract.json','tools/ai-trainer/tactical-evidence.mjs','tools/hosted-compute/data-contract.mjs','tools/hosted-compute/policy.json','tools/hosted-compute/fixture-contract.json','packages/game-engine/src','packages/computer-player/src','packages/shared-types/src',
     'tools/ai-trainer/production-corpus.mjs','tools/ai-trainer/snapshot-production.py',
@@ -123,6 +131,8 @@ PROOF_PATHS=('tools/ai-trainer/learning-evidence-contract.json','tools/ai-traine
 
 def dependency_inventory(revision=None):
     """Exact tracked source inventory; missing paths can never imply no changes."""
+    bundled=proof_inventory(PROOF_PATHS, revision)
+    if bundled is not None:return bundled
     inventory={}
     for name in PROOF_PATHS:
         if not (ROOT/name).exists():raise ValueError(f'proof dependency missing: {name}')

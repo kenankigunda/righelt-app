@@ -8,6 +8,8 @@ preview_urls = false
 COMPUTE_ENABLED = "false"
 AUTHORIZED_PILOT_CENTS = "0"
 CONTROLLER_URL = ""
+COMPUTE_CONTROL_REPOSITORY = "kenankigunda/righelt-compute-control"
+COMPUTE_CONTROL_BRANCH = "main"
 
 [[durable_objects.bindings]]
 name = "CONTROL"
@@ -21,8 +23,17 @@ new_sqlite_classes = ["ComputeController"]
 binding = "ARTIFACTS"
 bucket_name = "righelt-compute-private"
 
+
 [triggers]
 crons = []
 
+[observability]
+enabled = true
+head_sampling_rate = 0.01
+
 [observability.logs]
-enabled = false
+enabled = true
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 0.01

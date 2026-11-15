@@ -1,20 +1,28 @@
 import { Controller } from '../../tools/hosted-compute/controller.mjs';
 import { Providers } from '../../tools/hosted-compute/providers.mjs';
 import { LedgerStorage } from '../../tools/hosted-compute/storage.mjs';
+import { PrimaryControl } from '../../tools/hosted-compute/external-control.mjs';
+import { primaryControlStore } from '../../tools/hosted-compute/github-control.mjs';
 import { POLICY, ContractError, assert, encode, safeName, sha256 } from '../../tools/hosted-compute/policy.mjs';
 
 const json = (value, status = 200) => Response.json(value, { status, headers: { 'cache-control': 'no-store' } });
 async function equalSecret(a, b) {
   if (!a || !b) return false;
-  return await sha256(encode(a)) === await sha256(encode(b));
+  return crypto.subtle.timingSafeEqual(await crypto.subtle.digest('SHA-256',encode(a)),await crypto.subtle.digest('SHA-256',encode(b)));
 }
 export class ComputeController {
   constructor(ctx, env) {
-    this.ctx = ctx; this.env = env;
+    this.ctx = ctx; this.env = env; this.transition = Promise.resolve();
     this.core = new Controller({ storage: new LedgerStorage(ctx.storage), bucket: env.ARTIFACTS, providers: new Providers(env),
       config: { enabled: env.COMPUTE_ENABLED === 'true', authorizedCents: Number(env.AUTHORIZED_PILOT_CENTS ?? 0), url: env.CONTROLLER_URL },
+      externalControl: manifest => new PrimaryControl({ store: primaryControlStore(env), reference: manifest.externalControl }),
       token: (id, generation) => this.workerToken(id, generation),
     });
+  }
+  serialize(action) {
+    const result=this.transition.then(action);
+    this.transition=result.catch(()=>{});
+    return result;
   }
   async arm(at) {
     const current = await this.ctx.storage.getAlarm();
@@ -26,15 +34,18 @@ export class ComputeController {
     return [...new Uint8Array(await crypto.subtle.sign('HMAC', key, encode(`${id}/${generation}`)))].map(x => x.toString(16).padStart(2, '0')).join('');
   }
   async fetch(request) {
-    // Serialize the whole transition, including external I/O. State is persisted
+    // Serialize actor transitions without holding the platform input gate across
+    // network I/O. State is persisted
     // before each irreversible call, so actor restarts cannot duplicate launches.
-    return this.ctx.blockConcurrencyWhile(async () => {
+    return this.serialize(async () => {
       try {
         const response = await this.route(request);
         const db = await this.core.load();
         if (Object.values(db.campaigns).some(c => !['complete', 'failed', 'cancelled', 'cleared', 'staged'].includes(c.status))) await this.arm(Date.now() + POLICY.reconcileMs);
         return response;
       } catch (error) {
+        if (!(error instanceof ContractError)) console.error(JSON.stringify({event:'compute-controller-unavailable',
+          type:error instanceof TypeError?'type-error':error instanceof SyntaxError?'invalid-data':'infrastructure'}));
         return error instanceof ContractError
           ? json({ error: error.message }, 409)
           : json({ error: 'controller infrastructure unavailable' }, 503);
@@ -67,6 +78,7 @@ export class ComputeController {
       }
       if (request.method === 'GET') {
         const db = await this.core.load(), c = this.core.campaign(db, id);
+        if(worker)assert(c.attempts.at(-1)?.placement,'approved placement required before inputs');
         assert(c.objects[name] && !c.cleared, 'object unavailable');
         const object = await this.env.ARTIFACTS.get(`${id}/${name}`); assert(object, 'object missing');
         return new Response(object.body, { headers: { 'content-type': 'application/octet-stream', 'cache-control': 'no-store', 'x-content-sha256': name } });
@@ -97,7 +109,7 @@ export class ComputeController {
     throw Error('unknown operation');
   }
   async alarm() {
-    return this.ctx.blockConcurrencyWhile(async () => {
+    return this.serialize(async () => {
       // Schedule the successor before I/O so a provider outage cannot lose the
       // cleanup wake-up. Cron reconciliation supplements this alarm when enabled.
       await this.arm(Date.now() + POLICY.reconcileMs);

@@ -8,6 +8,8 @@ import {transitionArchivedAction} from './archived-action.mjs';
 import {archivedRetreatSemantics} from '../../packages/shared-types/src/retreat-rules.ts';
 import {legacyCommanderReplayState} from './decision-replay.mjs';
 import {createEngineOperationBudget} from './engine-operation-budget.mjs';
+import {proveRelevantContinuation} from '../../packages/game-engine/src/early-ending-proof.ts';
+import {probeTerminalSettlement} from '../../packages/game-engine/src/terminal-settlement.ts';
 
 export const HELD_OUT_GAMES = Object.freeze([
   'game-13279b470a8f68382082d12268fcdb585a90',
@@ -41,6 +43,25 @@ export function exactRetainedState(actual,expected,bounded=operation=>operation(
   return retained;
 }
 
+// Replay-only recognition of a recorded automatic rush ending. No synthetic
+// End Turn is inserted. Both complete continuation proof and the exact retained
+// physical board are required, and unknown proofs retain the quarantine.
+export function replayProductionDecision(before,action,expected,bounded=operation=>operation(),retreatSemantics,options={}) {
+  const next=transitionArchivedAction(before,action,bounded,retreatSemantics);
+  try{return {state:exactRetainedState(next,expected,bounded),automaticEnding:null};}
+  catch(error){
+    if(next.outcome.status!=='ongoing'||expected.outcome.status==='ongoing'||next.continuation?.type!=='rush')throw error;
+    const {expectedCause,...proofOptions}=options;
+    const proof=bounded(()=>proveRelevantContinuation(next,next.continuation.owner,proofOptions));
+    if(proof.kind!=='proven-terminal'||proof.complete!==true||proof.candidateOutcome.status!==expected.outcome.status)throw Error('Unverified production automatic ending');
+    if(expectedCause?.kind!=='relevant-continuation-finality'||expectedCause.endpointCount!==proof.endpointCount||expectedCause.optionalEndpointCount!==proof.optionalEndpointCount)throw Error('Unverified production automatic ending cause');
+    const settled=bounded(()=>probeTerminalSettlement(next,undefined,{artifactMode:expected.artifacts?.mode??'full'}));
+    if(settled.kind!=='settled'||!settled.persistable)throw Error('Unverified production automatic settlement');
+    const state=exactRetainedState(settled.frame.occupancy,expected,bounded);
+    return {state,automaticEnding:{kind:proof.kind,visitedNodes:proof.visitedNodes,endpointCount:proof.endpointCount,exactStateHash:deterministicStateHash(state),causeVerified:true}};
+  }
+}
+
 export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds=60}={}) {
   const deadline=performance.now()+seconds*1000;
   const check=()=>{if(performance.now()>=deadline)throw Error('Production replay deadline');};
@@ -48,6 +69,7 @@ export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds
   const starts=[],reports=[];
   for(const game of games) {
     check();
+    const retainedGame=JSON.parse(game.state_json);
     const rows=decisions.filter(d=>d.game_id===game.game_id)
       .sort((a,b)=>a.event_seq-b.event_seq || a.event_ordinal-b.event_ordinal);
     const partition=heldOut.includes(game.game_id)?'validation':'train';
@@ -71,7 +93,9 @@ export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds
           if(!current)throw Error('Unverified production lineage');
           exactRetainedState(current,move.selectionSnapshot,bounded);
           const before=current;
-          current=exactRetainedState(transitionArchivedAction(before,move.action,bounded,move.retreatSemantics),move.snapshot,bounded);
+          const replayed=replayProductionDecision(before,move.action,move.snapshot,bounded,move.retreatSemantics,{expectedCause:retainedGame.terminalOutcome?.decisive?.decisionId===record.id?retainedGame.terminalOutcome.cause:undefined});
+          current=replayed.state;
+          if(replayed.automaticEnding){report.automaticEndings??=[];report.automaticEndings.push({recordId:record.id,...replayed.automaticEnding});}
           activePath=activePath?[...activePath,record.id]:null;
           remember();moves.set(record.id,move);verified++;
           if(before.outcome.status==='ongoing')candidates.push({
@@ -106,7 +130,7 @@ export function productionCorpus(games,decisions,{heldOut=HELD_OUT_GAMES,seconds
       }
     }
     report.verifiedDecisions=verified;
-    const live=JSON.parse(game.state_json).board.state;
+    const live=retainedGame.board.state;
     report.currentStateVerified=!!current && deterministicStateHash(current)===deterministicStateHash(live);
     report.recordedOutcome=live.outcome;
     report.finalHash=current?deterministicStateHash(current):null;
