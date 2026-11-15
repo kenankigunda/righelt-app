@@ -44,7 +44,7 @@ export function installPassiveAudioObservations() {
   base[method]=function(...args){context(this);note('audio-node-request',{method,state:this.state});return Reflect.apply(create,this,args);};
  }
  const start=AudioBufferSourceNode.prototype.start;
- AudioBufferSourceNode.prototype.start=function(...args){context(this.context);note('source-start',{state:this.context.state,channels:this.buffer?.numberOfChannels,duration:this.buffer?.duration,sampleRate:this.buffer?.sampleRate,firstSample:this.buffer?.getChannelData(0)?.[0]});return Reflect.apply(start,this,args);};
+ AudioBufferSourceNode.prototype.start=function(...args){context(this.context);const duration=this.buffer?.duration;note('source-start',{state:this.context.state,channels:this.buffer?.numberOfChannels,duration,sampleRate:this.buffer?.sampleRate,firstSample:this.buffer?.getChannelData(0)?.[0]});try{globalThis.__righeltRemovalTraceMark?.('audio-source-start',{duration});}catch{}return Reflect.apply(start,this,args);};
  for(const type of ['focus','blur'])window.addEventListener(type,()=>note(type));
  for(const type of ['pointerdown','keydown'])document.addEventListener(type,event=>note('gesture',{type,trusted:event.isTrusted,pointerType:event.pointerType??null,key:event.key??null}),{capture:true,passive:true});
  document.addEventListener('visibilitychange',()=>note('visibility'));

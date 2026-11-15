@@ -1,0 +1,63 @@
+{
+  "/shell/app.js": {
+    "file": "apps/web/shell/app.js",
+    "sourceSha256": "f71c572d287e708346e64e4e27a50b9a3979abb2ca8df194615944c8babb1267",
+    "outputSha256": "6e294aad5a83cf05de547d31cfcba070a05b392a1ae540dabefd23a44e70ef8c",
+    "operations": [
+      {
+        "start": 230865,
+        "end": 230924,
+        "before": "  if(change?.type==='authoritative_update'&&change.gameId){",
+        "after": "  if(change?.type==='authoritative_update'&&change.gameId){\n    try{globalThis.__righeltRemovalTraceMark?.('authoritative-subscriber',{gameplayRevision:transport.getAuthoritativeGame(change.gameId)?.gameplayRevision,eventSeq:transport.getLastEventSeq(change.gameId)});}catch{}",
+        "anchor": "  if(change?.type==='authoritative_update'&&change.gameId){",
+        "anchorCount": 1
+      }
+    ]
+  },
+  "/shell/removal-presentation.js": {
+    "file": "apps/web/shell/removal-presentation.js",
+    "sourceSha256": "a392f39b8314f5737a1b1e19bb8112cd2d5aea1b4d57d8631e0c3bc5e83a3d83",
+    "outputSha256": "fe7252058f4fd0cdd00807eec5f6ac635a68ec599016997c7a839f41fd8c6a79",
+    "operations": [
+      {
+        "start": 330,
+        "end": 340,
+        "before": " visual();",
+        "after": " try{globalThis.__righeltRemovalTraceMark?.('visual-commit-entry');}catch{}\n visual();\n try{globalThis.__righeltRemovalTraceMark?.('visual-commit-exit');}catch{}",
+        "anchor": " visual();",
+        "anchorCount": 1
+      },
+      {
+        "start": 372,
+        "end": 391,
+        "before": " cue();return true;",
+        "after": " try{globalThis.__righeltRemovalTraceMark?.('cue-schedule-entry');}catch{}\n cue();\n try{globalThis.__righeltRemovalTraceMark?.('cue-schedule-exit');}catch{}\n return true;",
+        "anchor": " cue();return true;",
+        "anchorCount": 1
+      }
+    ]
+  },
+  "/board/runtime/board-runtime.js": {
+    "file": "apps/web/board/runtime/board-runtime.js",
+    "sourceSha256": "e09bcc10c87849bf9abed7bc1f86bd396b6bd46a2a687aeec5a388c601408a42",
+    "outputSha256": "5d37876fa010ee59215e654afaa5ca9c2ce828d7b22c03fff15f61329aecb035",
+    "operations": [
+      {
+        "start": 26835,
+        "end": 26860,
+        "before": "    boardAdapter.render({",
+        "after": "    try{globalThis.__righeltRemovalTraceMark?.('board-commit-entry',{removalCount:removalEffects.length,actionable:canInteract&&!mutationSurface.unavailable});}catch{}\n    boardAdapter.render({",
+        "anchor": "    boardAdapter.render({",
+        "anchorCount": 1
+      },
+      {
+        "start": 27563,
+        "end": 27613,
+        "before": "    });\n    lastRenderedCanInteract = canInteract;",
+        "after": "    });\n    try{globalThis.__righeltRemovalTraceMark?.('board-commit-exit',{removalCount:removalEffects.length,actionable:canInteract&&!mutationSurface.unavailable});}catch{}\n    lastRenderedCanInteract = canInteract;",
+        "anchor": "    });\n    lastRenderedCanInteract = canInteract;",
+        "anchorCount": 1
+      }
+    ]
+  }
+}
