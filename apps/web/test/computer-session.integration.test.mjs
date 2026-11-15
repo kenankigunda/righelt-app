@@ -971,6 +971,11 @@ test('completed History Undo retains its owner fence',async t=>{
  assert.equal(await f.session.withMutation(async()=>{mutations++;},{completedUndo:true}),false);
  assert.equal(mutations,0);assert.deepEqual(f.controls,[]);
 });
+test('completedUndo admission cannot bypass normal lease authority for an ongoing game',async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());let mutations=0;
+ assert.equal(await f.session.withMutation(async()=>{mutations++;return true;},{completedUndo:true}),true);
+ assert.equal(mutations,1);assert.deepEqual(f.controls.map(request=>request.action),['acquire']);
+});
 test('completed History Undo cannot cross a newer terminal revision while control settles',async t=>{
  const f=fixture();t.after(()=>f.session.destroy());let release,started,mutations=0;
  const held=new Promise(resolve=>{release=resolve;}),sent=new Promise(resolve=>{started=resolve;});
@@ -982,6 +987,25 @@ test('completed History Undo cannot cross a newer terminal revision while contro
  f.game().gameplayRevision++;release();await acquisition;
  await assert.rejects(mutation,/computer_control_changed/);
  assert.equal(mutations,0);assert.deepEqual(f.controls.map(request=>request.action),['acquire']);
+});
+for(const change of ['account','game','revision','generation','model-key'])test(`completed History Undo cannot continue after ${change} changes`,async t=>{
+ const f=fixture();t.after(()=>f.session.destroy());let release,started,mutations=0;
+ const held=new Promise(resolve=>{release=resolve;}),sent=new Promise(resolve=>{started=resolve;});
+ const control=f.transport.computerControl;
+ f.transport.computerControl=async(...args)=>{if(args[1].action==='acquire'){started();await held;}return control(...args);};
+ const acquisition=f.session.tick();await sent;
+ f.game().board.state.outcome={status:'p2_win'};
+ const mutation=f.session.withMutation(async()=>{mutations++;},{completedUndo:true});
+ if(change==='account')f.changeAccount();
+ else if(change==='game')f.switchGame();
+ else if(change==='revision')f.game().gameplayRevision++;
+ else if(change==='generation')f.game().computer.generation++;
+ else f.game().computer.modelId='replacement-model';
+ release();await acquisition.catch(()=>{});
+ const result=await mutation.then(value=>({value}),error=>({error}));
+ assert.equal(mutations,0);assert.deepEqual(f.controls.map(request=>request.action),['acquire']);
+ if(change==='account'||change==='game')assert.equal(result.value,false);
+ else assert.match(result.error?.message??'',/computer_control_changed/);
 });
 test('completion after acquiring control stops renewal without issuing a release command',async t=>{
  const f=fixture();t.after(()=>f.session.destroy());await f.session.tick();assert.equal(f.controls.length,1);

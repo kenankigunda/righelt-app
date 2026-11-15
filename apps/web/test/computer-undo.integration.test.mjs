@@ -206,6 +206,22 @@ test('selected Undo without renewal still executes once', async t => {
   assert.equal(h.undoCount(), 1);
 });
 
+test('completed History Undo uses the app admission and durable revert before fresh acquire and resume', async t => {
+  const h = await undoRenewAdmissionHarness(t);
+  await h.complete('p1_win');
+  const terminal = structuredClone(h.current().terminalOutcome);
+  assert.deepEqual(h.store.getGameViewModel(h.current().id).terminalOutcome, terminal);
+  const before = h.commands.length;
+  await h.activate();
+  assert.equal(h.undoCount(), 1);
+  assert.equal(h.current().board.state.outcome.status, 'ongoing');
+  assert.equal(h.current().terminalOutcome, undefined);
+  assert.deepEqual(h.commands.slice(before).map(command => command.payload.operation === 'computer-control'
+    ? `control:${command.payload.values.action}` : command.payload.operation), [
+    'revert-request', 'control:acquire', 'control:resume',
+  ]);
+});
+
 test('selected Undo after completed renewal executes once', async t => {
   const h = await undoRenewAdmissionHarness(t);
   await h.startRenew(); await h.settle(); await h.activate();
