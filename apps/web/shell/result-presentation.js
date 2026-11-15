@@ -4,13 +4,13 @@ export const renderResultMark = () => `<div class="result-mark" data-result-mark
 
 // A confirmed automatic entry or explicit View result owns one timeline.
 // Repainting preserves elapsed time; hydration and reload never create one.
-export function createResultPresentation({now=()=>performance.now(),reducedMotion=()=>globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false}={}) {
+export function createResultPresentation({now=()=>performance.now(),reducedMotion=()=>globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,onEnter=()=>{}}={}) {
   let entry = null;
   const mounted = new WeakSet();
   const animations = new Set();
   const track = animation => {animations.add(animation);animation.onfinish=()=>animations.delete(animation);};
   return {
-    enter(gameId,result) { for(const animation of animations)animation.cancel();animations.clear();entry = {gameId,tone:result.tone,startedAt:now()}; },
+    enter(gameId,result) { for(const animation of animations)animation.cancel();animations.clear();entry = {gameId,tone:result.tone,startedAt:now()};onEnter(resultSound(result),result); },
     clear() { entry = null;for(const animation of animations)animation.cancel();animations.clear(); },
     mount(root,gameId) {
       if (!root || mounted.has(root)) return;

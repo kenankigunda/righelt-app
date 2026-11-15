@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createGameSound} from '../shell/sound.js';
+import {createConfirmedResultOwner} from '../shell/confirmed-result.js';
+import {createResultPresentation} from '../shell/result-presentation.js';
 const fixture=()=>{
  const timers=new Map();let id=0,hidden=false,starts=0;
  const node=()=>({connect(){},disconnect(){},frequency:{},Q:{},gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},start(){starts++;},stop(){}});
@@ -81,7 +83,7 @@ test('navigation cues finish with the requested reveal duration',()=>{
 });
 
 
-test('result sound requires confirmation even when the optimistic move finishes the game',()=>{
+test('transport confirmation stays quiet so the eligible result entry owns the cue',()=>{
  const frequencies=[];
  const node=()=>({connect(){},disconnect(){},frequency:{value:0},Q:{},gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},start(){},stop(){}});
  const audio={state:'running',currentTime:0,sampleRate:8000,createBuffer:(_,n)=>({getChannelData:()=>new Float32Array(n)}),createBufferSource:node,createBiquadFilter:node,createGain:node,createOscillator:()=>{const n=node();n.start=()=>frequencies.push(n.frequency.value);return n;}};
@@ -96,11 +98,23 @@ test('result sound requires confirmation even when the optimistic move finishes 
  sound.local({gameId:'a',type:'optimistic_enqueue',clientCommandId:'accepted'},{currentSnapshot:terminal});
  assert.equal(frequencies.includes(560),false);
  sound.observe(event(3,terminal,'accepted'));sound.observe(event(3,terminal,'accepted'));sound.observe(event(4,terminal,'accepted','turn_ended'));
- assert.equal(frequencies.filter(x=>x===560).length,1);
+ assert.equal(frequencies.filter(x=>x===560).length,0);
 });
 
-test('confirmed result cues reflect player perspective and stay silent on hydration, history, repeated events and mute',()=>{
- for(const [identity,status,expected] of [['red','p1_win',[560,700,840]],['blue','p1_win',[420,360]],['viewer','p1_win',[560]],['red','draw',[520,520]]]){
+test('confirmed presentation sounds once on immediate or deferred entry and explicit replay sounds again',()=>{
+ const notes=[];const node=()=>({connect(){},disconnect(){},frequency:{value:0},Q:{},gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},start(){},stop(){}});
+ const audio={state:'running',currentTime:0,sampleRate:8000,destination:{},createBuffer:(_,n)=>({getChannelData:()=>new Float32Array(n)}),createBufferSource:node,createBiquadFilter:node,createGain:node,createOscillator:()=>{const value=node();value.start=()=>notes.push(value.frequency.value);return value;}};
+ const sound=createGameSound({createAudio:()=>audio});sound.gesture();const presentation=createResultPresentation({onEnter:kind=>sound.play(kind)}),owner=createConfirmedResultOwner();
+ const game=status=>({id:'g',player1:{identityId:'red'},player2:{identityId:'blue'},board:{state:{outcome:{status,reason:'p2_commander_unsupplied'}}}});
+ owner.observe(game('ongoing'));owner.observe(game('p1_win'));
+ assert.equal(owner.evaluate('g',{current:true,dialogOpen:true}).present,false);assert.deepEqual(notes,[]);
+ const decision=owner.evaluate('g',{current:true,dialogOpen:false});assert.equal(decision.present,true);presentation.enter('g',{tone:'victory'});assert.deepEqual(notes,[560,700,840]);
+ assert.equal(owner.evaluate('g',{current:true}).present,false);assert.deepEqual(notes,[560,700,840]);
+ presentation.enter('g',{tone:'victory'});assert.deepEqual(notes,[560,700,840,560,700,840],'explicit View result intentionally replays the cue');
+});
+
+test('terminal transport paths stay silent on hydration, History, duplicates and ordinary confirmation',()=>{
+ for(const [identity,status] of [['red','p1_win'],['blue','p1_win'],['viewer','p1_win'],['red','draw']]){
   const notes=[];
   const node=()=>({connect(){},disconnect(){},frequency:{value:0},Q:{},gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},start(){},stop(){}});
   const audio={state:'running',currentTime:0,sampleRate:8000,createBuffer:(_,n)=>({getChannelData:()=>new Float32Array(n)}),createBufferSource:node,createBiquadFilter:node,createGain:node,createOscillator:()=>{const n=node();n.start=()=>notes.push(n.frequency.value);return n;},suspend:()=>Promise.resolve()};
@@ -109,9 +123,9 @@ test('confirmed result cues reflect player perspective and stay silent on hydrat
   assert.equal(sound.observe(event(1,status)),false);assert.deepEqual(notes,[]);
   sound.observe(event(2,'ongoing'),{silent:true});sound.observe(event(3,status),{silent:true});assert.deepEqual(notes,[]);
   sound.observe(event(4,status));assert.deepEqual(notes,[]);
-  sound.observe(event(5,'ongoing'),{silent:true});assert.equal(sound.observe(event(6,status)),true);assert.deepEqual(notes,expected);
-  sound.observe(event(6,status));sound.observe(event(7,status));assert.deepEqual(notes,expected);
-  sound.toggle();assert.equal(sound.play('result-victory'),false);assert.deepEqual(notes,expected);
+  sound.observe(event(5,'ongoing'),{silent:true});assert.equal(sound.observe(event(6,status)),false);assert.deepEqual(notes,[]);
+  sound.observe(event(6,status));sound.observe(event(7,status));assert.deepEqual(notes,[]);
+  sound.toggle();assert.equal(sound.play('result-victory'),false);assert.deepEqual(notes,[]);
  }
 });
 

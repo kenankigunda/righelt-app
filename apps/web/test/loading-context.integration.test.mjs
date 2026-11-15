@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {mountLoadingFeedback} from '../shell/loading.js';
 import {renderGameAlertCard} from '../shell/game-alert.js';
 import {createConfirmedResultOwner} from '../shell/confirmed-result.js';
+import {getResultNotice,renderResultNoticeText} from '../shell/game-result.js';
 
 function harness({external=false,modal=false}={}) {
  let clock=0,scope='route-a',observer,timer=null;
@@ -61,7 +62,12 @@ test('externally managed sources stay suppressed and real modal context stays in
 const app=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const headerItemsSource=app.slice(app.indexOf('const getHeaderAlertItems ='),app.indexOf('const renderGameAlertsHtml ='));
 const escapeHtml=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
-const headerItems=({scope='route-a',contexts=[],startupError=null,gameItems=[],destinationBlocked=false}={})=>Function('loadingContextScope','slowLoadingContexts','accountStartupError','renderGameAlertCard','escapeHtml','getGameAlertItems','destinationLoadPresentation','confirmedResultOwner',`${headerItemsSource};return getHeaderAlertItems;`)(()=>scope,contexts,startupError,renderGameAlertCard,escapeHtml,()=>gameItems,{blocked:destinationBlocked},createConfirmedResultOwner());
+const headerItems=({scope='route-a',contexts=[],startupError=null,gameItems=[],destinationBlocked=false,resultGame=null,identityId='red'}={})=>{
+ const owner=createConfirmedResultOwner();
+ if(resultGame){owner.observe({...resultGame,board:{state:{...resultGame.board.state,outcome:{status:'ongoing'}}}});owner.deliberateHistory(resultGame.id);owner.observe(resultGame);owner.evaluate(resultGame.id,{current:true,inHistory:true});}
+ const transport={getAuthoritativeGame:()=>resultGame,getIdentityId:()=>identityId};
+ return Function('loadingContextScope','slowLoadingContexts','accountStartupError','renderGameAlertCard','escapeHtml','getGameAlertItems','destinationLoadPresentation','confirmedResultOwner','getResultNotice','renderResultNoticeText','transport',`${headerItemsSource};return getHeaderAlertItems;`)(()=>scope,contexts,startupError,renderGameAlertCard,escapeHtml,()=>gameItems,{blocked:destinationBlocked},owner,getResultNotice,renderResultNoticeText,transport);
+};
 test('actual header alert mapping uses the current scope, one escaped status and existing urgent items without republishing external metadata',()=>{
  const contexts=[{key:'loading:route-a:home',scope:'route-a',message:'<Games & waiting>'},{key:'old',scope:'previous-route',message:'Old context'}];
  const urgent={key:'real-error',priority:'urgent',html:'Actual recovery'};
@@ -78,4 +84,10 @@ test('cold destination owns its read notice while real game recovery alerts rema
  const saving={key:'saving',html:'Actual durable recovery'};
  assert.deepEqual(headerItems({contexts,gameItems:[saving],destinationBlocked:true})({id:'g'}),[saving]);
  assert.equal(headerItems({contexts,gameItems:[saving],destinationBlocked:false})({id:'g'}).length,2);
+});
+
+test('manual confirmed result notice uses the saved decisive turn and role-colored winner',()=>{
+ const resultGame={id:'g',player1:{identityId:'red'},player2:{identityId:'blue'},board:{state:{outcome:{status:'p1_win',reason:'p2_commander_unsupplied'}}},terminalOutcome:{decisive:{turnIndex:6}}};
+ const [item]=headerItems({resultGame})(resultGame);
+ assert.equal(item.key,'confirmed-result');assert.match(item.html,/player-tone-p1/);assert.match(item.html.replace(/<[^>]*>/g,''),/You won on Turn 7/);assert.doesNotMatch(item.html,/Game finished|selected turn is still open/);assert.match(item.html,/>View result</);assert.match(item.html,/>Dismiss</);
 });

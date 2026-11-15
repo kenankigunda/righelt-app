@@ -255,7 +255,7 @@ Show each opponent on first play even when ready. Never force watching all image
 ## Sound
 Wooden-tabletop palette; sound defaults ON unless explicitly muted. Visible lightweight shared-header toggle, independent of login. Remember the device choice, respect browser restrictions and any available explicit no-sound preference. Reduced motion is not mute.
 
-Distinct physical cues: light lift/tick for selection; softer tick for preview; gentle release for cancellation; crisp clack for committed placement; distinct removal contact for captures; differentiated turn/result cues; restrained game-entry and introduction cues. Hover is silent. Deliberate click, tap, or keyboard preview gets immediate feedback. Do not duplicate cues on renders, acknowledgements, reconnects or selection restoration. Immediate tactile placement feedback is deduplicated against acknowledgements. Result cues require confirmation. Hidden pages, initial loads, ordinary buttons, logo and image cycling are silent; never replay missed sounds.
+Distinct physical cues: light lift/tick for selection; softer tick for preview; gentle release for cancellation; crisp clack for committed placement; distinct removal contact for captures; differentiated turn/result cues; restrained game-entry and introduction cues. Hover is silent. Deliberate click, tap, or keyboard preview gets immediate feedback. Do not duplicate cues on renders, acknowledgements, reconnects or selection restoration. Immediate tactile placement feedback is deduplicated against acknowledgements. Result cues require confirmation and belong to the eligible result card opening, not its receipt, replay or reconciliation. A result deferred by a dialog or background state sounds once when the card actually opens. Explicit View result intentionally replays it. Hidden pages, initial loads, ordinary buttons, logo and image cycling are otherwise silent; never replay missed sounds.
 
 
 ## Review refinements: integrated, playful surfaces
@@ -394,7 +394,7 @@ Friend's Start card uses the animated hands. Its narrative overlay expands those
 
 Commander windows match the square's current fill but are opaque. Move-preview and command/supply paths and center dots must not show through, including ghost and selected states. Keep opacity on the colored piece body, not its cutout fill.
 
-Immediate local move feedback is tactile input feedback. A result cue requires the first confirmed terminal transition. Rejected optimistic finishing moves must not sound like a win. A matching acknowledgement suppresses repeated placement feedback but must still deliver a newly confirmed result once. Account focus restoration uses preventScroll, matching the shared overlay contract.
+Immediate local move feedback is tactile input feedback. A result cue requires an eligible presentation of a confirmed terminal transition. Rejected optimistic finishing moves must not sound like a win. Receipts, socket updates, HTTP reconciliation and Board replay stay quiet so result entry owns one cue. Account focus restoration uses preventScroll, matching the shared overlay contract.
 
 Shared piece stacks own their elevation above paths. Individual commander masking must preserve the stack's internal underlay/top order. Browser coverage exercises both ordinary commander previews and a commander pushed beneath a unit. Pending approval has one accessible foreground status, never a duplicate notice in the inert preview.
 

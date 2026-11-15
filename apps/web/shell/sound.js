@@ -1,8 +1,6 @@
 import {createPaperAudio} from './paper-audio.js';
 import { createDestructionSoundTracker, playStoneCrack, STONE_CRACK_DURATION } from './destruction-sound.js';
 import { swipeProgress } from './navigation-motion.js';
-import { getGameResult } from './game-result.js';
-import { resultSound } from './result-presentation.js';
 import { createOpponentMoveTracker, isOpponentAction } from './opponent-move-sound.js';
 // Device preference is independent of authentication. Only deliberate mute is inherited.
 export const SOUND_KEY = 'righelt.device.sound-enabled';
@@ -167,9 +165,8 @@ export const createGameSound = ({
       let played = false;
       fresh.forEach(move => {
         const terminal = finished && move === lastMove;
-        played = opponentCue(terminal ? resultSound(getGameResult(game, getIdentityId())) : 'move') || played;
+        if(!terminal)played = opponentCue('move') || played;
       });
-      if (finished && !fresh.includes(lastMove)) played = opponentCue(resultSound(getGameResult(game, getIdentityId()))) || played;
       return played;
     },
     resetUpdates(){cancelDestruction();paperAudio.dispose();retireIncomingEpisode();clearOpponentCues();},
@@ -182,7 +179,7 @@ export const createGameSound = ({
       if(displayedMoves.has(key)||!active()||!isOpponentAction(game,move,getIdentityId()))return false;
       displayedMoves.add(key);if(displayedMoves.size>1024)displayedMoves.delete(displayedMoves.values().next().value);
       const destroyed=(move.destroyedPieces??[]).length>0&&play('destruction');
-      if(move.snapshot?.outcome?.status&&move.snapshot.outcome.status!=='ongoing')return play(resultSound(getGameResult({...game,board:{state:move.snapshot}},getIdentityId())))||destroyed;
+      if(move.snapshot?.outcome?.status&&move.snapshot.outcome.status!=='ongoing')return destroyed;
       return destroyed||play('move');
     },
     presentedRemovals(game,{sequence,commandId,silent=false}={}){
@@ -206,7 +203,7 @@ export const createGameSound = ({
       let destroyed=false;
       for(let i=0;i<destructionBatches;i++)destroyed=play('destruction') || destroyed;
       if (!opponentNotifications && isOpponentMove(payload.game, payload.clientCommandId, getIdentityId())) return destroyed;
-      if(terminal && previous?.terminal===false)return play(resultSound(getGameResult(payload.game,getIdentityId()))) || destroyed;
+      if(terminal && previous?.terminal===false)return destroyed;
       if(localCommands.has(payload.clientCommandId) || terminal)return destroyed;
       if(destroyed)return true;
       if(payload.reason === "moves_reverted")return play("history-back");

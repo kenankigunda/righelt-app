@@ -115,8 +115,8 @@ import { createRecoveryTelemetry } from './recovery-telemetry.js';
 import { renderDiagnosticDisclosure, handleDiagnosticAction, isDiagnosticOpen, closeDiagnostic } from "./diagnostic-disclosure.js";
 import { patchSectionContent } from "./dom-patch.js";
 import { SWIPE_EASING_CSS } from './navigation-motion.js';
-import { getGameResult, getEligibleRematchResult, renderResultText, renderHistoryResult, createRematchDialog } from './game-result.js';
-import { renderResultMark, createResultPresentation, resultSound } from './result-presentation.js';
+import { getGameResult, getEligibleRematchResult, getResultNotice, renderResultNoticeText, renderResultText, renderHistoryResult, createRematchDialog } from './game-result.js';
+import { renderResultMark, createResultPresentation } from './result-presentation.js';
 import {createConfirmedResultOwner,resumeAfterDialogFocusRestore} from './confirmed-result.js';
 import { createRouteHydration } from './route-hydration.js';
 import { invitationLoadFailureKind, renderInviteLoadRecovery } from './invite-load-recovery.js';
@@ -392,7 +392,7 @@ const toStableKey = (value) => {
 };
 
 const confirmedResultOwner = createConfirmedResultOwner();
-const resultPresentation = createResultPresentation();
+const resultPresentation = createResultPresentation({onEnter:kind=>gameSound.play(kind)});
 const resumePendingResult=()=>{if(currentRoute.name==='game'&&confirmedResultOwner.snapshot(currentRoute.gameId)?.mode==='pending')queueMicrotask(()=>render({animatePanels:false,includeBoard:false}));};
 let activeResultGameId = null;
 let pendingResultReviewFocus = null;
@@ -2013,9 +2013,10 @@ const getHeaderAlertItems = game => {
   }));
   const position = game?.positionOnly && game.positionError ? [{ key: "position-load", html: renderGameAlertCard({ tone: "warn", body: '<span role="status">The board is saved, but play could not finish loading.</span>', action: '<button class="secondary mini-button" data-action="retry-game-load">Try again</button>', testId: "position-load-error" }) }] : [];
   const confirmedResult=game?confirmedResultOwner.snapshot(game.id):null;
+  const resultNoticeCopy=confirmedResult?.mode==='manual'&&!confirmedResult.noticeDismissed?getResultNotice(transport.getAuthoritativeGame(game.id),transport.getIdentityId()):null;
   const resultNotice=confirmedResult?.mode==='manual'&&!confirmedResult.noticeDismissed?[{
     key:'confirmed-result',
-    html:renderGameAlertCard({tone:'neutral',body:'<span role="status">Game finished. Your selected turn is still open.</span>',action:`<button class="secondary mini-button" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button><button class="secondary mini-button" data-action="dismiss-result-notice" data-game-id="${escapeHtml(game.id)}">Dismiss</button>`,testId:'confirmed-result-notice'}),
+    html:renderGameAlertCard({tone:'neutral',body:`<span role="status">${renderResultNoticeText(resultNoticeCopy)}</span>`,action:`<button class="secondary mini-button" data-action="view-result" data-game-id="${escapeHtml(game.id)}">View result</button><button class="secondary mini-button" data-action="dismiss-result-notice" data-game-id="${escapeHtml(game.id)}">Dismiss</button>`,testId:'confirmed-result-notice'}),
   }]:[];
   return [...position,...resultNotice,...(game?getGameAlertItems(game):[]),...slow];
 };
@@ -4505,7 +4506,7 @@ appEl.addEventListener("click", async (event) => {
     accountDialog.open("login", intent, actionEl);
     return;
   }
-  if (action === "view-result") { const result=getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId());if (transport.getGameViewModel(actionGameId)?.confirmedPlayback || !result) return; confirmedResultOwner.present(actionGameId);resultPresentation.enter(actionGameId,result);gameSound.play(resultSound(result));activeResultGameId = actionGameId; render({ animatePanels: false }); return; }
+  if (action === "view-result") { const result=getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId());if (transport.getGameViewModel(actionGameId)?.confirmedPlayback || !result) return; confirmedResultOwner.present(actionGameId);resultPresentation.enter(actionGameId,result);activeResultGameId = actionGameId; render({ animatePanels: false }); return; }
   if (action === "dismiss-result-notice") {confirmedResultOwner.dismissNotice(actionGameId);render({animatePanels:false,includeBoard:false});return;}
   if (action === "analysis") { confirmedResultOwner.review(actionGameId);completedReviewEntryGeneration++;resultPresentation.clear();pendingResultReviewFocus = actionGameId; activeResultGameId = null; render({ animatePanels: false }); navigateTo(buildGameHash(actionGameId, null, getCurrentGameHashState("history"))); return; }
   if (action === "rematch") {
