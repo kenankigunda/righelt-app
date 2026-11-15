@@ -145,7 +145,7 @@ test("U-13 (I-13): destroyedPieces on a move entry flows through the store view 
 
 // U-14 — no sub-bullets when destroyedPieces is empty or absent
 test("U-14: renderTurnHistory renders no sub-bullet container when destroyedPieces is absent or empty", () => {
- for(const records of [undefined,null,[],{}])assert.doesNotMatch(destroyedHistory(records),/history-destruction-list|history-destruction-item/);
+ for(const records of [undefined,null,[],{},[null],[{}],[[]]])assert.doesNotMatch(destroyedHistory(records),/history-destruction-list|history-destruction-item/);
 });
 
 // U-15 — P2-owned destroyed piece gets P2 color class

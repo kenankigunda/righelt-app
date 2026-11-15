@@ -2,6 +2,12 @@ const sameMove = (left,right) => left === right || Boolean(left && right
   && ((left.moveId && left.moveId === right.moveId)
     || (left.clientCommandId && left.clientCommandId === right.clientCommandId)));
 
+const destructionRecords = move => Array.isArray(move?.destroyedPieces)
+  ? move.destroyedPieces.filter(record => record && typeof record === "object"
+    && Number.isSafeInteger(record.position?.row)
+    && Number.isSafeInteger(record.position?.col))
+  : [];
+
 const presentationContext = (move,moves) => {
   const source=(moves ?? []).filter(Boolean);
   if(move?.undone!==true)return source.filter(entry=>entry.undone!==true);
@@ -21,7 +27,7 @@ const presentationContext = (move,moves) => {
 export const presentationDestroyedPiecesForMove = (move, moves = []) => {
   const context=presentationContext(move,moves);
   const availableMoveIds=new Set(context.flatMap(entry=>[entry.moveId,entry.clientCommandId].filter(Boolean)));
-  const records=context.flatMap(owner => (owner.destroyedPieces ?? [])
+  const records=context.flatMap(owner => destructionRecords(owner)
     .filter(record => availableMoveIds.has(record.causalMoveId)
       ? record.causalMoveId === move?.clientCommandId || record.causalMoveId === move?.moveId
       : owner.moveId === move?.moveId)
@@ -43,11 +49,11 @@ export const withCausalDestructionPresentation = moves => {
 export const moveInspectionSnapshot = move => move?.inspectionSnapshot ?? move?.snapshot ?? move?.selectionSnapshot ?? null;
 
 /** Legacy records have no phase and retain their established actual-removal behavior. */
-export const immediateRemovalRecords = move => (move?.destroyedPieces ?? [])
+export const immediateRemovalRecords = move => destructionRecords(move)
   .filter(record => record.removalPhase !== "turn_settlement");
 
-export const settlementRemovalRecords = move => (move?.destroyedPieces ?? [])
+export const settlementRemovalRecords = move => destructionRecords(move)
   .filter(record => record.removalPhase === "turn_settlement");
 
-export const turnInspectionRemovalRecords = move => (move?.destroyedPieces ?? [])
+export const turnInspectionRemovalRecords = move => destructionRecords(move)
   .filter(record => record.removalPhase !== "immediate");
