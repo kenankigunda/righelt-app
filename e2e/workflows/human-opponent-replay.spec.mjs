@@ -3,11 +3,6 @@ import {installOwnedFocusObservation} from '../support/owned-replay-focus-observ
 const ownedFocusRecipes=JSON.parse(readFileSync(new URL('../support/owned-replay-focus-recipes.json',import.meta.url),'utf8'));
 import {test as base,expect} from '@playwright/test';
 import {ownedContexts} from '../support/owned-contexts.mjs';
-import {installNativeFocusTrail,nativeFocusCheckpoint,finishNativeFocusTrail} from '../support/native-focus-trail.mjs';
-import {boardActionTraversalKey,readBoardTraversalStart} from '../support/native-board-keyboard.mjs';
-import {assertMobileBoardCellAccess} from '../support/mobile-board-cell-access.mjs';
-import {edgeDelta} from '../../browser-integration/support/message-semantic-geometry.mjs';
-import {MOBILE_NAVIGATION} from '../../apps/web/shell/mobile-navigation.js';
 // Owned contexts retain their existing cleanup phase. The replay-specific
 // prerequisite slot below is separate from its original 60-second body.
 const test=base.extend({
@@ -62,9 +57,9 @@ const replayTest=test.extend({
  },{timeout:40000}],
 });
 for(const width of [1440])replayTest(`human opponent replay preserves authority and read-only inspection at ${width}px`,async({humanReplayPrerequisites:{owner,opponent,viewer,gameId},browserName},info)=>{
-  // This case also carries native mobile geometry, stacking, hit ownership,
-  // 200% text, and keyboard-return evidence. Keep that proof in the complete
-  // multi-user journey while giving only its Chromium/mobile path enough time.
+  // Keep the wide incoming-History replay, authority, and inspection journey
+  // here. Narrow layouts deliberately omit the removed incoming flyout and
+  // retain their Board interaction coverage in the focused overview cases.
   const initial=await projected(owner,gameId),action=initial.legalActions.find(action=>action.type==='move'&&action.from&&action.to);expect(action).toBeTruthy();
   await submitPlayableAction(owner,action);
   await expect(replayButton(opponent)).toBeVisible();await expect(context(opponent)).toContainText('Guest 1 moved');
@@ -78,40 +73,6 @@ for(const width of [1440])replayTest(`human opponent replay preserves authority 
   await expect(context(opponent)).toHaveClass(/history-incoming/);
   await expect(opponent.locator('[data-alert-stack-card] [data-incoming-context]')).toHaveCount(0);
   await opponent.screenshot({path:info.outputPath(`incoming-turn-${width}.png`)});
-  // Chromium's native pointer profile focuses the incoming replay control, so
-  // it owns the bounded keyboard-return journey. Firefox on macOS deliberately
-  // retains the previously clicked Board cell for pointer activation and still
-  // runs the complete replay, authority and responsive contracts above/below.
-  if(width===390&&browserName==='chromium'){
-   const tall=await opponent.getByTestId('game-board').evaluate(node=>{const style=getComputedStyle(node);return {rect:node.getBoundingClientRect().toJSON(),css:{width:style.width,height:style.height},offset:{width:node.offsetWidth,height:node.offsetHeight}};});
-   const tallBoard=tall.rect;
-   await opponent.setViewportSize({width,height:740});await opponent.evaluate(()=>document.fonts.ready);
-   const normal=await opponent.evaluate(()=>{
-    const rect=selector=>{const node=document.querySelector(selector);return node?.getBoundingClientRect().toJSON()??null;};
-    const metrics=selector=>{const node=document.querySelector(selector);if(!node)return null;const s=getComputedStyle(node);return {padding:s.padding,margin:s.margin,gap:s.gap,fontSize:s.fontSize,lineHeight:s.lineHeight,minHeight:s.minHeight};};
-    const cells=[...document.querySelectorAll('#shell-board > .cell')].map(node=>{const r=node.getBoundingClientRect();return {width:r.width,height:r.height};});
-    const pass=document.querySelector('#shell-board-preview-label [data-board-message-action="pass"]');
-    return {viewport:{width:innerWidth,height:innerHeight},scrollY,maxScroll:document.documentElement.scrollHeight-innerHeight,fonts:document.fonts.status,
-     header:rect('.shell-header'),context:rect('[data-incoming-context]'),contextReplay:rect('[data-incoming-context] [data-action="replay-board-context"]'),
-     panel:rect('[data-shell-panel="board"]'),heading:rect('.board-heading-slot'),slot:rect('.board-message-slot'),board:rect('#shell-board'),boardCss:{width:getComputedStyle(document.querySelector('#shell-board')).width,height:getComputedStyle(document.querySelector('#shell-board')).height},boardOffset:{width:document.querySelector('#shell-board').offsetWidth,height:document.querySelector('#shell-board').offsetHeight},wrap:rect('[data-testid="game-board-wrap"]'),legend:rect('[data-shell-panel="board"] .overlay-key'),nav:rect('.shell-mobile-tabbar'),navVisible:document.querySelector('.shell-mobile-tabbar')?.dataset.visible,
-     frameReserve:document.querySelector('[data-game-shell-root]')?.style.getPropertyValue('--board-context-reserve'),cellCount:cells.length,minCellWidth:Math.min(...cells.map(r=>r.width)),minCellHeight:Math.min(...cells.map(r=>r.height)),
-     pass:pass?.getBoundingClientRect().toJSON()??null,passHitHeight:pass?getComputedStyle(pass,'::before').height:null,
-     metrics:Object.fromEntries(['[data-shell-panel="board"]','.board-heading-slot','.board-heading','.board-message-slot','.board-message-live','.board-wrap','.overlay-key','[data-incoming-context]'].map(selector=>[selector,metrics(selector)]))};
-   });
-   await info.attach('Normal390x740 Board and chrome geometry',{body:JSON.stringify({...normal,tallBoard,tall}),contentType:'application/json'});
-   await opponent.screenshot({path:info.outputPath('incoming-mobile-normal740.png')});
-   expect(normal.cellCount).toBe(100);expect(normal.board.bottom).toBeLessThanOrEqual(normal.viewport.height+1);
-   expect(normal.boardCss).toEqual(tall.css);expect(normal.boardOffset).toEqual(tall.offset);
-   for(const rect of [normal.board,tallBoard]){expect(rect.right).toBe(rect.left+rect.width);expect(rect.bottom).toBe(rect.top+rect.height);}
-   for(const dimension of ['width','height'])edgeDelta(normal.board[dimension],tallBoard[dimension],0,0,[normal.board[dimension],tallBoard[dimension]],`unchanged Board ${dimension} across viewport heights`);
-   const collapse=context(opponent).getByRole('button',{name:'Hide previous turn',exact:true});await collapse.click();await expect(context(opponent)).toHaveAttribute('data-expanded','false');
-   await assertMobileBoardCellAccess(opponent,info,{before:await projected(opponent,gameId),readState:()=>projected(opponent,gameId),assertUnchanged});
-   // Preserve the existing 900px manual Next/Stop replay viewport.
-   await opponent.setViewportSize({width,height:900});
-   const expand=context(opponent).getByRole('button',{name:'Show previous turn',exact:true});await expand.focus();await expand.press('Enter');await expect(context(opponent)).toHaveAttribute('data-expanded','true');
-  }
-
-
   // An inactive seated player can still inspect a piece and its command lines.
   const saved=await projected(owner,gameId),piece=saved.board.state.pieces.find(piece=>piece.owner==='P1');
   const cell=(page,point)=>page.locator(`[data-testid="game-board"] .cell[data-row="${point.row}"][data-col="${point.col}"]`);
@@ -127,51 +88,6 @@ for(const width of [1440])replayTest(`human opponent replay preserves authority 
   await replayButton(opponent).click();const stopReplay=label(opponent).getByRole('button',{name:'Stop replay',exact:true});await stopReplay.focus();await expect(stopReplay).toBeFocused();await stopReplay.press('Enter');await expect(opponent.locator('.computer-replay')).toHaveCount(0);
   const postStopFocus=await replayButton(opponent).evaluate(button=>{const active=document.activeElement;return {replayFocused:active===button,activeTag:active?.tagName??null,activeAction:active?.dataset?.action??active?.dataset?.boardMessageAction??null,activeText:active?.textContent?.trim().slice(0,80)??null,activeConnected:active?.isConnected??false,replayConnected:button.isConnected};});
   await info.attach('Native focus immediately after Stop replay',{body:JSON.stringify(postStopFocus),contentType:'application/json'});expect(postStopFocus,JSON.stringify(postStopFocus)).toMatchObject({replayFocused:true});
-  if(width===390&&browserName==='chromium'){
-   const collapse=context(opponent).getByRole('button',{name:'Hide previous turn',exact:true});await collapse.click();await expect(context(opponent)).toHaveAttribute('data-expanded','false');
-   await opponent.setViewportSize({width,height:600});
-   await opponent.evaluate(()=>document.documentElement.style.fontSize='32px');
-   await opponent.evaluate(()=>document.fonts.ready);
-   const primary=label(opponent).getByRole('button',{name:'Pass',exact:true});
-   const initial=await primary.boundingBox();
-   const traversalKey=boardActionTraversalKey({platform:process.platform,browserName});
-   let traversalStart,startFailure,lastTraversalStart;
-   try{
-    await expect.poll(async()=>lastTraversalStart=await primary.evaluate(readBoardTraversalStart)).toMatchObject({ready:true});
-   }catch(error){startFailure=error;throw Error(`Native Board traversal start never became eligible: ${JSON.stringify(lastTraversalStart)}`,{cause:error});}
-   finally{
-    try{
-     traversalStart=await primary.evaluate(readBoardTraversalStart);
-     await info.attach('Native keyboard traversal profile',{body:JSON.stringify({platform:process.platform,browserName,traversalKey,traversalStart}),contentType:'application/json'});
-    }catch(error){if(!startFailure)throw error;console.error('native-start-evidence-incomplete');}
-   }
-   expect(traversalStart,'Native traversal begins from the current incoming toggle after the expanded flyout is collapsed').toMatchObject({ready:true,startIsBody:false,startControlFocused:true,startAction:'toggle-incoming-narration'});
-   const observeFocus=process.env.RIGHELT_FF_TRAVERSAL_OBSERVER==='1';
-   if(observeFocus)await primary.evaluate(installNativeFocusTrail,{platform:process.platform,browserName,traversalKey});
-   let traversalFailure;
-   try{
-    for(let index=0;index<40&&!await primary.evaluate(observeFocus?nativeFocusCheckpoint:el=>el===document.activeElement);index++)await opponent.keyboard.press(traversalKey);
-    await expect(primary).toBeFocused();
-   }catch(error){traversalFailure=error;throw error;}
-   finally{
-    if(observeFocus){
-     let observationError;
-     try{const trail=await opponent.evaluate(finishNativeFocusTrail);await info.attach('Native focus trail',{body:JSON.stringify(trail),contentType:'application/json'});if(!trail.complete)throw Error('Native focus trail truncated');}catch(error){observationError=error;}
-     if(observationError){try{await info.attach('Native focus observation incomplete',{body:String(observationError),contentType:'text/plain'});}catch(error){console.error(JSON.stringify({kind:'native-focus-observation-attachment-failed',name:error?.name??'Error'}));}if(!traversalFailure)throw observationError;}
-    }
-   }
-   const clearance=await primary.evaluate(button=>{
-    const incoming=document.querySelector('[data-incoming-context]'),nav=document.querySelector('.shell-mobile-tabbar'),rect=button.getBoundingClientRect(),incomingRect=incoming?.getBoundingClientRect(),navRect=nav?.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2,hit=document.elementFromPoint(x,y);
-    return {top:rect.top,bottom:rect.bottom,incomingTop:incomingRect?.top??innerHeight,navTop:navRect?.top??innerHeight,obstacleTop:Math.min(incomingRect?.top??innerHeight,navRect?.top??innerHeight),centerOwned:hit===button||button.contains(hit),scrollY,unmapped:document.querySelectorAll('[data-prompt-unmapped="true"]').length,overflow:document.querySelectorAll('[data-prompt-overflow="true"]').length};
-   });
-   await info.attach('Short 200 percent text initial and native focus clearance',{body:JSON.stringify({initial,clearance}),contentType:'application/json'});
-   expect(clearance.unmapped).toBe(0);expect(clearance.overflow).toBe(0);expect(clearance.top).toBeGreaterThanOrEqual(0);expect(clearance.bottom).toBeLessThanOrEqual(clearance.obstacleTop-8);expect(clearance.centerOwned).toBe(true);
-   await opponent.screenshot({path:info.outputPath('incoming-mobile-short200-keyboard.png')});
-   await opponent.mouse.move(4,300);await opponent.mouse.wheel(0,-10000);await expect.poll(()=>opponent.evaluate(()=>scrollY)).toBe(0);
-   await opponent.mouse.wheel(0,MOBILE_NAVIGATION.hideDistance+8);await expect(opponent.locator('.shell-mobile-tabbar')).toHaveAttribute('data-visible','false');
-   await opponent.evaluate(()=>document.documentElement.style.fontSize='');await opponent.setViewportSize({width,height:900});
-   const expand=context(opponent).getByRole('button',{name:'Show previous turn',exact:true});await expand.focus();await expect(expand).toBeFocused();await expand.press('Enter');await expect(context(opponent)).toHaveAttribute('data-expanded','true');
-  }
   await opponent.emulateMedia({reducedMotion:'no-preference'});await replayButton(opponent).click();await expect(opponent.locator('.computer-replay')).toBeVisible();await expect(opponent.locator('.computer-replay')).toHaveCount(0);
   assertUnchanged(before,await projected(opponent,gameId));expect(writes).toEqual([]);opponent.off('request',listen);
   // A real new revision from the active player cancels a spectator's visual replay.
