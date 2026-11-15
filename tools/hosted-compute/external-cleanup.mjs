@@ -1,5 +1,6 @@
 import { assert, POLICY } from './policy.mjs';
 import { validateReference } from './external-control.mjs';
+import {registryAuthorizes} from './manual-authority.mjs';
 import { githubUsageReviewRequired } from './github-usage.mjs';
 
 // There is deliberately no create/stop/renew operation. Runpod's underlying
@@ -10,13 +11,35 @@ export class RunpodCleanup {
     Object.assign(this,{token,accountId,fetcher});
   }
   async request(path,method='GET') {
-    assert((method==='GET' && /^\/pods(?:\?limit=100(?:&cursor=[A-Za-z0-9%_.~-]+)?|\/[A-Za-z0-9%_.~-]+)?$/.test(path)) || (method==='DELETE' && /^\/pods\/[A-Za-z0-9%_.~-]+$/.test(path)), 'cleanup permits only fixed Runpod inventory and termination');
+    assert((method==='GET' && /^\/(?:pods|queued-pods)(?:\?limit=100(?:&cursor=[A-Za-z0-9%_.~-]+)?|\/[A-Za-z0-9%_.~-]+)?$/.test(path)) || (method==='DELETE' && /^\/(?:pods|queued-pods)\/[A-Za-z0-9%_.~-]+$/.test(path)), 'cleanup permits only fixed Runpod inventory and termination');
     const response=await this.fetcher(`https://api.runpod.io/v2${path}`,{method,redirect:'error',signal:AbortSignal.timeout(POLICY.requestMs),headers:{authorization:`Bearer ${this.token}`,accept:'application/json'}});
     if(response.status===404) return null;
     assert(response.ok && (method!=='DELETE' || response.status===204),`Runpod cleanup ${method} failed (${response.status})`);
     return response.status===204 ? {} : response.json();
   }
   inspect(id) { assert(typeof id==='string' && /^[A-Za-z0-9_-]+$/.test(id),'invalid Runpod identity'); return this.request(`/pods/${encodeURIComponent(id)}`); }
+  inspectQueued(id){assert(typeof id==='string'&&/^[A-Za-z0-9_-]+$/.test(id),'invalid queued identity');return this.request(`/queued-pods/${id}`);}
+  async listQueued(){
+    const all=[],seen=new Set();let path='/queued-pods?limit=100';
+    while(path){
+      assert(!seen.has(path)&&seen.size<100,'queued inventory pagination incomplete');seen.add(path);
+      const data=await this.request(path);assert(Array.isArray(data?.queuedPods)&&typeof data.pagination?.hasNextPage==='boolean','queued inventory unavailable');
+      for(const r of data.queuedPods){assert(typeof r.id==='string'&&/^[A-Za-z0-9_-]+$/.test(r.id)&&typeof r.name==='string'&&['QUEUED','DEPLOYED','FAILED','EXPIRED','CANCELLED'].includes(r.status)&&(r.podId===null||typeof r.podId==='string'&&/^[A-Za-z0-9_-]+$/.test(r.podId))&&(r.status!=='DEPLOYED'||r.podId),'queued identity unavailable');all.push(r);}
+      assert(!data.pagination.hasNextPage||typeof data.pagination.nextCursor==='string'&&data.pagination.nextCursor.length>0&&data.pagination.nextCursor.length<2048,'queued cursor missing');
+      path=data.pagination.hasNextPage?`/queued-pods?limit=100&cursor=${encodeURIComponent(data.pagination.nextCursor).replace(/[!'()*]/g,c=>`%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`:null;
+    }
+    assert(new Set(all.map(r=>r.id)).size===all.length,'queued inventory repeats identities');return all;
+  }
+  async cancelQueued(id,name){
+    const before=await this.inspectQueued(id);assert(before?.id===id&&before.name===name,'queued ownership changed');
+    await this.request(`/queued-pods/${encodeURIComponent(id)}`,'DELETE');
+    // DELETE cannot terminate a Pod already created by the scheduler. Always
+    // reread its result and reconcile every known Pod ID through exact ownership.
+    const after=await this.inspectQueued(id);
+    assert(after&&after.id===id&&after.name===name&&['DEPLOYED','FAILED','EXPIRED','CANCELLED'].includes(after.status)&&(after.podId===null||typeof after.podId==='string'&&/^[A-Za-z0-9_-]+$/.test(after.podId))&&(after.status!=='DEPLOYED'||after.podId),'queued cancellation unresolved');
+    for(const podId of new Set([before.podId,after.podId].filter(Boolean)))await this.terminate(podId,name);
+    return {id,name,status:after.status,podId:after.podId};
+  }
   async list() {
     const records=[],seen=new Set(); let path='/pods?limit=100';
     while(path) {
@@ -41,9 +64,10 @@ export class RunpodCleanup {
   }
 }
 
-export async function sweepExternal({store,reference,provider,clock=Date.now,workflowRevision}) {
+export async function sweepExternal({store,reference,provider,clock=Date.now,workflowRevision,registryAuthority}) {
   const record=await store.readPrearm(reference); await validateReference(reference,record);
-  assert(provider.accountId===record.accountId && workflowRevision===record.workflowRevision,'cleanup account or pinned runtime differs');
+  const migrated=registryAuthorizes(registryAuthority,reference,workflowRevision);
+  assert(provider.accountId===record.accountId && (workflowRevision===record.workflowRevision||migrated),'cleanup account or pinned runtime differs');
   const now=clock();
   assert(Number.isSafeInteger(now) && now>=record.createdAt,'cleanup clock unavailable or predates prearm');
   const usageReviewRequired=githubUsageReviewRequired(record.githubUsage,now);
@@ -56,6 +80,10 @@ export async function sweepExternal({store,reference,provider,clock=Date.now,wor
   try { await store.fence(record,reference,now); terminalFenceConfirmed=true; }
   catch { failures.push({operation:'terminal-fence',reason:'control-write-unavailable'}); }
   let inventory;
+  if(migrated){
+    try{for(const queued of (await provider.listQueued()).filter(r=>names.has(r.name)))await provider.cancelQueued(queued.id,queued.name);}
+    catch{failures.push({operation:'queued-cancellation',reason:'provider-unavailable-or-ownership-changed'});}
+  }
   try { inventory=await provider.list(); }
   catch { failures.push({operation:'inventory',reason:'provider-unavailable-or-incomplete'}); }
   if(inventory) {
@@ -67,6 +95,11 @@ export async function sweepExternal({store,reference,provider,clock=Date.now,wor
   let remaining=null;
   try { remaining=(await provider.list()).filter(x=>names.has(x.name)).map(({id,name})=>({id,name})); }
   catch { failures.push({operation:'verification',reason:'provider-unavailable-or-incomplete'}); }
+  if(migrated){
+    try{for(const r of (await provider.listQueued()).filter(r=>names.has(r.name))){
+      if(r.status==='QUEUED'||r.podId&&await provider.inspect(r.podId))failures.push({operation:'queued-verification',id:r.id,reason:'queued-or-deployed-resource-remains'});
+    }}catch{failures.push({operation:'queued-verification',reason:'provider-unavailable-or-incomplete'});}
+  }
   const receipt={schema:1,kind:'external-cleanup-receipt',nonce:record.nonce,prearmSha256:reference.sha256,
     observedAt:now,cutoff:record.cutoff,terminalFenceConfirmed,deleted,remaining,failures,
     cleanupObservedAbsent:remaining!==null && remaining.length===0 && deleted.every(x=>x.absent) && failures.every(x=>x.operation==='terminal-fence'),

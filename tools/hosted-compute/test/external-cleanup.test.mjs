@@ -5,11 +5,32 @@ import { GitHubControlReader, GitHubControlWriter } from '../github-control.mjs'
 import { RunpodCleanup, sweepExternal } from '../external-cleanup.mjs';
 import { prearmCampaign } from '../prearm.mjs';
 import { cleanupFromEnvironment,cleanupProcessResult } from '../cleanup-run.mjs';
+import {canonical,encode,sha256} from '../policy.mjs';
 import { syntheticGithubUsage } from './github-usage-fixture.mjs';
 
 const repository='owner/private-compute-control',runtime='a'.repeat(40),image=`example/compute@sha256:${'b'.repeat(64)}`;
 const start=Date.UTC(2026,10,14);
 function manifest() { return {id:'pilot',sourceRevision:'c'.repeat(40),deadline:start+86400000,recipe:{loss:'observed'},phases:[{id:'training',host:{image}},{id:'evaluation',host:{image}}]}; }
+
+test('finite registry preserves the original watch and sweeps the other owner even when one inventory fails',async()=>{
+ const f=await setup(),m=manifest();m.id='manual';
+ const next=await prearmCampaign(m,{accountId:'account-pilot',accountEvidenceReference:'reviewed-new-account',fundedCutoff:start+3600000,workflowRevision:runtime,controlRepository:repository,githubUsage:syntheticGithubUsage(start,start+3600000,{repository}),nonce:'2'.repeat(32)},{store:f.writer,clock:()=>start});
+ const registry={schema:1,kind:'runpod-dual-cleanup-registry',runtimeRevision:'e'.repeat(40),references:[f.reference,next.externalControl]},registryPath=`control/prearms/${'3'.repeat(32)}.json`;
+ const stored=await f.writer.append(registryPath,registry);
+ const env={COMPUTE_CONTROL_ARMED:'true',GITHUB_REPOSITORY:repository,GITHUB_REF:'refs/heads/main',COMPUTE_CONTROL_REPOSITORY:repository,COMPUTE_CONTROL_WRITE_TOKEN:'private',COMPUTE_PREARM_COMMIT:f.reference.commit,COMPUTE_PREARM_PATH:f.reference.path,COMPUTE_PREARM_SHA256:f.reference.sha256,RUNPOD_CLEANUP_API_KEY:'private',RUNPOD_ACCOUNT_ID:'account-pilot',COMPUTE_RUNTIME_REVISION:registry.runtimeRevision,COMPUTE_CLEANUP_REGISTRY_COMMIT:stored.commit,COMPUTE_CLEANUP_REGISTRY_PATH:registryPath,COMPUTE_CLEANUP_REGISTRY_SHA256:await sha256(encode(canonical(registry)))};
+ const frozen={...env},rp=runpod();let failOnce=true,calls=0;
+ const fetcher=async(url,opts)=>{
+  if(new URL(url).hostname==='api.github.com')return f.gh.fetcher(url,opts);
+  calls++;assert.notEqual(opts?.method,'POST');
+  if(new URL(url).pathname==='/v2/queued-pods')return Response.json({queuedPods:[],pagination:{hasNextPage:false}});
+  if(failOnce){failOnce=false;return new Response('',{status:503});}
+  return rp.fetcher(url,opts);
+ };
+ const result=await cleanupFromEnvironment(env,{fetcher,clock:()=>start+3600001});
+ assert.equal(result.kind,'dual-cleanup-result');assert.equal(result.results.length,2);assert(result.results[0].failures.length>0);assert.equal(result.results[1].durableReceiptConfirmed,true);assert.equal(result.results[1].cleanupObservedAbsent,true);assert.equal(cleanupProcessResult(result).exitCode,1);assert(calls>4);assert.deepEqual(env,frozen);
+ const status=cleanupProcessResult(result).status;assert.equal(status.ownershipSets[0].prearmSha256,f.reference.sha256);assert.equal(status.ownershipSets[1].prearmSha256,next.externalControl.sha256);
+ const priorCalls=calls;await assert.rejects(cleanupFromEnvironment({...env,COMPUTE_RUNTIME_REVISION:'f'.repeat(40)},{fetcher,clock:()=>start+3600001}),/registry runtime/);assert.equal(calls,priorCalls);
+});
 function github() {
   const files=new Map(),commits=new Map(),history=new Map(),calls=[]; let sequence=0;
   const api={files,calls,private:true,failFence:false,lostPut:false,deny:false,hidden:false,revokeOnMissingFence:false};

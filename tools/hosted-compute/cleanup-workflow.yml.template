@@ -44,5 +44,10 @@ jobs:
           COMPUTE_PREARM_COMMIT: ${{ vars.COMPUTE_PREARM_COMMIT }}
           COMPUTE_PREARM_PATH: ${{ vars.COMPUTE_PREARM_PATH }}
           COMPUTE_PREARM_SHA256: ${{ vars.COMPUTE_PREARM_SHA256 }}
+          # Optional immutable dual registry. Original prearm variables remain
+          # unchanged and must be a member of the explicitly reviewed registry.
+          COMPUTE_CLEANUP_REGISTRY_COMMIT: ${{ vars.COMPUTE_CLEANUP_REGISTRY_COMMIT }}
+          COMPUTE_CLEANUP_REGISTRY_PATH: ${{ vars.COMPUTE_CLEANUP_REGISTRY_PATH }}
+          COMPUTE_CLEANUP_REGISTRY_SHA256: ${{ vars.COMPUTE_CLEANUP_REGISTRY_SHA256 }}
           RUNPOD_ACCOUNT_ID: ${{ vars.RUNPOD_ACCOUNT_ID }}
           RUNPOD_CLEANUP_API_KEY: ${{ secrets.RUNPOD_CLEANUP_API_KEY }}
