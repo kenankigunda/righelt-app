@@ -13,12 +13,13 @@ for (const sample of [
     await window.boardFixture.setup('pass',false);
     const app=document.querySelector('#app'),board=document.querySelector('#board'),cells=[...board.querySelectorAll('.cell')];
     app.dataset.shellLayoutMode=layout;app.dataset.hoverCapability=layout==='wide'?'hover':'none';
-    board.id='shell-board';board.dataset.presentationContext='previous-turn';board.dataset.previousTurnEpisode='turn-2';
+    board.id='shell-board';board.dataset.presentationContext='previous-turn';board.dataset.previousTurnEpisode='visit:g:2:move-2';
     cells[0].classList.add('previous-turn-source','previous-turn-side-p2');
     cells[1].classList.add('previous-turn-target','previous-turn-side-p2');
     cells[2].classList.add('previous-turn-deletion','previous-turn-side-p1');
     const [{updatePreviousTurnLegend},{createPreviousTurnKeyInteraction}]=await Promise.all([import('/apps/web/legend.js'),import('/apps/web/shell/previous-turn-key.js')]);
-    window.previousTurnInteraction=createPreviousTurnKeyInteraction(app);
+    window.replayDescriptor={turnIndex:2,moveIds:['move-2']};window.replayCalls=[];
+    window.previousTurnInteraction=createPreviousTurnKeyInteraction(app,{getReplayDescriptor:()=>window.replayDescriptor,onReplay:request=>{window.replayCalls.push(request);return true;}});
     window.syncPreviousTurnKey=context=>{
       board.dataset.presentationContext=context;
       return updatePreviousTurnLegend(document.querySelector('[data-shell-panel="board"]'),board,{sideToMove:'P1'},false);
@@ -27,8 +28,9 @@ for (const sample of [
     await document.fonts.ready;
   },sample.layout);
 
-  const key=page.getByRole('button',{name:'Changes by opponent',exact:true});
+  const key=page.locator('[data-previous-turn-key]');
   await expect(key).toBeVisible();
+  await expect(key).toHaveAccessibleName(/^Changes by opponent/);
   if(sample.layout==='narrow')await expect(key).toHaveAttribute('aria-pressed','false');
   else await expect(key).not.toHaveAttribute('aria-pressed',/.+/);
   await expect(page.locator('[data-legend-entry="previousTurn"]')).toHaveCount(1);
@@ -65,7 +67,18 @@ for (const sample of [
 
   if(sample.layout==='narrow'){
     await expect(key).toHaveAttribute('aria-pressed','true');
-    await page.evaluate(()=>{const board=document.querySelector('#shell-board');board.dataset.previousTurnEpisode='turn-4';window.syncPreviousTurnKey('previous-turn');});
+    await expect(key).toHaveAttribute('data-mobile-stage','replay');
+    await expect(key).toHaveAccessibleName('Replay previous opponent turn');
+    await expect(key.locator('[data-previous-turn-key-label]')).toHaveText('Replay');
+    await expect(key.locator('.previous-turn-key-replay')).toBeVisible();
+    await key.click();
+    expect(await page.evaluate(()=>window.replayCalls.length)).toBe(1);
+    expect(await page.evaluate(()=>window.replayCalls[0].descriptor.moveIds)).toEqual(['move-2']);
+    await page.keyboard.press('Escape');
+    await expect(key).toHaveAttribute('aria-pressed','false');
+    await expect(key.locator('[data-previous-turn-key-label]')).toHaveText('Changes by opponent');
+    await key.click();
+    await page.evaluate(()=>{const board=document.querySelector('#shell-board');window.replayDescriptor={turnIndex:4,moveIds:['move-4']};board.dataset.previousTurnEpisode='visit:g:4:move-4';window.syncPreviousTurnKey('previous-turn');});
     await expect(key).toHaveAttribute('aria-pressed','false');
     await expect(key).toHaveAttribute('data-hover-retired','true');
     await key.click();await expect(key).toHaveAttribute('aria-pressed','true');
@@ -96,13 +109,14 @@ test('previous-turn key grows naturally at 200% text and honors forced colors an
     app.dataset.shellLayoutMode='narrow';app.dataset.hoverCapability='none';
     board.id='shell-board';board.dataset.presentationContext='default';
     details.textContent='Opponent completed a long multi-step turn whose context remains readable without overlapping the contextual key.';
-    const {updatePreviousTurnLegend}=await import('/apps/web/legend.js');
+    const [{updatePreviousTurnLegend},{createPreviousTurnKeyInteraction}]=await Promise.all([import('/apps/web/legend.js'),import('/apps/web/shell/previous-turn-key.js')]);
     window.syncPreviousTurnKey=context=>{board.dataset.presentationContext=context;updatePreviousTurnLegend(document.querySelector('[data-shell-panel="board"]'),board,{sideToMove:'P1'},false);};
     await document.fonts.ready;
     await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-    board.dataset.previousTurnEpisode='turn-2';
+    board.dataset.previousTurnEpisode='visit:g:2:move-2';
     cells[0].classList.add('previous-turn-source','previous-turn-side-p2');
     cells[1].classList.add('previous-turn-target','previous-turn-side-p2');
+    window.previousTurnInteraction=createPreviousTurnKeyInteraction(app,{getReplayDescriptor:()=>({turnIndex:2,moveIds:['move-2']}),onReplay:()=>true});
     window.syncPreviousTurnKey('previous-turn');
   });
   await page.waitForFunction(()=>document.querySelector('.board-message-slot').getAnimations().some(animation=>animation.effect?.getTiming?.().duration===260));
@@ -110,6 +124,8 @@ test('previous-turn key grows naturally at 200% text and honors forced colors an
   expect(transition).toContain(260);
   await page.waitForFunction(()=>document.querySelector('[data-previous-turn-key]').getBoundingClientRect().bottom<=document.querySelector('#shell-board .cell').getBoundingClientRect().top);
   await page.waitForFunction(()=>document.getAnimations().every(animation=>animation.playState!=='running'));
+  await page.locator('[data-previous-turn-key]').click();
+  await expect(page.locator('[data-previous-turn-key-label]')).toHaveText('Replay');
   const result=await page.evaluate(()=>{
     const key=document.querySelector('[data-previous-turn-key]'),slot=document.querySelector('.board-message-slot'),details=document.querySelector('[data-board-context-details]'),firstCell=document.querySelector('#shell-board .cell'),rect=node=>node.getBoundingClientRect().toJSON();
     return {key:rect(key),slot:rect(slot),details:rect(details),firstCell:rect(firstCell),fontSize:Number.parseFloat(getComputedStyle(key).fontSize),lineHeight:Number.parseFloat(getComputedStyle(key).lineHeight)};
@@ -120,14 +136,14 @@ test('previous-turn key grows naturally at 200% text and honors forced colors an
   expect(result.details.bottom,JSON.stringify(result)).toBeLessThanOrEqual(result.key.top+tolerance);
   expect(result.key.bottom,JSON.stringify(result)).toBeLessThanOrEqual(result.firstCell.top+tolerance);
   await page.emulateMedia({forcedColors:'active'});
-  await page.getByRole('button',{name:'Changes by opponent',exact:true}).focus();
+  await page.getByRole('button',{name:'Replay previous opponent turn'}).focus();
   for(const index of [0,1]){
     const boundary=await page.locator('#shell-board .cell').nth(index).evaluate(cell=>({style:getComputedStyle(cell).outlineStyle,width:getComputedStyle(cell).outlineWidth,color:getComputedStyle(cell).outlineColor}));
     expect(boundary.style).toBe(index===0?'dashed':'solid');expect(boundary.width).toBe('2px');expect(boundary.color).not.toBe('rgba(0, 0, 0, 0)');
   }
   await page.emulateMedia({forcedColors:'active',reducedMotion:'reduce'});
   await page.evaluate(()=>window.syncPreviousTurnKey('history'));
-  await expect(page.getByRole('button',{name:'Changes by opponent',exact:true})).toBeHidden();
+  await expect(page.getByRole('button',{name:/^Changes by opponent/})).toBeHidden();
   await page.waitForFunction(()=>document.getAnimations().every(animation=>animation.playState!=='running'));
   expect(await page.locator('.board-message-slot').evaluate(slot=>slot.getAnimations().length)).toBe(0);
 });

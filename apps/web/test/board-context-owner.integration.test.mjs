@@ -72,7 +72,7 @@ function fixture(t){
   get routeHydrated(){return context.routeHydrated;},set routeHydrated(value){context.routeHydrated=value;}};
  const destinationOwner=createDestinationRouteOwner(()=>({...context,state:routeState,cancelPendingBoardContextReplay:presentation.cancel}));
  const c={receive:presentation.receive,ack:presentation.ack,scope:presentation.scope,owner:presentation.owner,store:presentation.store,replay:context.startComputerReplay,dismiss:presentation.dismiss,
-  replayAction:presentation.replayAction,dispatch:presentation.dispatch,routeSync:destinationOwner.start,resume:presentation.resume,pending:()=>presentation.state.pendingBoardContextReplay,focus:presentation.focus,
+  replayAction:presentation.replayAction,previousDescriptor:presentation.previousTurnReplayDescriptor,replayPrevious:presentation.replayPreviousTurn,dispatch:presentation.dispatch,routeSync:destinationOwner.start,resume:presentation.resume,pending:()=>presentation.state.pendingBoardContextReplay,focus:presentation.focus,
   retire:()=>{context.boardContextVisit++;presentation.owner.retire();}};
  const meta=(intentVersion=0)=>({selectedPieceId:null,phase:null,continuationPhase:null,intentVersion,transient:false});
  c.receive(null,meta());
@@ -101,6 +101,15 @@ test('production callback retires a pending archive on the first committed selec
  f.c.receive({message:{text:'No supply'}},{...f.meta(1),selectedPieceId:'piece'});
  assert.equal(f.requests.snapshot(),null);
  f.releaseArchive();await pending;await f.flush();assert.equal(f.plays.length,0);assert.equal(f.reveals.length,0);
+});
+test('mobile previous-turn activation reuses the exact current acknowledged replay owner',async t=>{
+ const f=fixture(t);f.c.ack(f.context.view,{}, {identityId:'me',canInteract:true});
+ const episode=`account:game:0:move`,descriptor=f.c.previousDescriptor(episode);
+ assert.equal(descriptor?.key,f.c.store.channel('acknowledged').replay.key);
+ assert.equal(f.c.previousDescriptor('account:game:1:move'),null);
+ assert.equal(f.c.replayPrevious(episode,f.button),true);assert.equal(f.requests.snapshot().phase,'loading');
+ assert.equal(f.c.replayPrevious(episode,f.button),false,'the pending replay remains single-owner');
+ f.releaseArchive();for(let i=0;i<4;i++)await Promise.resolve();await f.flush();assert.equal(f.plays.length,1);
 });
 test('production scope retires both context channels on account and same-game history view changes',t=>{
  const f=fixture(t),notice={message:{text:'Reason'}};

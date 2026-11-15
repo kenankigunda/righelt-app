@@ -106,6 +106,9 @@ body {display:flow-root;}
   background-size:var(--cell-floor-size);background-position:center;background-origin:border-box;
   box-shadow:inset 1px 3px 3px rgb(44 57 66 / 26%),inset -1px -1px 0 rgb(255 255 255 / 94%);
 }
+.previous-turn-key-replay {display:inline-flex;flex:0 0 20px;width:20px;height:20px;align-items:center;justify-content:center;}
+.previous-turn-key-replay[hidden] {display:none;}
+.previous-turn-key-replay .righelt-icon {width:20px;height:20px;}
 @media(forced-colors:active){.previous-turn-key-swatch{background:Canvas;border:1px solid CanvasText;box-shadow:none;forced-color-adjust:auto;}}
 .previous-turn-key-host {
   width:100%;
