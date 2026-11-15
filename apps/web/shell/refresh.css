@@ -83,7 +83,7 @@ body { isolation:isolate; }
 .shell-route-transition-layer[data-direction="back"] .shell-route-transition-layer-swipe { scale:-1 1; }
 
 [data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:is(.opponent-choice,.ui-icon-button):not(:disabled):hover { background:var(--surface-hover-quiet); color:var(--ink); border-color:transparent; box-shadow:none; }
-[data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:not(.cell):not(.board-preview-inline-button):not(:where(.legend-inspection)):not(.secondary):not(.opponent-choice):not(.ui-icon-button):not(.participant-profile):not(:disabled):hover { background:var(--action-hover); }
+[data-hover-capability="hover"] :is(.shell-header,.shell-flyout,.panel) button:not(.cell):not(.board-preview-inline-button):not(.previous-turn-key):not(:where(.legend-inspection)):not(.secondary):not(.opponent-choice):not(.ui-icon-button):not(.participant-profile):not(:disabled):hover { background:var(--action-hover); }
 
 /* Surfaces share angular accents; controls keep their softer, tactile shape. */
 .home-refresh > .panel, .game-shell-frame .panel:not([data-shell-panel="board"]), .game-shell-mobile-panel .panel:not([data-shell-panel="board"]) {

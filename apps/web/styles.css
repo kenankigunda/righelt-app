@@ -1152,11 +1152,11 @@ button:disabled {
   outline:2px solid var(--previous-turn-color);
   outline-offset:-3px;
 }
-#app[data-hover-capability="hover"] [data-shell-panel="board"]:has(.previous-turn-key:not([data-hover-retired="true"]):hover) [data-presentation-context="previous-turn"] .cell:is(.previous-turn-source,.previous-turn-deletion) {
+html[data-hover-capability="hover"] [data-shell-panel="board"]:has(.previous-turn-key:not([data-hover-retired="true"]):hover) [data-presentation-context="previous-turn"] .cell:is(.previous-turn-source,.previous-turn-deletion) {
   outline:2px dashed var(--previous-turn-color);
   outline-offset:-3px;
 }
-#app[data-hover-capability="hover"] [data-shell-panel="board"]:has(.previous-turn-key:not([data-hover-retired="true"]):hover) [data-presentation-context="previous-turn"] .cell.previous-turn-target {
+html[data-hover-capability="hover"] [data-shell-panel="board"]:has(.previous-turn-key:not([data-hover-retired="true"]):hover) [data-presentation-context="previous-turn"] .cell.previous-turn-target {
   outline:2px solid var(--previous-turn-color);
   outline-offset:-3px;
 }

@@ -1,6 +1,12 @@
 import {test,expect} from '@playwright/test';
 
 const tolerance = 1;
+const srgbChannels=color=>{
+  const values=color.match(/[\d.]+/g)?.slice(0,3).map(Number)??[];
+  return color.startsWith('color(srgb')?values.map(value=>value*255):values;
+};
+const relativeLuminance=color=>srgbChannels(color).map(value=>value/255).map(value=>value<=.04045?value/12.92:((value+.055)/1.055)**2.4).reduce((sum,value,index)=>sum+value*[.2126,.7152,.0722][index],0);
+const contrast=(a,b)=>{const [lighter,darker]=[relativeLuminance(a),relativeLuminance(b)].sort((x,y)=>y-x);return (lighter+.05)/(darker+.05);};
 
 for (const sample of [
   {name:'narrow',width:390,height:900,layout:'narrow'},
@@ -12,14 +18,18 @@ for (const sample of [
   await page.evaluate(async layout=>{
     await window.boardFixture.setup('pass',false);
     const app=document.querySelector('#app'),board=document.querySelector('#board'),cells=[...board.querySelectorAll('.cell')];
-    app.dataset.shellLayoutMode=layout;app.dataset.hoverCapability=layout==='wide'?'hover':'none';
+    app.dataset.shellLayoutMode=layout;delete app.dataset.hoverCapability;
     board.id='shell-board';board.dataset.presentationContext='previous-turn';board.dataset.previousTurnEpisode='visit:g:2:move-2';
     cells[0].classList.add('previous-turn-source','previous-turn-side-p2');
     cells[1].classList.add('previous-turn-target','previous-turn-side-p2');
     cells[2].classList.add('previous-turn-deletion','previous-turn-side-p1');
-    const [{updatePreviousTurnLegend},{createPreviousTurnKeyInteraction}]=await Promise.all([import('/apps/web/legend.js'),import('/apps/web/shell/previous-turn-key.js')]);
+    const [{updatePreviousTurnLegend},{createPreviousTurnKeyInteraction},{createHoverCapabilityController}]=await Promise.all([import('/apps/web/legend.js'),import('/apps/web/shell/previous-turn-key.js'),import('/apps/web/hover-capability.js')]);
+    window.previousTurnHoverController=createHoverCapabilityController({
+      root:document.documentElement,
+      windowObject:{matchMedia:()=>({matches:layout==='wide',addEventListener(){},removeEventListener(){}})},
+    });
     window.replayDescriptor={turnIndex:2,moveIds:['move-2']};window.replayCalls=[];
-    window.previousTurnInteraction=createPreviousTurnKeyInteraction(app,{getReplayDescriptor:()=>window.replayDescriptor,onReplay:request=>{window.replayCalls.push(request);return true;}});
+    window.previousTurnInteraction=createPreviousTurnKeyInteraction(app,{getSupportsHover:()=>window.previousTurnHoverController.getSupportsHover(),getReplayDescriptor:()=>window.replayDescriptor,onReplay:request=>{window.replayCalls.push(request);return true;}});
     window.syncPreviousTurnKey=context=>{
       board.dataset.presentationContext=context;
       return updatePreviousTurnLegend(document.querySelector('[data-shell-panel="board"]'),board,{sideToMove:'P1'},false);
@@ -38,18 +48,29 @@ for (const sample of [
   const initial=await page.evaluate(()=>{
     const rect=node=>node.getBoundingClientRect().toJSON(),board=document.querySelector('#shell-board'),key=document.querySelector('[data-previous-turn-key]'),host=key.closest('.previous-turn-key-host'),slot=document.querySelector('.board-message-slot'),cells=[...board.querySelectorAll('.cell')];
     const playerColor=name=>{const node=document.createElement('span');node.style.color=`var(${name})`;document.body.append(node);const color=getComputedStyle(node).color;node.remove();return color;};
-    return {board:rect(board),key:rect(key),host:rect(host),slot:rect(slot),source:rect(cells[0]),target:rect(cells[1]),sourceBackground:getComputedStyle(cells[0]).backgroundImage,targetBackground:getComputedStyle(cells[1]).backgroundImage,keyColor:getComputedStyle(key).color,p1:playerColor('--player-p1'),p2:playerColor('--player-p2')};
+    const keyStyle=getComputedStyle(key),labelStyle=getComputedStyle(key.querySelector('[data-previous-turn-key-label]')),swatchStyle=getComputedStyle(key.querySelector('.previous-turn-key-swatch'));
+    return {board:rect(board),key:rect(key),host:rect(host),slot:rect(slot),source:rect(cells[0]),target:rect(cells[1]),sourceBackground:getComputedStyle(cells[0]).backgroundImage,targetBackground:getComputedStyle(cells[1]).backgroundImage,keyColor:keyStyle.color,keyBackground:keyStyle.backgroundColor,keyWeight:keyStyle.fontWeight,keyDecoration:labelStyle.textDecorationLine,swatchOutlineStyle:swatchStyle.outlineStyle,p1:playerColor('--player-p1'),p2:playerColor('--player-p2'),rootHover:document.documentElement.dataset.hoverCapability,appHover:document.querySelector('#app').getAttribute('data-hover-capability')};
   });
   await info.attach('Previous-turn key geometry',{body:JSON.stringify(initial),contentType:'application/json'});
   expect(Math.abs(initial.key.right-initial.board.right),JSON.stringify(initial)).toBeLessThanOrEqual(tolerance);
   expect(initial.key.bottom).toBeLessThanOrEqual(initial.slot.bottom+tolerance);
   expect(initial.slot.bottom).toBeLessThanOrEqual(initial.board.top+tolerance);
-  expect(initial.keyColor).toBe(initial.p2);
+  expect(initial.board.top-initial.key.bottom,JSON.stringify(initial)).toBeGreaterThanOrEqual(8-tolerance);
+  expect(initial.rootHover).toBe(sample.layout==='wide'?'hover':'none');
+  expect(initial.appHover).toBeNull();
+  expect(initial.keyColor).not.toBe(initial.p2);
+  expect(relativeLuminance(initial.keyColor)).toBeGreaterThan(relativeLuminance(initial.p2));
+  expect(contrast(initial.keyColor,'rgb(255, 255, 255)')).toBeGreaterThanOrEqual(4.5);
+  expect(initial.keyBackground).toBe('rgba(0, 0, 0, 0)');
+  expect(initial.keyWeight).toBe('400');
+  expect(initial.keyDecoration).toBe('none');
+  expect(initial.swatchOutlineStyle).toBe('none');
 
   if(sample.layout==='narrow')await key.click();else await key.hover();
   const hovered=await page.evaluate(()=>{
     const cells=[...document.querySelectorAll('#shell-board .cell')],read=cell=>({rect:cell.getBoundingClientRect().toJSON(),outlineStyle:getComputedStyle(cell).outlineStyle,outlineWidth:getComputedStyle(cell).outlineWidth,outlineColor:getComputedStyle(cell).outlineColor,background:getComputedStyle(cell).backgroundImage});
-    return {source:read(cells[0]),target:read(cells[1]),deletion:read(cells[2])};
+    const key=document.querySelector('[data-previous-turn-key]'),keyStyle=getComputedStyle(key),labelStyle=getComputedStyle(key.querySelector('[data-previous-turn-key-label]')),swatchStyle=getComputedStyle(key.querySelector('.previous-turn-key-swatch'));
+    return {source:read(cells[0]),target:read(cells[1]),deletion:read(cells[2]),keyColor:keyStyle.color,keyBackground:keyStyle.backgroundColor,keyWeight:keyStyle.fontWeight,keyDecoration:labelStyle.textDecorationLine,swatchOutlineStyle:swatchStyle.outlineStyle,swatchOutlineWidth:swatchStyle.outlineWidth,swatchOutlineColor:swatchStyle.outlineColor};
   });
   expect(hovered.source.outlineStyle).toBe('dashed');
   expect(hovered.target.outlineStyle).toBe('solid');
@@ -63,6 +84,13 @@ for (const sample of [
   expect(hovered.target.rect).toEqual(initial.target);
   expect(hovered.source.background).toBe(initial.sourceBackground);
   expect(hovered.target.background).toBe(initial.targetBackground);
+  expect(hovered.keyColor).toBe(initial.p2);
+  expect(hovered.keyBackground).toBe('rgba(0, 0, 0, 0)');
+  expect(hovered.keyWeight).toBe('400');
+  expect(hovered.keyDecoration).toBe('none');
+  expect(hovered.swatchOutlineStyle).toBe('solid');
+  expect(hovered.swatchOutlineWidth).toBe('2px');
+  expect(hovered.swatchOutlineColor).toBe(initial.p2);
   if(browserName==='chromium')await page.screenshot({path:info.outputPath(`previous-turn-key-${sample.name}.png`),fullPage:true});
 
   if(sample.layout==='narrow'){
@@ -86,6 +114,10 @@ for (const sample of [
     await page.locator('#shell-board .cell').nth(4).click();
     expect(await page.evaluate(()=>window.boardActivations)).toBe(1);
   } else {
+    await page.mouse.move(0,0);
+    await expect(key).toHaveCSS('color',initial.keyColor);
+    await expect(key.locator('.previous-turn-key-swatch')).toHaveCSS('outline-style','none');
+    for(const index of [0,1,2])await expect(page.locator('#shell-board .cell').nth(index)).toHaveCSS('outline-style','none');
     await key.focus();
     await expect(key).toBeFocused();
     expect(await page.locator('#shell-board .cell').nth(0).evaluate(cell=>getComputedStyle(cell).outlineStyle)).toBe('dashed');
