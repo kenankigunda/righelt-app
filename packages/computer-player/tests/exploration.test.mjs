@@ -140,7 +140,7 @@ test('E-U02 deeper raw-prior ordering and repeated controllers survive root expl
   }
 });
 
-test('E-U02 later limited branches retain the original noise draw without renormalization', async () => {
+test('E-U02 later limited branches retain the original raw noise receipt with explicit stable selection conditioning', async () => {
   const graph = { ...structuredClone(simple), b: { actions: [{ index: 10, to: 'blocked', limit: true }] }, blocked: {} };
   const { result, operations } = await graphRun(graph, { simulations: 32, rootExploration: enabled });
   assert.equal(result.rootExploration.applied, true);
@@ -148,7 +148,8 @@ test('E-U02 later limited branches retain the original noise draw without renorm
   assert.equal(operations.filter(key => key === 'transition:b:10').length, 1);
   const evidence = explorationEvidence(enabled, 7);
   await applyRootExploration(evidence, result.actions.map(item => ({ index: item.index, prior: item.prior })), 31, true);
-  assert.deepEqual(evidence, result.rootExploration);
+  const {selectionConditioning,...rawReceipt}=result.rootExploration;
+  assert.deepEqual(evidence,rawReceipt);assert.equal(selectionConditioning.version,'eligible-logits-v1');assert.ok(Math.abs(selectionConditioning.priors.reduce((a,b)=>a+b,0)-1)<1e-12);
 });
 
 test('E-U02 tactical enumeration failure is excluded from noise without losing eligible prior mass', async () => {

@@ -72,9 +72,9 @@ test('native Docker copy preserves the audited inventory and worker runtime impo
       {env:{...process.env,DOCKER_BUILDKIT:'1'},timeout:120000,maxBuffer:1024*1024});
     return output;
   };
-  // Reproduce the original omission through Docker itself, without a second
-  // implementation of Docker's pattern semantics in this test.
-  const broken=await copied(rules.replace(/^!tools\/hosted-compute\/runtime\.mjs\r?\n/m,''),'omitted-runtime');
+  // Exercise a missing runtime file through Docker itself. An explicit final
+  // deny avoids relying on how parent-directory exceptions include children.
+  const broken=await copied(rules+'\ntools/hosted-compute/runtime.mjs\n','omitted-runtime');
   await assert.rejects(verifyImageIdentity(broken),/unexpected or missing/);
   const complete=await copied(rules,'complete-runtime');
   const identity=await verifyImageIdentity(complete);

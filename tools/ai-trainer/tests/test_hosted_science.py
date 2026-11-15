@@ -76,11 +76,65 @@ class HostedScienceTest(unittest.TestCase):
             binding={'path':str(cp),'sha256':hashlib.sha256(cp.read_bytes()).hexdigest()}
             plan={'kind':'policy-only-teacher-refresh','mode':'screen','rows':{'path':str(rows),'sha256':hashlib.sha256(rows.read_bytes()).hexdigest()},'teacher':binding,'profile':profile,'searchSeconds':30}
             execution={'scientific':{'stage':'teacher-screen','experimentSha256':'a'*64},'generation':2,'sourceRevision':'b'*40,'manifestSha256':'c'*64,'phase':'screen'}
-            retained={'id':'devcase','teacherSha256':binding['sha256'],'sourceRevision':execution['sourceRevision'],'requestedProfile':profile,'mode':'screen','status':'complete','answer':{'status':'ready','stopped':'complete','simulations':64,'legality':{'complete':True,'indices':[1,2]},'searchIdentity':{'stateHash':'a'*64,'controller':'P1','valuePerspective':'P1','requestedProfile':profile}}}
+            retained={'id':'devcase','teacherSha256':binding['sha256'],'sourceRevision':execution['sourceRevision'],'requestedProfile':profile,'mode':'screen','status':'complete','answer':{'status':'ready','stopped':'complete','simulations':64,'fallback':None,'policyMask':True,'legality':{'complete':True,'indices':[1,2]},'searchIdentity':{'stateHash':'a'*64,'controller':'P1','valuePerspective':'P1','requestedProfile':profile}}}
             with patch('righelt_training.model.model_from_record',return_value=Model()),patch('righelt_training.checkpoint.load_checkpoint'),patch('righelt_training.device.selected_device',return_value='cpu'),patch('righelt_training.hosted_receipts.evaluation_claim',return_value={'created':False,'result':retained}) as claim,patch('righelt_training.search_parity.search_reference',side_effect=AssertionError('new search forbidden')) as search:
                 result=teacher(plan,run,execution,['devcase'],seconds=.01)
             self.assertEqual(result['completedWorkIds'],['devcase']);self.assertTrue(result['allWorkComplete'])
             self.assertFalse(claim.call_args.kwargs['create']);search.assert_not_called()
+
+    def test_teacher_caller_gates_targets_and_keeps_one_deadline(self):
+        import os
+        from contextlib import ExitStack
+        class Model:
+            def to(self,*args):return self
+            def eval(self):return self
+        root=Path.cwd()/'.ai-runs';root.mkdir(exist_ok=True)
+        for qualified in (False,True):
+            with self.subTest(qualified=qualified),tempfile.TemporaryDirectory(dir=root) as temp,ExitStack() as stack:
+                run=Path(temp);row,answer,profile=self.example();row.update(workId='policy1',state={'callerFixture':True},seed=107)
+                def bound(name,value):
+                    path=run/name;path.write_text(json.dumps(value,sort_keys=True,separators=(',',':')))
+                    return {'path':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+                after=bound('after.json',profile);before=bound('before.json',{'simulations':8})
+                index=bound('index.json',{'profiles':[after['sha256']],'beforeProfiles':{after['sha256']:before['sha256']},'cases':[{'key':'one'}]})
+                cp=run/'teacher.pt';cp.write_bytes(b'stub-weights');cp.with_suffix('.json').write_text(json.dumps({'manifestSha256':'old'}))
+                teacher_binding={'path':str(cp),'sha256':hashlib.sha256(cp.read_bytes()).hexdigest()}
+                component={'schema':1,'indexSha256':index['sha256'],'beforeProfileSha256':before['sha256'],'seed':107,'stepSeconds':3,'maxActions':4,'milliseconds':1000,'maxOperations':2000}
+                plan={'kind':'policy-only-teacher-refresh','mode':'refresh','teacher':teacher_binding,'profile':profile,'searchSeconds':30,
+                    'developmentAssessment':component,'developmentSuiteSha256':index['sha256'],'pool':{'selections':[{'workId':'policy1'}]}}
+                execution={'scientific':{'stage':'teacher-screen'},'generation':1,'seed':107,'sourceRevision':'b'*40,'dependencySha256':'d'*64,'manifestSha256':'c'*64,'phase':'teacher'}
+                context=bound('context.json',{'execution':execution,'inputObjects':[index,after,before]})
+                report=bound('report.json',{'kind':'synthetic-caller-boundary-receipt'})
+                model=Model();order=[];deadlines=[]
+                def assess(comp,actual,**kwargs):
+                    order.append('assessment');deadlines.append(kwargs['deadline']);self.assertIs(kwargs['model'],model)
+                    self.assertEqual(comp,component);self.assertEqual(actual,execution)
+                    self.assertEqual(kwargs['read_object'](after['sha256']),Path(after['path']).read_bytes())
+                    return {'qualified':qualified,'reportSha256':report['sha256'],'workReceipts':[{'workId':'development1','status':'complete','evidenceSha256':report['sha256']}],'artifactPaths':[Path(report['path'])]}
+                def pool(*args,**kwargs):
+                    order.append('targets');deadlines.append(kwargs['deadline']);self.assertEqual(args[2],['policy1']);return [row],{}
+                stack.enter_context(patch.dict(os.environ,{'RIGHELT_EXECUTION_CONTEXT':context['path']}))
+                stack.enter_context(patch('righelt_training.model.model_from_record',return_value=model))
+                stack.enter_context(patch('righelt_training.checkpoint.load_checkpoint'))
+                stack.enter_context(patch('righelt_training.device.selected_device',return_value='cpu'))
+                stack.enter_context(patch('righelt_training.development_assessment.work_ids',return_value=['development1']))
+                stack.enter_context(patch('righelt_training.development_assessment.produce_assessment',side_effect=assess))
+                prepare=stack.enter_context(patch('righelt_training.policy_pool.prepare_pool',side_effect=pool))
+                stack.enter_context(patch('righelt_training.execution_recipe.verify_runtime',return_value={'settings':{'attentionMethod':{'guardsSha256':'f'*64}}}))
+                claim=stack.enter_context(patch('righelt_training.hosted_receipts.evaluation_claim',return_value={'created':True} if qualified else {'unclaimed':True}))
+                stack.enter_context(patch('righelt_training.hosted_receipts.settle'))
+                search=stack.enter_context(patch('righelt_training.search_parity.search_reference',return_value=answer))
+                result=teacher(plan,run,execution,['development1','policy1'],seconds=30)
+                self.assertEqual(result['accountedWorkIds'],['development1','policy1'])
+                self.assertEqual(result['developmentReportSha256'],report['sha256'])
+                self.assertEqual(result['interventionReady'],qualified)
+                if qualified:
+                    self.assertEqual(order,['assessment','targets']);self.assertEqual(deadlines[0],deadlines[1]);search.assert_called_once()
+                else:
+                    self.assertEqual(order,['assessment']);prepare.assert_not_called();search.assert_not_called();self.assertFalse(claim.call_args.kwargs['create'])
+                bad=copy.deepcopy(plan);bad['profile']['simulations']=32
+                with self.assertRaisesRegex(ValueError,'exact teacher target profile'):
+                    teacher(bad,run,execution,['development1','policy1'],seconds=30)
 
     def test_entrypoint_rejects_plan_bytes_that_differ_from_bound_execution(self):
         from righelt_training.hosted_science import main

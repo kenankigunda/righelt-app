@@ -1,4 +1,7 @@
 import {assert,canonical,encode,sha256,POLICY} from './policy.mjs';
+import APPROVED_COVERAGE from './approved-development-coverage.json' with {type:'json'};
+import {validateDevelopmentSuite,validateDevelopmentSuiteReport,developmentDigest,developmentWorkIds} from './development-suite.mjs';
+import {validateComparisonEvidence} from './comparison-evidence.mjs';
 
 // Historical product identities. The research starting point may advance only
 // through the separately frozen common calibration rule and its typed result.
@@ -25,9 +28,11 @@ function identity(value){
   return value;
 }
 function row(value,{preparation=false}={}){
-  assert(fields(value,[...rowCore,value?.stage==='evaluation'?'scheduleSha256':'phasePlanSha256'])&&typeof value.id==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$/.test(value.id)&&['calibration','teacher-screen','training','evaluation'].includes(value.stage)&&['shared','control','treatment'].includes(value.arm),'unsupported frozen campaign');
+  const extra=value?.stage==='evaluation'?['scheduleSha256','evaluationScope',...(value.evaluationScope==='final'?['scheduleSummary']:[])]:['phasePlanSha256'];
+  assert(fields(value,[...rowCore,...extra])&&typeof value.id==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$/.test(value.id)&&['calibration','teacher-screen','training','evaluation'].includes(value.stage)&&['shared','control','treatment'].includes(value.arm),'unsupported frozen campaign');
   assert(positive(value.computeCents)&&positive(value.cloudflareCents)&&positive(value.seconds)&&value.seconds<=POLICY.campaignMs/1000,'finite campaign budgets and runtime required');
   assert(value.stage==='evaluation'?hash(value.scheduleSha256):hash(value.phasePlanSha256)||preparation&&value.stage==='training'&&value.phasePlanSha256===null,'known plan hash or narrowly deferred training plan required');
+  if(value.stage==='evaluation')assert(['validation','final'].includes(value.evaluationScope)&&(value.evaluationScope==='final'?value.arm==='shared':['control','treatment'].includes(value.arm)),'validation arm or single shared final scope required');
   return value;
 }
 function calibration(value){
@@ -54,7 +59,8 @@ export function projectExperimentBudget(record,rule){
   assert(training('control').length>0&&training('treatment').length>0,'both unchanged and policy treatment training required');
   const teachers=record.campaigns.filter(c=>c.stage==='teacher-screen');
   assert(teachers.length===1&&teachers[0].arm==='treatment','one paid treatment target-generation campaign required');
-  assert(['control','treatment'].every(arm=>record.campaigns.some(c=>c.stage==='evaluation'&&c.arm===arm)),'paired arm evaluation must be reserved before training');
+  assert(['control','treatment'].every(arm=>record.campaigns.filter(c=>c.stage==='evaluation'&&c.evaluationScope==='validation'&&c.arm===arm).length===1),'paired arm validation must be reserved before training');
+  assert(record.campaigns.filter(c=>c.stage==='evaluation'&&c.evaluationScope==='final').length===1,'one shared post-selection final allocation must be reserved');
   assert(record.campaigns.every(c=>c.stage!=='calibration'&&(c.stage!=='training'||c.arm!=='shared')),'calibration charged separately once, training arms explicit');
   const total=(arm,key='computeCents')=>record.campaigns.filter(c=>c.arm===arm).reduce((n,c)=>n+c[key],0);
   assert(total('control')===total('treatment'),'control and treatment TOTAL compute caps must be equal, including teacher generation');
@@ -81,21 +87,32 @@ function reviewedRules(value,record){
   assert(value.calibrationResultSha256===record.commonStart.calibrationResultSha256&&value.qualificationRuleSha256===record.qualificationRuleSha256,'parameter review uses different calibration or teacher qualification rule');
   const p=value.parameters;
   assert(fields(p,['pairsPerProfile','normalStartPairsPerProfile','minimumUsefulEffect','confidenceLevel','maximumMissingFraction','gameSeconds'])&&positive(p.pairsPerProfile)&&p.pairsPerProfile<=10000&&positive(p.normalStartPairsPerProfile)&&p.normalStartPairsPerProfile<=p.pairsPerProfile&&positive(p.gameSeconds)&&p.gameSeconds<=3600,'bounded preregistered evaluation sample required');
-  assert(Number.isFinite(p.minimumUsefulEffect)&&p.minimumUsefulEffect>0&&p.minimumUsefulEffect<=1&&Number.isFinite(p.confidenceLevel)&&p.confidenceLevel>0&&p.confidenceLevel<1&&Number.isFinite(p.maximumMissingFraction)&&p.maximumMissingFraction>=0&&p.maximumMissingFraction<=1,'calibrated numeric effect, uncertainty and missing thresholds required');
+  assert(Number.isFinite(p.minimumUsefulEffect)&&p.minimumUsefulEffect>0&&p.minimumUsefulEffect<=1&&Number.isFinite(p.confidenceLevel)&&p.confidenceLevel>.5&&p.confidenceLevel<1&&Number.isFinite(p.maximumMissingFraction)&&p.maximumMissingFraction>=0&&p.maximumMissingFraction<=1,'calibrated numeric effect, uncertainty and missing thresholds required');
+  const scope=value.primaryScope,uncertainty=value.uncertainty;
+  assert(fields(scope,['metric','profiles','starts','seats'])&&['score','actual-win-rate'].includes(scope.metric),'explicit calibrated exploratory primary scope required');
+  for(const [key,allowed]of [['profiles',['babs','tau','horus']],['starts',['normal','developed']],['seats',['P1','P2']]])assert(Array.isArray(scope[key])&&scope[key].length>0&&new Set(scope[key]).size===scope[key].length&&scope[key].every(v=>allowed.includes(v)),'bounded primary scope membership required');
+  assert(fields(uncertainty,['confidence','seed','resamples'])&&uncertainty.confidence===p.confidenceLevel&&Number.isSafeInteger(uncertainty.seed)&&uncertainty.seed>=0&&uncertainty.seed<2**32&&Number.isSafeInteger(uncertainty.resamples)&&uncertainty.resamples>=100&&uncertainty.resamples<=100000,'frozen source-family uncertainty settings required');
+  assert(fields(value.finalSample,['pairsPerProfile','normalStartPairsPerProfile','gameSeconds'])&&positive(value.finalSample.pairsPerProfile)&&value.finalSample.pairsPerProfile<=10000&&positive(value.finalSample.normalStartPairsPerProfile)&&value.finalSample.normalStartPairsPerProfile<=value.finalSample.pairsPerProfile&&positive(value.finalSample.gameSeconds)&&value.finalSample.gameSeconds<=3600,'bounded reserved final sample required');
   assert(value.missingPolicy==='retain-all-scheduled-bounds'&&value.criticalRegressionPolicy==='reject'&&value.candidateLockPolicy==='one-candidate-before-final'&&value.stopPolicy==='diagnostic-stop-at-budget-or-unqualified-method','frozen missing, lock, regression and stop rules required');
 }
 
 async function loadInputs(manifest,read){
-  const cache=new Map();
-  return async hashValue=>{
+  const cache=new Map(),bytesCache=new Map();
+  const readBytes=async binding=>{
+    const hashValue=binding?.sha256;assert(hash(hashValue),'frozen scientific object hash required');
+    if(!bytesCache.has(hashValue)){
+      const a=manifest.inputs.find(a=>a.sha256===hashValue);assert(a,'scientific prerequisite is not a frozen input');
+      const bytes=new Uint8Array(await read(a));assert(bytes.length===a.bytes&&await sha256(bytes)===hashValue,'scientific prerequisite checksum mismatch');bytesCache.set(hashValue,bytes);
+    }return bytesCache.get(hashValue);
+  };
+  const load=async hashValue=>{
     assert(hash(hashValue),'frozen scientific object hash required');
     if(!cache.has(hashValue)){
-      const a=manifest.inputs.find(a=>a.sha256===hashValue);assert(a,'scientific prerequisite is not a frozen input');
-      const bytes=new Uint8Array(await read(a));assert(bytes.length===a.bytes&&await sha256(bytes)===hashValue,'scientific prerequisite checksum mismatch');
+      const bytes=await readBytes({sha256:hashValue});
       cache.set(hashValue,JSON.parse(new TextDecoder().decode(bytes)));
     }
     return cache.get(hashValue);
-  };
+  };load.read=readBytes;return load;
 }
 
 async function matchManifest(manifest,start,campaign){
@@ -147,6 +164,32 @@ async function commonEvidence(record,load){
 
 function normalizedCampaigns(campaigns){return campaigns.map(c=>c.stage==='training'?{...c,phasePlanSha256:null}:c);}
 
+// Portable comparison only. The native shared-rules constructor establishes
+// each identity; admission must retain both that identity and its full input.
+export function validateEvaluationPairing(schedule,otherSchedule=null){
+  const normalized=jobs=>{
+    assert(Array.isArray(jobs)&&jobs.length>0&&jobs.length<=10000,'bounded frozen evaluation schedule required');
+    const ids=new Set(),groups=new Map();
+    for(const job of jobs){
+      assert(typeof job.id==='string'&&job.id.length>0&&!ids.has(job.id),'unique evaluation job required');ids.add(job.id);
+      const identity=job.startIdentity;
+      assert(fields(identity,['schema','startKind','kind','stateHash','constructionSha256'])&&identity.schema===1&&identity.startKind===job.startKind&&identity.kind===job.kind&&hash(identity.stateHash)&&hash(identity.constructionSha256),'frozen authoritative start identity required');
+      assert(job.startKind==='normal'?job.kind==='normal'&&job.initialState==null:job.startKind==='developed'&&job.kind==='simple'&&job.initialState&&typeof job.initialState==='object'&&!Array.isArray(job.initialState),'normal/developed frozen construction differs');
+      assert(typeof job.pairId==='string'&&['P1','P2'].includes(job.candidateSeat),'paired evaluation identity required');
+      const key=canonical([job.pairId,job.profile,job.role]);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(job);
+    }
+    for(const pair of groups.values()){
+      assert(pair.length===2&&new Set(pair.map(j=>j.candidateSeat)).size===2,'paired evaluation seats required');
+      const omit=(job,names)=>Object.fromEntries(Object.entries(job).filter(([key])=>!names.includes(key)));
+      assert(canonical(omit(pair[0],['id','arm','candidateSeat']))===canonical(omit(pair[1],['id','arm','candidateSeat'])),'paired seats differ in frozen construction, identity or workload');
+    }
+    return jobs.map(job=>Object.fromEntries(Object.entries(job).filter(([key])=>!['id','arm'].includes(key)))).map(canonical).sort();
+  };
+  const left=normalized(schedule);
+  if(otherSchedule!==null)assert(canonical(left)===canonical(normalized(otherSchedule)),'control and treatment evaluation schedules differ beyond job IDs and arm');
+  return true;
+}
+
 async function preparationEvidence(record,load){
   assert(record.schema===1&&record.kind==='policy-target-preparation'&&record.methodKind===COMPARISON_METHOD&&record.autoPromotion===false,'reviewed policy preparation preregistration required');
   const common=await commonEvidence(record,load),totals=projectExperimentBudget(record,common.rule);
@@ -157,18 +200,43 @@ async function preparationEvidence(record,load){
   const rules=await load(record.rulesSha256);reviewedRules(rules,record);
   const selection=await load(record.selectionRuleSha256);
   assert(selection.schema===1&&selection.kind==='reviewed-candidate-selection-rule'&&selection.reviewed===true&&selection.rulesSha256===record.rulesSha256&&selection.policy==='preregistered-primary-metric-and-critical-regression-floor','reviewed candidate selection rule required');
+  assert(fields(selection.nomination,['minimumDelta','bound'])&&selection.nomination.minimumDelta===rules.parameters.minimumUsefulEffect&&['point','conservative-lower'].includes(selection.nomination.bound),'frozen paired nomination rule required');
   assert(hash(record.publicProfilesSha256)&&hash(record.evaluationFamilyInventorySha256),'evaluation profile and sealed family inventories must be frozen before outcomes');
   const profiles=await load(record.publicProfilesSha256);assert(profiles.schema===1&&profiles.profiles&&['babs','tau','horus'].every(p=>profiles.profiles[p]),'public evaluation profile catalog required');
+  assert(fields(record.developmentSuites,['teacherSha256','candidateSha256'])&&hash(record.developmentSuites.teacherSha256)&&hash(record.developmentSuites.candidateSha256),'frozen teacher and candidate tactical suites required');
+  const teacherSuite=await load(record.developmentSuites.teacherSha256),candidateSuite=await load(record.developmentSuites.candidateSha256);
+  for(const index of [teacherSuite,candidateSuite])await validateDevelopmentSuite(index,{read:load.read,expectedCoverageSha256:load.coverageSha256});
+  const publicProfiles=await Promise.all(['babs','tau','horus'].map(name=>developmentDigest(profiles.profiles[name])));
+  assert(canonical([...candidateSuite.profiles].sort())===canonical([...publicProfiles].sort())&&(!candidateSuite.beforeProfiles||publicProfiles.every(p=>candidateSuite.beforeProfiles[p]===p)),'candidate tactical floor must use all unchanged public profiles');
+  assert(plan.developmentSuiteSha256===record.developmentSuites.teacherSha256&&qualification.developmentSuiteSha256===record.developmentSuites.teacherSha256,'teacher preparation omits frozen useful-correction suite');
+  const afterProfile=await developmentDigest(plan.profile),component=plan.developmentAssessment;
+  assert(canonical(teacherSuite.profiles)===canonical([afterProfile]),'teacher suite must execute exact target-generation profile');
+  assert(hash(qualification.beforeProfileSha256)&&teacherSuite.beforeProfiles?.[afterProfile]===qualification.beforeProfileSha256,'explicit frozen teacher comparator required');
+  assert(fields(component,['schema','indexSha256','beforeProfileSha256','seed','stepSeconds','maxActions','milliseconds','maxOperations'])&&component.schema===1&&component.indexSha256===record.developmentSuites.teacherSha256&&component.beforeProfileSha256===qualification.beforeProfileSha256&&component.seed===common.start.seed&&Number.isFinite(component.stepSeconds)&&component.stepSeconds>0&&component.stepSeconds<=plan.searchSeconds&&Number.isFinite(component.milliseconds)&&component.milliseconds>0&&positive(component.maxActions)&&positive(component.maxOperations),'bounded same-allocation teacher assessment required');
+  assert(canonical(await load(afterProfile))===canonical(plan.profile),'teacher profile bytes differ');
+  await load(qualification.beforeProfileSha256);
+
+  const validationSchedules=new Map();
   for(const c of record.campaigns.filter(c=>c.stage==='evaluation')){
+    if(c.evaluationScope==='final'){
+      const expected={schema:1,candidateAttempts:rules.finalSample.pairsPerProfile*6,pairsPerProfile:rules.finalSample.pairsPerProfile,
+        normalStartPairsPerProfile:rules.finalSample.normalStartPairsPerProfile,gameSeconds:rules.finalSample.gameSeconds,
+        publicProfilesSha256:record.publicProfilesSha256,familyInventorySha256:record.evaluationFamilyInventorySha256};
+      assert(canonical(c.scheduleSummary)===canonical(expected),'guard-only final reservation differs from frozen sample');
+      continue;
+    }
     const schedule=await load(c.scheduleSha256);assert(Array.isArray(schedule)&&schedule.length>0&&schedule.length<=10000,'bounded frozen evaluation schedule required');
+    validateEvaluationPairing(schedule);validationSchedules.set(c.arm,schedule);
     const groups=new Map();
-    for(const job of schedule){assert(job.gameSeconds===rules.parameters.gameSeconds&&['babs','tau','horus'].includes(job.profile)&&['candidate','baseline-diagnostic'].includes(job.role)&&['validation','final'].includes(job.partition),'schedule differs from calibrated sample or public profiles');
+    for(const job of schedule){assert(job.gameSeconds===rules.parameters.gameSeconds&&['babs','tau','horus'].includes(job.profile)&&['candidate','baseline-diagnostic'].includes(job.role)&&['validation','final'].includes(job.partition)&&['normal','developed'].includes(job.startKind)&&typeof job.sourceFamily==='string'&&job.sourceFamily.length>0,'schedule differs from calibrated sample or public profiles');
       if(job.role==='candidate'){const key=`${job.profile}/${job.pairId}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(job);}
     }
-    for(const jobs of groups.values())assert(jobs.length===2&&new Set(jobs.map(j=>j.candidateSeat)).size===2&&jobs.every(j=>['P1','P2'].includes(j.candidateSeat))&&new Set(jobs.map(j=>`${j.familyId}/${j.seed}/${j.kind}`)).size===1,'frozen evaluation must retain paired seats and starts');
-    for(const profile of ['babs','tau','horus']){const pairs=[...groups.values()].filter(g=>g[0].profile===profile);assert(pairs.length===rules.parameters.pairsPerProfile&&pairs.filter(g=>g[0].kind==='normal').length>=rules.parameters.normalStartPairsPerProfile,'schedule does not execute preregistered profile sample');}
+    for(const jobs of groups.values())assert(jobs.length===2&&new Set(jobs.map(j=>j.candidateSeat)).size===2&&jobs.every(j=>['P1','P2'].includes(j.candidateSeat))&&new Set(jobs.map(j=>`${j.familyId}/${j.sourceFamily}/${j.seed}/${j.startKind}`)).size===1,'frozen evaluation must retain paired seats and starts');
+    for(const profile of ['babs','tau','horus']){const pairs=[...groups.values()].filter(g=>g[0].profile===profile);assert(pairs.length===rules.parameters.pairsPerProfile&&pairs.filter(g=>g[0].startKind==='normal').length>=rules.parameters.normalStartPairsPerProfile,'schedule does not execute preregistered profile sample');}
+    assert(schedule.some(j=>j.role==='candidate'&&rules.primaryScope.profiles.includes(j.profile)&&rules.primaryScope.starts.includes(j.startKind)&&rules.primaryScope.seats.includes(j.candidateSeat)),'primary scope has no scheduled observations');
   }
-  return {...common,totals,teacher,teacherPlan:plan,qualification};
+  validateEvaluationPairing(validationSchedules.get('control'),validationSchedules.get('treatment'));
+  return {...common,totals,teacher,teacherPlan:plan,qualification,rules,selection,teacherSuite,candidateSuite};
 }
 
 async function teacherEvidence(record,prep,load){
@@ -183,6 +251,11 @@ async function teacherEvidence(record,prep,load){
   assert(cost.schema===1&&cost.kind==='campaign-usage-receipt'&&['controller-upper-bound','provider-reconciled'].includes(cost.classification)&&cost.campaign===prep.teacher.id&&cost.manifestSha256===result.execution.manifestSha256&&cost.cleanupVerified===true&&cents(cost.providerUsageCents)&&cost.providerUsageCents<=prep.teacher.computeCents&&cents(cost.cloudflareUsageCents)&&cost.cloudflareUsageCents<=prep.teacher.cloudflareCents,'actual teacher cost and cleanup receipt required');
   const qualification=await load(t.qualificationSha256);
   assert(qualification.schema===1&&qualification.kind==='reviewed-policy-teacher-qualification'&&qualification.qualified===true&&qualification.preparationSha256===record.preparationSha256&&qualification.ruleSha256===record.qualificationRuleSha256&&qualification.teacherResultSha256===t.resultSha256&&qualification.policyRefreshSha256===t.policyRefreshSha256,'teacher qualification does not apply to actual preregistered output');
+  assert(proof.developmentReportSha256===t.developmentReportSha256&&result.developmentReportSha256===t.developmentReportSha256&&result.artifacts.some(a=>a.sha256===t.developmentReportSha256),'teacher result omits actual assessment report');
+  const development=await load(t.developmentReportSha256);
+  const checked=await validateDevelopmentSuiteReport(prep.teacherSuite,development,{read:load.read,expectedCoverageSha256:load.coverageSha256,
+    expectedPurpose:'teacher-qualification',expectedModelSha256:prep.teacherPlan.teacher?.sha256,expectedSourceRevision:prep.start.sourceRevision,expectedDependencySha256:prep.start.dependencySha256});
+  assert(hash(prep.teacherPlan.teacher?.sha256)&&development.before.sourceRevision===prep.start.sourceRevision&&development.before.dependencySha256===prep.start.dependencySha256&&development.before.modelSha256===prep.teacherPlan.teacher.sha256&&qualification.developmentReportSha256===t.developmentReportSha256&&checked.qualified,'actual complete useful teacher correction is unqualified');
 }
 
 async function trainingPlan(manifest,plan,start,method,load,{overlay,arm}={}){
@@ -193,9 +266,18 @@ async function trainingPlan(manifest,plan,start,method,load,{overlay,arm}={}){
   if(arm==='treatment')assert(recipe.settings.policyRefresh?.sha256===overlay,'treatment does not consume exact completed teacher overlay');
 }
 
-export async function validateScientificAdmission(manifest,{read}){
+async function registeredTrainingOutput(resultSha256,record,prep,load,comparisonSha256){
+  const result=await load(resultSha256),proof=await resultProof(result,load,'training-proof');executedStart(result.execution,prep.start);
+  const campaign=record.campaigns.find(c=>c.stage==='training'&&c.id===result.execution.campaign);
+  assert(campaign&&result.execution.scientific?.stage==='training'&&result.execution.scientific.arm===campaign.arm&&
+    result.execution.planSha256===campaign.phasePlanSha256&&result.execution.scientific.experimentSha256===comparisonSha256&&
+    result.artifacts.some(a=>a.role==='model'&&a.sha256===proof.modelSha256),'model is not the registered fixed training output');
+  return {result,proof,campaign,modelSha256:proof.modelSha256};
+}
+
+export async function validateScientificAdmission(manifest,{read,coveragePolicy=APPROVED_COVERAGE}){
   assert(manifest?.purpose==='scientific-comparison'&&manifest.scientific?.schema===1&&typeof read==='function','explicit scientific admission inputs required');
-  const load=await loadInputs(manifest,read),record=await load(manifest.scientific.experimentSha256);
+  const load=await loadInputs(manifest,read),record=await load(manifest.scientific.experimentSha256);load.coverageSha256=await developmentDigest(coveragePolicy);
   assert(record.schema===1&&record.methodKind===COMPARISON_METHOD,'unsupported scientific comparison method');
   assert(record.autoPromotion===false&&Number.isSafeInteger(record.originalDeadline)&&manifest.deadline===record.originalDeadline,'original scientific deadline or owner promotion boundary differs');
   if(record.kind==='common-calibration'){
@@ -212,22 +294,43 @@ export async function validateScientificAdmission(manifest,{read}){
     assert(record.originalDeadline===preregistered.originalDeadline,'original scientific deadline cannot reset after teacher preparation');
     assert(canonical(record.commonStart)===canonical(preregistered.commonStart)&&canonical(normalizedCampaigns(record.campaigns))===canonical(preregistered.campaigns),'post-teacher freeze changed common state, campaigns, budgets or schedules');
     for(const key of ['rulesSha256','qualificationRuleSha256','selectionRuleSha256','publicProfilesSha256','evaluationFamilyInventorySha256','publicOpponentSha256'])assert(record[key]===preregistered[key],'post-teacher freeze changed preregistered rules or evaluation');
-    assert(canonical(record.reserves)===canonical(preregistered.reserves)&&canonical(record.continuation)===canonical(preregistered.continuation),'post-teacher freeze changed reserves or continuation');
+    assert(canonical(record.reserves)===canonical(preregistered.reserves)&&canonical(record.continuation)===canonical(preregistered.continuation)&&canonical(record.developmentSuites)===canonical(preregistered.developmentSuites),'post-teacher freeze changed reserves, continuation or tactical suite');
     projectExperimentBudget(record,prep.rule);await teacherEvidence(record,prep,load);
   }
   const campaign=record.campaigns.find(c=>c.id===manifest.id);assert(campaign,'unregistered campaign');const phase=await matchManifest(manifest,prep.start,campaign);
+  const finalCampaign=record.campaigns.find(c=>c.stage==='evaluation'&&c.evaluationScope==='final');
+  const isFinal=campaign.stage==='evaluation'&&campaign.evaluationScope==='final';
+  if(!isFinal)assert(manifest.inputs.every(a=>a.sha256!==finalCampaign.scheduleSha256&&a.role!=='protected-final'),'raw final schedule/material is forbidden before candidate selection');
   assert(manifest.checkpointSha256===prep.start.checkpointSha256,'arms must use exactly the common calibrated checkpoint');
   const plan=await load(phase.planSha256);
-  if(preparing){assert(campaign.stage==='teacher-screen'&&campaign.arm==='treatment','arm training cannot start before actual teacher freeze');assert(canonical(phase.workIds)===canonical(plan.pool.selections.map(s=>s.workId)),'teacher work IDs differ from preregistered source pool');}
+  if(preparing){assert(campaign.stage==='teacher-screen'&&campaign.arm==='treatment','arm training cannot start before actual teacher freeze');assert(canonical(phase.workIds)===canonical([...(await developmentWorkIds(prep.teacherSuite)),...plan.pool.selections.map(s=>s.workId)]),'teacher work IDs differ from preregistered assessment and source pool');}
   else if(campaign.stage==='training')await trainingPlan(manifest,plan,prep.start,prep.method,load,{overlay:record.teacher.policyRefreshSha256,arm:campaign.arm});
   else if(campaign.stage==='evaluation'){
-    const lock=await load(manifest.scientific.candidateLockSha256);
-    assert(lock.schema===1&&lock.kind==='locked-comparison-candidate'&&lock.comparisonSha256===manifest.scientific.experimentSha256&&lock.selectionRuleSha256===record.selectionRuleSha256&&lock.selectionReviewed===true&&lock.allScheduledArmsAccounted===true&&lock.candidateSha256===manifest.scientific.candidateSha256,'candidate selection is not locked to this comparison');
-    const selected=await load(lock.sourceTrainingResultSha256),proof=await resultProof(selected,load,'training-proof');
-    executedStart(selected.execution,prep.start);
-    const selectedCampaign=record.campaigns.find(c=>c.stage==='training'&&c.id===selected.execution.campaign);
-    assert(selectedCampaign&&selected.execution.scientific?.stage==='training'&&selected.execution.scientific.arm===selectedCampaign.arm&&selected.execution.planSha256===selectedCampaign.phasePlanSha256&&selected.execution.scientific.experimentSha256===manifest.scientific.experimentSha256&&(campaign.arm==='shared'||selected.execution.scientific.arm===campaign.arm)&&selected.artifacts.some(a=>a.role==='model'&&a.sha256===lock.candidateSha256)&&proof.modelSha256===lock.candidateSha256,'locked candidate is not an actual registered training output');
-    assert(plan.kind==='prospective-public-profile-evaluation'&&plan.models?.candidate?.sha256===lock.candidateSha256&&plan.models.opponent?.sha256===ORIGINAL_INCUMBENT.publicOnnxSha256&&plan.candidateSha256===lock.candidateSha256&&canonical(plan.schedule)===canonical(await load(campaign.scheduleSha256))&&canonical(plan.profiles)===canonical(await load(record.publicProfilesSha256))&&plan.familyInventory?.sha256===record.evaluationFamilyInventorySha256,'evaluation changed candidate, public opponent, frozen schedule, profiles or families');
+    assert(manifest.scientific.evaluationScope===campaign.evaluationScope&&plan.evaluationScope===campaign.evaluationScope,'validation/final evaluation scope differs');
+    const modelSha256=manifest.scientific.candidateSha256;
+    if(!isFinal){
+      assert(manifest.scientific.candidateLockSha256===undefined,'validation is exact arm evaluation, not final candidate nomination');
+      const selected=await registeredTrainingOutput(manifest.scientific.sourceTrainingResultSha256,record,prep,load,manifest.scientific.experimentSha256);
+      assert(selected.campaign.arm===campaign.arm&&selected.modelSha256===modelSha256,'validation does not evaluate its exact registered arm output');
+    }else{
+      const lock=await load(manifest.scientific.candidateLockSha256);
+      assert(lock.schema===1&&lock.kind==='locked-comparison-candidate'&&lock.comparisonSha256===manifest.scientific.experimentSha256&&lock.selectionRuleSha256===record.selectionRuleSha256&&lock.selectionReviewed===true&&lock.candidateSha256===modelSha256,'candidate selection is not locked to this comparison');
+      const selected=await registeredTrainingOutput(lock.sourceTrainingResultSha256,record,prep,load,manifest.scientific.experimentSha256);
+      const actualComparison=await load(lock.comparisonReportSha256),selection=await validateComparisonEvidence(actualComparison,{read:load.read,
+        comparisonSha256:manifest.scientific.experimentSha256,rulesSha256:record.rulesSha256,selectionRuleSha256:record.selectionRuleSha256});
+      assert(selected.modelSha256===modelSha256&&selection.eligibleArm===selected.campaign.arm&&selection.candidateSha256===modelSha256,'final nominee is not supported by actual paired validation');
+      const tactical=await load(lock.developmentReportSha256),floor=await validateDevelopmentSuiteReport(prep.candidateSuite,tactical,{read:load.read,
+        expectedCoverageSha256:load.coverageSha256,expectedPurpose:'candidate-regression',expectedModelSha256:modelSha256,
+        expectedSourceRevision:prep.start.sourceRevision,expectedDependencySha256:prep.start.dependencySha256});
+      assert(lock.developmentSuiteSha256===record.developmentSuites.candidateSha256&&tactical.arm===selected.campaign.arm&&tactical.before.sourceRevision===prep.start.sourceRevision&&tactical.before.dependencySha256===prep.start.dependencySha256&&floor.qualified,'candidate lacks actual all-profile critical tactical floor');
+    }
+    const schedule=await load(campaign.scheduleSha256);
+    assert(Array.isArray(schedule)&&schedule.every(j=>j.partition===campaign.evaluationScope),'evaluation schedule crosses validation/final boundary');
+    if(isFinal){
+      assert(schedule.length===campaign.scheduleSummary.candidateAttempts&&schedule.every(j=>j.role==='candidate'&&j.gameSeconds===campaign.scheduleSummary.gameSeconds),'final raw schedule differs from reserved count/budget');
+      for(const profile of ['babs','tau','horus'])assert(schedule.filter(j=>j.profile===profile).length===campaign.scheduleSummary.pairsPerProfile*2&&schedule.filter(j=>j.profile===profile&&j.startKind==='normal').length>=campaign.scheduleSummary.normalStartPairsPerProfile*2,'final raw schedule differs from reserved profile/start sample');
+    }
+    assert(plan.kind==='prospective-public-profile-evaluation'&&plan.models?.candidate?.sha256===modelSha256&&plan.models.opponent?.sha256===ORIGINAL_INCUMBENT.publicOnnxSha256&&plan.candidateSha256===modelSha256&&canonical(plan.schedule)===canonical(schedule)&&canonical(plan.profiles)===canonical(await load(record.publicProfilesSha256))&&plan.familyInventory?.sha256===record.evaluationFamilyInventorySha256&&canonical(plan.primaryScope)===canonical(prep.rules.primaryScope)&&canonical(plan.uncertainty)===canonical(prep.rules.uncertainty),'evaluation changed model, public opponent, frozen schedule, profiles, families or primary scope');
   }else throw Error('teacher generation cannot rerun under a comparison freeze');
   return {qualified:true,kind:record.kind,experimentSha256:manifest.scientific.experimentSha256,stage:campaign.stage,arm:campaign.arm,commonCheckpointSha256:prep.start.checkpointSha256,totals:prep.totals};
 }

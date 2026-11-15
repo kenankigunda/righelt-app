@@ -117,7 +117,7 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
   const recipe = manifest.inputs.find(a => a.sha256 === manifest.recipeSha256);
   assert(recipe, 'approved recipe artifact missing');
   const contextPath = await containedFile(root, `${phase.runDir}/execution-context.json`, { createParents: true });
-  await fs.writeFile(contextPath, JSON.stringify({ execution: executionIdentity(manifest, work.manifestSha256, phase, work.generation), completedWorkIds: phase.workIds, recoveryFiles: work.snapshot?.phaseIndex === work.phaseIndex ? work.snapshot.files : [] }), { mode: 0o600 });
+  await fs.writeFile(contextPath, JSON.stringify({ execution: executionIdentity(manifest, work.manifestSha256, phase, work.generation), completedWorkIds: phase.workIds, inputObjects:manifest.inputs, recoveryFiles: work.snapshot?.phaseIndex === work.phaseIndex ? work.snapshot.files : [] }), { mode: 0o600 });
   const executionRecipe = manifest.inputs.find(a => a.sha256 === manifest.executionRecipeSha256);
   assert(executionRecipe, 'execution recipe artifact missing');
   const failurePath = `${phase.runDir}/hosted-infrastructure-${work.generation}.json`;

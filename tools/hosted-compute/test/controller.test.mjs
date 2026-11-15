@@ -224,7 +224,7 @@ test('claim lookup recovers settled work without consuming a missing identity',a
 });
 
 test('scientific stage cannot disguise training as final evaluation or bypass bound plan execution',async()=>{
- const f=await fixture(),m=structuredClone(f.manifest);m.purpose='scientific-comparison';m.scientific={schema:1,stage:'evaluation',arm:'shared',experimentSha256:m.recipeSha256,methodSha256:m.recipeSha256,familyInventorySha256:m.recipeSha256,candidateSha256:'4'.repeat(64)};
+ const f=await fixture(),m=structuredClone(f.manifest);m.purpose='scientific-comparison';m.scientific={schema:1,stage:'evaluation',evaluationScope:'final',arm:'shared',experimentSha256:m.recipeSha256,methodSha256:m.recipeSha256,familyInventorySha256:m.recipeSha256,candidateSha256:'4'.repeat(64)};
  const p=m.phases[0];p.kind='evaluation';p.planSha256=m.recipeSha256;p.expect.proof.allWorkComplete=true;
  p.argv=['tools/ai-trainer/.venv/bin/python','-m','righelt_training.hosted_science','evaluation','--plan',m.inputs[2].path,'--run-dir',p.runDir,'--seconds',String(p.seconds)];p.resumeArgv=[...p.argv,'--resume'];assert.equal(validateManifest(m).scientific.stage,'evaluation');
  for(const kind of ['training','teacher']){const wrong=structuredClone(m);wrong.phases[0].kind=kind;assert.throws(()=>validateManifest(wrong),/stage and executable phase/);}

@@ -1,11 +1,11 @@
 // Bounded witness checking for preparation, shared by hosted and local trainers.
 // Uses the common rules engine. This is not a second search engine or a solver.
-import { deterministicStateHash } from '../../packages/game-engine/src/index.ts';
+import { deterministicStateHash,resolveToStability } from '../../packages/game-engine/src/index.ts';
 import { transition, legalActionMap, terminalValue } from '../../packages/computer-player/src/index.ts';
 import { createEngineOperationBudget, EngineExpansionLimit } from './engine-operation-budget.mjs';
 import { canonical, encode, sha256, assert } from '../hosted-compute/policy.mjs';
 
-export async function verifyWitness({ state, stateHash, actions, expectedOutcome, maxActions, milliseconds, maxOperations }) {
+export async function verifyWitness({ state, stateHash, actions, expectedOutcome, expectedEndpointHash=null,predicates=[],beforePredicates=[],maxActions, milliseconds, maxOperations }) {
   assert(state && deterministicStateHash(state) === stateHash, 'tactical root identity mismatch');
   assert(Array.isArray(actions) && actions.length > 0 && Number.isSafeInteger(maxActions) && maxActions > 0 &&
     Number.isFinite(milliseconds) && milliseconds > 0 && Number.isSafeInteger(maxOperations) && maxOperations > 0, 'explicit bounded witness required');
@@ -17,7 +17,32 @@ export async function verifyWitness({ state, stateHash, actions, expectedOutcome
   let current=structuredClone(state),completedTurns=0;
   const steps=[];
   let disposition='complete';
+  const checkedPredicates=[];
+  const checkPredicates=(target,claims,when)=>{
+    assert(Array.isArray(claims)&&claims.length<=32,'bounded scoped predicates required');
+    for(const p of claims){
+      let actual;
+      if(p.kind==='legal'){
+        assert(typeof p.expected==='boolean'&&p.action&&Object.keys(p.action).every(k=>['type','actorId','from','to'].includes(k))&&['move','rush','project','push','retreat','follow','end_turn','pass'].includes(p.action.type),'unsupported legal predicate');
+        if(['pass','end_turn'].includes(p.action.type))assert(Object.keys(p.action).length===1,'unsupported stop predicate');
+        else{
+          assert(Object.keys(p.action).length===4&&target.pieces.some(x=>x.id===p.action.actorId),'known predicate action piece required');
+          for(const point of [p.action.from,p.action.to])assert(point&&Object.keys(point).sort().join(',')==='col,row'&&[point.row,point.col].every(x=>Number.isSafeInteger(x)&&x>=0&&x<target.boardSize),'bounded predicate coordinates required');
+        }
+        actual=bounded(()=>[...legalActionMap(target).values()]).some(a=>canonical(a)===canonical(p.action));
+      }
+      else if(p.kind==='count'){assert(['P1','P2'].includes(p.owner)&&['commanded','supplied'].includes(p.field)&&Number.isSafeInteger(p.expected)&&p.expected>=0,'unsupported count predicate');actual=target.pieces.filter(x=>x.owner===p.owner&&x[p.field]).length;}
+      else if(p.kind==='piece'){assert(['commanded','supplied'].includes(p.field)&&typeof p.expected==='boolean','unsupported piece predicate');const piece=target.pieces.find(x=>x.id===p.id);assert(piece,'predicate piece missing');actual=piece[p.field];assert(typeof actual==='boolean','piece predicate value unavailable');}
+      else if(p.kind==='group'){
+        assert(target.pieces.some(x=>x.id===p.id)&&Number.isSafeInteger(p.expected)&&p.expected>0,'known group piece and count required');
+        const resolved=bounded(()=>resolveToStability(structuredClone(target),{artifactMode:'full'}));const groups=resolved.artifacts.groups;actual=groups.strengthByComponentId[groups.componentByPieceId[p.id]];assert(Number.isSafeInteger(actual)&&actual>0,'group predicate value unavailable');
+      }
+      else throw new Error('unsupported scoped predicate');
+      assert(actual===p.expected,'scoped predicate mismatch');checkedPredicates.push({...p,when,actual,verified:true});
+    }
+  };
   try {
+    checkPredicates(current,beforePredicates,'before');
     for(const action of actions) {
       if(steps.length>=maxActions){disposition='action-horizon';break;}
       assert(current.outcome.status==='ongoing','witness extends beyond settled terminal');
@@ -29,6 +54,10 @@ export async function verifyWitness({ state, stateHash, actions, expectedOutcome
       steps.push({action,controller,beforeHash,afterHash:deterministicStateHash(current),outcome:current.outcome.status,
         continuation:current.continuation?.type??null,legalAlternatives:legal.length});
     }
+    if(disposition==='complete'){
+      assert(!expectedEndpointHash||deterministicStateHash(current)===expectedEndpointHash,'witness endpoint mismatch');
+      checkPredicates(current,predicates,'after');
+    }
   } catch(error) {
     if(error instanceof Interrupted || error instanceof EngineExpansionLimit)disposition='incomplete';
     else throw error;
@@ -39,7 +68,7 @@ export async function verifyWitness({ state, stateHash, actions, expectedOutcome
   const complete=disposition==='complete' && steps.length===actions.length;
   return {schema:1,kind:'tactical-witness',rootHash:stateHash,actionsSha256:await sha256(encode(canonical(actions))),
     requestedActions:actions.length,completedActions:steps.length,requestedMaxActions:maxActions,completedTurns,
-    disposition,steps,finalHash:deterministicStateHash(current),outcome,
+    disposition,steps,checkedPredicates,finalHash:deterministicStateHash(current),outcome,
     expectedOutcomeMatched:complete && outcome===expectedOutcome,
     // Opponent alternatives were not enumerated. A line involving their choices
     // is a witness only, never a forced win or a safe-defense proof.

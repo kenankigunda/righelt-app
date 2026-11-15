@@ -1,0 +1,226 @@
+{
+  "schema": 1,
+  "kind": "development-suite-coverage",
+  "version": "hosted-guidance-20261115-v2",
+  "backlogRevision": "b4dc3584de6a09eb09d7caafc58e7ff3bd7cc816",
+  "preparationInventorySha256": "bb3bf17df834032f654c3bf83e62ad987c51826117cdaef1d277ae41e7215b15",
+  "guidance": [
+    {
+      "id": "hosted-learning-contract",
+      "sha256": "7dd2b68ac97a0950b9e84ce303d512adfa3a5d9b718418b7b22e0d1c307003ed"
+    },
+    {
+      "id": "tactical-learning-update",
+      "sha256": "5b6ec0f1537298f8a05726649335531004bb62314213accfc784ca4c37c348d5"
+    },
+    {
+      "id": "exploratory-play",
+      "sha256": "1d53efe80921c39e4ae580892e517a981e5812754724e6d94495db70008bbc1c"
+    },
+    {
+      "id": "tactical-continuations",
+      "sha256": "b56e30830e2e6c960c3ff529c06b661e56d28cd5b2c751aa91d9daaea5e3a638"
+    },
+    {
+      "id": "s11-enclosures-repair",
+      "sha256": "7536cddfd1e68689cffc47850ed65031ce3909c6f738d7e6f52edfe8ebb885e2"
+    },
+    {
+      "id": "s05-enclosure-defense",
+      "sha256": "06fd5fecb2a0177639eca3695d5c0f7e98792b73e275bfcac2d4e374a6695c0d"
+    },
+    {
+      "id": "independent-learning-review",
+      "sha256": "77bc5fa7da7d65ff00035f7b83ca77db28d53a965f726e00e14d6b7342f539ec"
+    },
+    {
+      "id": "s12-command-repair",
+      "sha256": "7d9f5a498c5708becd0d616547a20d80d9058274b2c0d68042cdbcfeada7bfc9"
+    }
+  ],
+  "packets": [
+    {
+      "id": "legacy-command-repair-tactics",
+      "sourcePacketSha256": "ff33f03c4d7775a1ce372718e13e2d4636d09080040062ee258b5988461f85ba"
+    },
+    {
+      "id": "exploratory-scan",
+      "sourcePacketSha256": "33d6444258dda1b49a4b6c427c0b03ca57ce170818ec1d9cc6a2dd87ae5aa8d1"
+    },
+    {
+      "id": "s08-continuation-tactics",
+      "sourcePacketSha256": "58e494dd2acdcc699cd55ff2acb7749e9510343fdc23efc913b1889ebd0d68d1"
+    },
+    {
+      "id": "s11-current-enclosures-repair",
+      "sourcePacketSha256": "3518ca0608f0947bbb618336c7a5a3b2a861486dbb5e92508793aa51560fc628"
+    },
+    {
+      "id": "s05-current-enclosure-defense",
+      "sourcePacketSha256": "cf93e7f620ae9c218ecf882bec186e719de3d69d87e3e0418cde4dda4b8f1fb8"
+    },
+    {
+      "id": "s12-current-command-repair",
+      "sourcePacketSha256": "78dd0654eebb27596d6973b85125c8fd8b473d34ac9d2be88e9e386abcefca10"
+    }
+  ],
+  "caseIds": {
+    "legacy-command-repair-tactics": [
+      "E-54-command-denial",
+      "E-59-command-repair",
+      "E-60-push-and-block",
+      "E-61-retreat-to-win",
+      "E-64-supply-cut-away-from-corner"
+    ],
+    "exploratory-scan": [
+      "S10-28-avoid-next-turn-loss",
+      "S06-S09-rush-threat-family",
+      "S07-18-already-forced-loss",
+      "S01-43-probe-value-counterexample",
+      "S03-24-four-rush-finish",
+      "S11-20-network-repair"
+    ],
+    "s08-continuation-tactics": [
+      "G54-no-retreat-push",
+      "G53-vacate-friendly-blocker",
+      "G64-project-barrier",
+      "G45-supply-race",
+      "G74-finish-near-miss",
+      "G35-commander-preparation",
+      "G31-earlier-advance-cost"
+    ],
+    "s11-current-enclosures-repair": [
+      "dev-42acf3c0ff964009",
+      "dev-40e4a52d20c1423f",
+      "dev-4ec2035abe11464b",
+      "dev-5f5c324a04ae4898",
+      "dev-86d32a29d78d42e1",
+      "dev-3da5d9dcbb974dc1",
+      "dev-aaa1af20fc8d4a74",
+      "dev-b78edd4333f847c7",
+      "dev-b02f13515466497a",
+      "dev-7f840a9c58ad4bf7",
+      "dev-17f96297462045a7",
+      "dev-377d9388b58a460e"
+    ],
+    "s05-current-enclosure-defense": [
+      "S05-01",
+      "S05-02",
+      "S05-03",
+      "S05-04",
+      "S05-05",
+      "S05-06",
+      "S05-07",
+      "S05-08",
+      "S05-09",
+      "S05-10",
+      "S05-11"
+    ],
+    "s12-current-command-repair": [
+      "S12-01",
+      "S12-02",
+      "S12-10",
+      "S12-03",
+      "S12-04",
+      "S12-05",
+      "S12-06",
+      "S12-07",
+      "S12-08",
+      "S12-09"
+    ]
+  },
+  "supplements": [
+    {
+      "id": "guard-defense-6-6",
+      "sha256": "d88aaf879fa5a62ac189cccdbd542e83a4960c289d44be97a4657145eac6d7b6",
+      "kind": "guard-graph"
+    },
+    {
+      "id": "guard-defense-5-7",
+      "sha256": "9cc1c8603243a7ea7cb91ebe5f0310610077b9a67cb313e35ca9e4742e47b7bd",
+      "kind": "guard-graph"
+    }
+  ],
+  "familyConstraints": [
+    {
+      "canonicalFamily": "S06",
+      "aliases": [
+        "S06",
+        "S09"
+      ],
+      "relationship": "Same exact root/source family, never two independent families."
+    },
+    {
+      "canonicalFamily": "S05",
+      "aliases": [
+        "original",
+        "branch",
+        "older-exposed-S05",
+        "guard-contrasts"
+      ],
+      "commonActiveDecisionPrefix": 29,
+      "discardedPolicyExclusions": {
+        "original": [
+          28
+        ],
+        "branch": [
+          44
+        ]
+      },
+      "relationship": "One existing exposed family across undos/counterfactuals/descendants; no old-versus-new independence."
+    },
+    {
+      "canonicalFamily": "S08",
+      "relationship": "Updated continuation source belongs to the previously exposed S08 family; discarded undo branches are excluded from active targets."
+    },
+    {
+      "canonicalFamily": "S11",
+      "archivedDecisions": 81,
+      "activeDecisions": 79,
+      "discardedPolicyExclusions": [
+        23,
+        42
+      ],
+      "relationship": "Current packet expands the same exposed family; display20 overlap is explicitly reconciled."
+    },
+    {
+      "canonicalFamily": "S12",
+      "aliases": [
+        "previously-empty-exposed-S12",
+        "current-S12-command-repair",
+        "S12-branches-and-contrasts"
+      ],
+      "archivedDecisions": 55,
+      "activeDecisions": 54,
+      "restorations": 1,
+      "explicitEndTurns": 13,
+      "discardedPolicyExclusions": [
+        24
+      ],
+      "sourcePurpose": "unclassified",
+      "actorProvenance": "unknown",
+      "sourceHistoryComputerDecisions": 0,
+      "relationship": "One already exposed family, not ten families or a new independent game."
+    }
+  ],
+  "quarantines": [
+    {
+      "family": "S07",
+      "scope": "Unresolved archive/live terminal boundary remains quarantined. Forced loss is not an invented safe-action target."
+    },
+    {
+      "family": "S10",
+      "scope": "Unresolved archive/live terminal boundary remains quarantined. Scoped next-turn certificate is not eventual safety."
+    }
+  ],
+  "pendingHandoffs": [
+    {
+      "id": "pending-jam-self-play-analysis",
+      "status": "resolved-by-verified-existing-S12-handoff",
+      "resolvedPacketId": "s12-current-command-repair",
+      "familyAssigned": "S12",
+      "qualificationGranted": false,
+      "requirement": "Use the exact latest verified source packet with all eligibility false. No new family or inference of optimal play."
+    }
+  ]
+}

@@ -9,7 +9,7 @@ import time
 import unittest
 from unittest.mock import patch
 import torch
-from righelt_training.policy_pool import prepare_pool,work_id
+from righelt_training.policy_pool import prepare_pool,work_id,policy_refresh_dose,validate_sampled_counts
 from righelt_training.canary import canary_roots,selfplay
 from righelt_training.hosted_canary import Monitor
 from righelt_training.model import create_model
@@ -69,6 +69,8 @@ class PolicyPoolTest(unittest.TestCase):
         self.assertEqual((rows[0]['id'],rows[0]['stateHash'],rows[0]['controller']),(original['id'],original['beforeHash'],original['controller']))
         self.assertEqual(rows[0]['policy'],original['policy']);self.assertEqual(rows[0]['legal'],original['legal'])
         self.assertEqual(rows[0]['sourceQualification']['archiveSha256'],self.archive_sha)
+        self.assertEqual(rows[0]['sourceQualification']['familyId'],self.game['familyId'])
+        self.assertEqual(rows[0]['sourceQualification']['sourceFamily'],self.game.get('sourceFamily',self.game['familyId']))
         self.assertEqual(rows[0]['workId'],ids[0])
         with self.assertRaisesRegex(ValueError,'hand-labelled'):prepare_pool({'rows':[{'targetOrigin':'fresh-self-play'}]},context,ids,guard_sha256=pool['guards']['sha256'])
         bad=copy.deepcopy(pool);bad['selections'][0]['archiveReference']='historical-human.json.gz'
@@ -77,6 +79,8 @@ class PolicyPoolTest(unittest.TestCase):
         position=copy.deepcopy(list(self.buffer.positions)[self.index]);replacement=copy.deepcopy(position)
         replacement['encoded']=list(replacement['encoded']);replacement['originalPolicy']=copy.deepcopy(position['policy'])
         replacement['policy']=[{'index':position['legal'][-1],'probability':1.}]
+        replacement['sourceQualification']={'kind':'executed-shared-calibration-row','familyId':self.game['familyId'],
+                                             'sourceFamily':self.game.get('sourceFamily',self.game['familyId'])}
         binding=self.binding('refresh.json',[replacement])
         with self.assertRaisesRegex(ValueError,'absent'):apply_policy_refresh([],binding,require_all=True)
         model=create_model(architecture_binding('board-attention-48x2-v1'));optimizer=make_optimizer(model)
@@ -86,11 +90,27 @@ class PolicyPoolTest(unittest.TestCase):
             result=train_round(model,optimizer,[position],device='cpu',seed=107,deadline=time.monotonic()+90,on_batch=runner.record_training_batch)
         self.assertEqual(result['updates'],1)
         adoption=runner.state['policyRefreshAdoption'];self.assertEqual(adoption['ids'],[position['id']]);self.assertEqual(adoption['positions'],1)
+        self.assertEqual(adoption['sampledCounts'],{position['id']:1})
+        dose=policy_refresh_dose(adoption,[replacement],'treatment-training')
+        self.assertEqual(dose,{'schema':1,'phase':'treatment-training','totalPositions':1,'byFamily':[
+            {'familyId':self.game['familyId'],'sourceFamily':self.game.get('sourceFamily',self.game['familyId']),
+             'sampledPositions':1,'uniquePositions':1}]})
+        for mutate in (lambda r:r['sourceQualification'].pop('sourceFamily'),lambda r:r['sourceQualification'].pop('familyId')):
+            missing_family=copy.deepcopy(replacement);mutate(missing_family)
+            with self.assertRaisesRegex(ValueError,'source family'):policy_refresh_dose(adoption,[missing_family],'treatment-training')
+        for mutate in (lambda a:a.pop('sampledCounts'),lambda a:a['sampledCounts'].update({position['id']:2}),lambda a:a.update(ids=[])):
+            bad_counts=copy.deepcopy(adoption);mutate(bad_counts)
+            with self.assertRaisesRegex(ValueError,'sampled counts'):validate_sampled_counts(bad_counts)
         retained=self.root/'checkpoints'/'adoption.pt'
         save_checkpoint(retained,model,optimizer,round_index=0,updates=runner.state['updates'],replay_ids=[],manifest_sha256='synthetic-adoption-fixture',recovery_state=runner.state)
         restored=create_model(architecture_binding('board-attention-48x2-v1'));restored_optimizer=make_optimizer(restored)
         recovered=load_checkpoint(retained,restored,restored_optimizer,manifest_sha256='synthetic-adoption-fixture',require_recovery=True)
         self.assertEqual(recovered_adoption(recovered['recovery']['state'],runner.state),adoption)
+        resumed=Runner.__new__(Runner);resumed.state=recovered['recovery']['state'];resumed.maybe_checkpoint=lambda:None;resumed.event=lambda *a,**k:None
+        with patch('righelt_training.execution_recipe.verify_runtime',return_value={'settings':{'policyRefresh':binding}}):
+            again=train_round(restored,restored_optimizer,[position],device='cpu',seed=108,deadline=time.monotonic()+90,on_batch=resumed.record_training_batch)
+        self.assertEqual(again['updates'],1);self.assertEqual(resumed.state['policyRefreshAdoption']['sampledCounts'],{position['id']:2})
+        self.assertEqual(policy_refresh_dose(resumed.state['policyRefreshAdoption'],[replacement],'treatment-training')['byFamily'][0]['sampledPositions'],2)
         qualify_refresh_start(recovered['recovery']['state'],[],binding,'e'*64,resume=True)
         missing=copy.deepcopy(recovered['recovery']['state']);missing['policyRefreshInputQualified']['ids']=[]
         with self.assertRaisesRegex(ValueError,'original shared-replay'):qualify_refresh_start(missing,[],binding,'e'*64,resume=True)

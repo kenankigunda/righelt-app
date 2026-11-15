@@ -16,7 +16,8 @@ from .pilot_recipe import DEFINITION
 SOURCES = ('trainer.py', 'model.py', 'curriculum.py', 'runner.py', 'replay.py',
            'checkpoint.py', 'production.py', 'training_recipe.py', 'canary.py', 'hosted_canary.py', 'execution_recipe.py',
            'portable.py', 'attention_method.py', 'pilot_recipe.py', 'sequence_targets.py', 'board_attention.py',
-           'hosted_science.py','policy_pool.py','export_runtime.py','hosted_receipts.py','source_image.py')
+           'hosted_science.py','policy_pool.py','export_runtime.py','hosted_receipts.py','source_image.py',
+           'prospective_durability.py','evaluation_start.py','development_assessment.py','comparison_report.py','evaluation.py','arena.py')
 
 
 def digest(value):

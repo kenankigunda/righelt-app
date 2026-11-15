@@ -43,8 +43,8 @@ export function validateManifest(m) {
     const s=m.scientific;
     assert(s?.schema===1 && ['calibration','teacher-screen','training','evaluation','export'].includes(s.stage) && ['control','treatment','shared'].includes(s.arm),'scientific stage and arm required');
     for(const key of ['experimentSha256','methodSha256','familyInventorySha256'])assert(/^[a-f0-9]{64}$/.test(s[key])&&m.inputs.some(a=>a.sha256===s[key]),'scientific method, freeze and family inventories must be frozen inputs');
-    assert(s.stage!=='evaluation'||/^[a-f0-9]{64}$/.test(s.candidateSha256),'locked candidate required for final evaluation');
-    assert(s.stage==='evaluation'||m.inputs.every(a=>a.role!=='protected-final'),'raw final material forbidden before candidate lock');
+    assert(s.stage!=='evaluation'||/^[a-f0-9]{64}$/.test(s.candidateSha256)&&['validation','final'].includes(s.evaluationScope),'frozen evaluated model and validation/final scope required');
+    assert(s.stage==='evaluation'&&s.evaluationScope==='final'||m.inputs.every(a=>a.role!=='protected-final'),'raw final material forbidden before candidate lock');
     const allowed={calibration:['training','evaluation','benchmark'], 'teacher-screen':['teacher'],training:['training'],evaluation:['evaluation'],export:['export']}[s.stage];
     const commands={training:'training',teacher:'teacher',evaluation:'evaluation'};
     assert(Array.isArray(m.phases)&&m.phases.length>0,'scientific phases required');

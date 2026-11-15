@@ -28,6 +28,7 @@ from .architecture import record_architecture
 from .pilot_recipe import checked_recipe, teaching_job, DEFINITION
 from .portable import resolve_reference, read_bound
 from .replay import ReplayBuffer, save_game
+from .policy_pool import add_sampled_counts
 from .trainer import make_optimizer, train_round
 from . import fresh_health
 from . import exploration_adoption
@@ -629,8 +630,7 @@ class Runner:
         if metrics.get('policyRefreshBindingSha256'):
             adoption=self.state.setdefault('policyRefreshAdoption',{'bindingSha256':metrics['policyRefreshBindingSha256'],'ids':[],'positions':0})
             if adoption['bindingSha256']!=metrics['policyRefreshBindingSha256']:raise ValueError('recovery changed policy refresh binding')
-            actual=metrics['policyRefreshSampledIds']
-            adoption['ids']=sorted(set(adoption['ids'])|set(actual));adoption['positions']+=len(actual)
+            self.state['policyRefreshAdoption']=add_sampled_counts(adoption,metrics['policyRefreshSampledIds'])
         if getattr(self, 'fresh_baseline', None) is not None:
             fresh_health.record_batch(self.state, metrics)
         self.event('training-batch', **metrics)

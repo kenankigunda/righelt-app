@@ -123,7 +123,7 @@ def infer(model,encoded,device,monitor=None):
         return policy[0].cpu().tolist(),value[0].item()
 
 
-def play_game(job,models,deadline,device,*,allocation=lambda:{'paused':False,'workers':1},checkpoint=lambda:None,monitor=None):
+def play_game(job,models,deadline,device,*,allocation=lambda:{'paused':False,'workers':1},checkpoint=lambda:None,monitor=None,raw_complete=None):
     remaining=deadline-time.monotonic()
     if remaining<20:return {'status':'unfinished','reason':'budget'}
     game_seconds=FOLLOWUP_POLICY['gameSeconds'] if job.get('evaluationWorkload')==FOLLOWUP_POLICY['workload'] else 600
@@ -163,6 +163,10 @@ def play_game(job,models,deadline,device,*,allocation=lambda:{'paused':False,'wo
                             append(job['decisionLogPath'],{'jobId':job['id'],'observedAt':time.time(),**message})
                         continue
                     elif message['type']=='game':
+                        if job.get('prospectiveEvaluation') is True:
+                            # Consumption is durable before any checkpoint or replay verifier.
+                            if raw_complete is not None:raw_complete(message['game'])
+                            return {'status':'completed','game':message['game']}
                         checkpoint()
                         # Keep blocking replay below the supervisor's telemetry age bound.
                         try:verify_game(message['game'],min(game_deadline,time.monotonic()+20))

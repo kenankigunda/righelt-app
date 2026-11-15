@@ -62,7 +62,9 @@ def validate_adapter_stage(execution,command,plan):
         if isinstance(value,dict):return bool(final_fields.intersection(value)) or value.get('partition')=='final' or any(carries_final(item) for item in value.values())
         return False
     final_bearing=carries_final(plan)
-    if final_bearing and (command!='evaluation' or stage!='evaluation'):
+    scope=execution.get('scientific',{}).get('evaluationScope')
+    if command=='evaluation' and scope is not None and plan.get('evaluationScope')!=scope:raise ValueError('evaluation scope differs from executed adapter')
+    if final_bearing and (command!='evaluation' or stage!='evaluation' or scope not in (None,'final')):
         raise ValueError('final material requires locked evaluation-only adapter')
 
 
@@ -106,9 +108,25 @@ def validate_schedule(plan,profiles,work_ids,execution):
         family=families.get(job['familyId'])
         if family is None or family['partition']!=job['partition'] or family['sourceFamily']!=job.get('sourceFamily'):
             raise ValueError('scheduled source-family membership differs from frozen inventory')
+        if plan.get('primaryScope') is not None:
+            if (job.get('startKind') not in ('normal','developed')
+                    or family.get('startKind')!=job['startKind']
+                    or job['startKind']=='normal' and (job.get('kind')!='normal' or job.get('initialState') is not None)
+                    or job['startKind']=='developed' and (job.get('kind')!='simple' or not isinstance(job.get('initialState'),dict))):
+                raise ValueError('frozen normal/developed start distribution differs')
         groups.setdefault((job['pairId'],job['profile'],job['role']),[]).append(job)
+    claimed=[j for j in schedule if plan.get('primaryScope') is not None or any(k in j for k in ('kind','initialState','startKind','startIdentity'))]
+    if claimed:
+        from .evaluation_start import expected_evaluation_starts
+        expected=expected_evaluation_starts(claimed)
+        if len(expected)!=len(claimed) or any(j.get('startIdentity')!=identity for j,identity in zip(claimed,expected)):
+            raise ValueError('frozen authoritative evaluation start differs')
+    def start_binding(job):
+        return json.dumps({key:job.get(key) for key in ('kind','initialState','startKind','startIdentity')},sort_keys=True,allow_nan=False)
     if any(len(jobs)!=2 or {j['candidateSeat'] for j in jobs}!={'P1','P2'} or len({(j['familyId'],j['seed']) for j in jobs})!=1 for jobs in groups.values()):
         raise ValueError('paired seats with fixed family and seed required')
+    if any(len({start_binding(j) for j in jobs})!=1 for jobs in groups.values()):
+        raise ValueError('paired seats require the exact same frozen start')
     if {j['profile'] for j in schedule if j['role']=='candidate'}!={'babs','tau','horus'}:
         raise ValueError('all public profiles required')
     if any(j['partition']=='final' for j in schedule):
@@ -144,65 +162,95 @@ def evaluate(plan,directory,execution,work_ids,*,seconds,player=None):
         if job['role']=='baseline-diagnostic':model_versions={seat:plan['models']['opponent']['sha256'],other:plan['models']['opponent']['sha256']}
         profile_versions={'P1':profile['version'],'P2':profile['version']}
         raw={'jobId':job['id'],'pairId':job['pairId'],'candidateSeat':job['candidateSeat'],
-            'profile':job['profile'],'familyId':job['familyId'],'sourceFamily':job['sourceFamily'],'role':job['role'],'receiptId':execution['manifestSha256']+':'+job['id']}
-        claim=hosted_receipts.evaluation_claim(namespace,job['id'],create=time.monotonic()<deadline-20)
-        if claim.get('unclaimed'):raw.update(status='unstarted',reason='original-budget')
-        elif not claim['created']:
-            retained=claim.get('result')
-            if retained is None:raw.update(status='unfinished',reason='consumed-without-settlement')
-            else:
-                if any(retained.get(k)!=raw[k] for k in ('jobId','pairId','candidateSeat','profile','familyId','sourceFamily','role')):
-                    raise ValueError('recovered prospective receipt identity mismatch')
-                raw=retained
-                if raw['status']=='complete':
-                    game=raw['game']
-                    if (raw.get('engineReplayVerified') is not True
-                            or raw.get('gameSha256')!=digest(json.dumps(game,sort_keys=True,allow_nan=False).encode())
-                            or game.get('id')!=job['id'] or game.get('seed')!=job['seed'] or game.get('familyId')!=job['familyId']
-                            or game.get('partition')!=job['partition'] or game.get('modelVersions')!=model_versions or game.get('profileVersions')!=profile_versions
-                            or raw.get('outcome')!=game.get('outcome',{}).get('status')):
-                        raise ValueError('recovered evaluation lacks original bound replay proof')
-        else:
-            engine_job={**job,'prospectiveEvaluation':True,'evaluationProfile':{'name':job['profile'],'sourceSha256':plan['profiles']['sourceSha256'],
-                'definition':profile,'artifactSha256':profile_artifact},'profiles':{'P1':profile,'P2':profile},
-                'modelVersions':{seat:plan['models']['candidate']['sha256'],other:plan['models']['opponent']['sha256']},
-                'profileVersions':{'P1':profile['version'],'P2':profile['version']}}
-            by_seat={seat:models['candidate'],other:models['opponent']}
-            if job['role']=='baseline-diagnostic':
-                by_seat={seat:models['opponent'],other:models['opponent']}
-                engine_job['modelVersions']={seat:plan['models']['opponent']['sha256'],other:plan['models']['opponent']['sha256']}
-            result=(player or play_game)(engine_job,by_seat,min(deadline,time.monotonic()+job['gameSeconds']+10),device)
-            if result.get('status')=='completed':
-                game=result['game'];verify_game(game,deadline)
-                if (game.get('id')!=job['id'] or game.get('seed')!=job['seed'] or game.get('familyId')!=job['familyId']
-                        or game.get('modelVersions')!=engine_job['modelVersions'] or game.get('profileVersions')!=engine_job['profileVersions']):
-                    raise ValueError('executed evaluation identity mismatch')
-                terminal=game['outcome']['status'] in ('p1_win','p2_win','draw')
-                raw.update(status='complete' if terminal else 'unfinished',outcome=game['outcome']['status'],game=game,engineReplayVerified=True,
-                    gameSha256=digest(json.dumps(game,sort_keys=True,allow_nan=False).encode()))
-                if not terminal:raw['reason']='truncated:'+str(game.get('truncationReason','unknown'))
-            elif result.get('status')=='unfinished':raw.update(status='unfinished',reason=result.get('reason','unknown'))
-            else:raise ValueError('evaluation correctness failure')
-            hosted_receipts.settle(namespace,job['id'],raw)
+            'profile':job['profile'],'familyId':job['familyId'],'sourceFamily':job['sourceFamily'],'role':job['role'],
+            'startKind':job.get('startKind','unclassified'),'seed':job['seed'],'receiptId':execution['manifestSha256']+':'+job['id']}
+        from .prospective_durability import consume_and_qualify
+        from .evaluation_start import verify_evaluation_game_start
+        if job.get('startIdentity') is not None:raw['startIdentity']=job['startIdentity']
+        engine_job={**job,'prospectiveEvaluation':True,'evaluationProfile':{'name':job['profile'],'sourceSha256':plan['profiles']['sourceSha256'],
+            'definition':profile,'artifactSha256':profile_artifact},'profiles':{'P1':profile,'P2':profile},
+            'modelVersions':model_versions,'profileVersions':profile_versions}
+        by_seat={seat:models['candidate'],other:models['opponent']}
+        if job['role']=='baseline-diagnostic':by_seat={seat:models['opponent'],other:models['opponent']}
+        def play(raw_complete):
+            args=(engine_job,by_seat,min(deadline,time.monotonic()+job['gameSeconds']+10),device)
+            # Injected players retain their existing interface; their returned game
+            # crosses the same persistence barrier before any verification.
+            return player(*args) if player is not None else play_game(*args,raw_complete=raw_complete)
+        raw,durable_paths=consume_and_qualify(job=job,base=raw,execution=execution,namespace=namespace,
+            directory=directory,deadline=deadline,barrier=hosted_receipts,play=play,verify=verify_game,
+            start_verify=verify_evaluation_game_start,model_versions=model_versions,profile_versions=profile_versions)
+        paths.extend(durable_paths)
         path=write_json(directory/'attempts'/str(execution['generation'])/(hashlib.sha256(job['id'].encode()).hexdigest()+'.json'),raw)
         paths.append(path);records.append(raw)
         receipts.append({'workId':job['id'],'status':raw['status'],**({'evidenceSha256':digest(path.read_bytes())} if raw['status']!='unstarted' else {})})
-    report=prospective_report(schedule,[r for r in records if r['status']!='unstarted'])
+    report=prospective_report(schedule,[r for r in records if r['status']!='unstarted'],primary_scope=plan.get('primaryScope'))
     report['lineageFamilies']=sorted({job['sourceFamily'] for job in schedule})
     paths.append(write_json(directory/f"prospective-report-{execution['generation']}.json",report))
     return emit_result(directory,'evaluation',execution,receipts,paths,{'candidateSha256':plan['candidateSha256'],
         'unfinishedIsDraw':False,'prospective':True,'reportSha256':digest(paths[-1].read_bytes()),
-        'inferenceRuntime':{role:model.runtime for role,model in models.items()},'browserWasmQualified':False})
+        'inferenceRuntime':{role:model.runtime for role,model in models.items()},'browserWasmQualified':False,
+        'opponentIdentity':{'kind':'original-incumbent-weights-under-common-search',
+            'weightsSha256':plan['models']['opponent']['sha256'],'searchSourceRevision':execution['sourceRevision'],
+            'searchPolicyVersion':plan['profiles'].get('searchPolicyVersion'),'exactProductionBehaviorReplica':False}})
 
 
-def refreshed_policy(position,answer,profile):
+def completed_teacher_work(position,answer,profile,*,proof_seconds=5,retained_proof=None,source_revision=None):
+    """Full search work, or independently replayed proof for all policy support."""
+    simulations=answer.get('simulations')
+    if type(simulations)is not int or simulations<0:raise ValueError('honest actual teacher work required')
+    if simulations>=profile['simulations']:return None
+    if answer.get('reason') not in ('immediate-win','forced-win'):
+        raise ValueError('completed eligible offline policy search required')
+    binding=digest(json.dumps({'position':position,'answer':answer,'profile':profile,'sourceRevision':source_revision},sort_keys=True,separators=(',',':'),allow_nan=False).encode())
+    verifier_sha=digest((ROOT/'tools/ai-trainer/verify-teacher-exit.mjs').read_bytes())
+    if retained_proof is not None:
+        # Only the authenticated, already-settled work receipt supplies this
+        # cache. Its original actual proof covers the entire target support.
+        support=retained_proof.get('support',[])
+        positive=sorted(p['index'] for p in answer.get('policy',[]) if p.get('probability',0)>0)
+        if (not isinstance(source_revision,str) or len(source_revision)!=40
+                or retained_proof.get('schema')!=1 or retained_proof.get('kind')!='authoritative-teacher-early-exit'
+                or retained_proof.get('bindingSha256')!=binding or retained_proof.get('verifierSha256')!=verifier_sha
+                or retained_proof.get('sourceRevision')!=source_revision or retained_proof.get('rootHash')!=position.get('stateHash')
+                or retained_proof.get('controller')!=position.get('controller') or retained_proof.get('actualSimulations')!=simulations
+                or retained_proof.get('reason')!=answer.get('reason') or not positive
+                or sorted(p.get('index') for p in support)!=positive
+                or any(p.get('kind') not in ('terminal-win','bounded-forced-win') or not isinstance(p.get('afterHash'),str)
+                       or len(p['afterHash'])!=64 or any(c not in '0123456789abcdef' for c in p['afterHash']) for p in support)
+                or answer['reason']=='immediate-win' and any(p['kind']!='terminal-win' for p in support)):
+            raise ValueError('retained teacher early-exit proof binding differs')
+        return retained_proof
+    if not isinstance(proof_seconds,(int,float)) or not 0<proof_seconds<=60:
+        raise ValueError('teacher proof budget exhausted')
+    try:
+        raw=json.dumps({'position':position,'answer':answer,'milliseconds':proof_seconds*1000},allow_nan=False)
+        process=subprocess.run(['node','--import','tsx','tools/ai-trainer/verify-teacher-exit.mjs'],
+            cwd=ROOT,input=raw,text=True,capture_output=True,check=True,timeout=proof_seconds+.5)
+        proof=json.loads(process.stdout)
+    except (ValueError,OSError,subprocess.SubprocessError) as error:
+        raise ValueError('teacher early-exit proof incomplete or invalid') from error
+    if (proof.get('kind')!='authoritative-teacher-early-exit' or proof.get('rootHash')!=position.get('stateHash')
+            or proof.get('controller')!=position.get('controller') or proof.get('actualSimulations')!=simulations):
+        raise ValueError('teacher early-exit proof identity differs')
+    return {**proof,'bindingSha256':binding,'verifierSha256':verifier_sha,'sourceRevision':source_revision}
+
+
+def stable_teacher_proof(proof):
+    # Timing/heap observations stay in attempt receipts. Policy artifact bytes
+    # remain stable when a completed target is verified after recovery.
+    return {key:value for key,value in proof.items() if key not in ('elapsedMs','engineWork')} | {
+        'engineWork':{key:value for key,value in proof['engineWork'].items() if key!='maxObservedHeapUsedBytes'}}
+
+
+def refreshed_policy(position,answer,profile,*,proof_seconds=5,verification_log=None,retained_proof=None,source_revision=None):
     """Policy-only replacement for fresh, eligible self-play examples."""
     identity=answer.get('searchIdentity',{})
     if (position.get('targetOrigin')!='fresh-self-play' or position.get('partition')!='train'
             or position.get('policyMask') is not True or len(position.get('legal',[]))<2
             or answer.get('status')!='ready' or answer.get('stopped')!='complete' or answer.get('fallback') is not None
             or answer.get('policyMask') is not True or answer.get('legality',{}).get('complete') is not True
-            or answer['legality'].get('indices')!=position['legal'] or answer.get('simulations',0)<profile['simulations']
+            or answer['legality'].get('indices')!=position['legal']
             or identity.get('requestedProfile')!=profile or identity.get('stateHash')!=position.get('stateHash')
             or identity.get('controller')!=position.get('controller') or identity.get('valuePerspective')!='P1'):
         raise ValueError('completed eligible offline policy search required')
@@ -210,22 +258,29 @@ def refreshed_policy(position,answer,profile):
     if (not policy or len(set(indices))!=len(indices) or any(i not in position['legal'] for i in indices)
             or any(not isinstance(p.get('probability'),(int,float)) or not math.isfinite(p['probability']) or p['probability']<0 for p in policy)
             or abs(sum(p['probability'] for p in policy)-1)>1e-5):raise ValueError('invalid searched policy target')
+    proof=completed_teacher_work(position,answer,profile,proof_seconds=proof_seconds,retained_proof=retained_proof,source_revision=source_revision)
+    if proof is not None and verification_log is not None:verification_log.append(proof)
     result=copy.deepcopy(position)
     result['originalPolicy']=copy.deepcopy(position['policy'])
     result['policy']=copy.deepcopy(policy)
     result['teacherEstimatedValue']=answer.get('value')
     result['teacherEvidence']={'requestedProfile':profile,'completedSimulations':answer['simulations'],
-        'nodes':answer.get('nodes'),'engineBudget':answer.get('engineBudget'),'stopped':answer['stopped']}
+        'nodes':answer.get('nodes'),'engineBudget':answer.get('engineBudget'),'stopped':answer['stopped'],
+        'category':'rules-proven' if proof is not None else 'search-supported',
+        'scope':'every-positive-policy-action-checked-terminal-or-bounded-win' if proof is not None else 'completed-declared-profile-policy-search',
+        'observedValueLabelChanged':False}
+    if proof is not None:result['teacherEvidence']['earlyExitProof']=stable_teacher_proof(proof)
     return result
 
 
-def verify_screen_answer(row,answer,profile):
+def verify_screen_answer(row,answer,profile,*,proof_seconds=5,retained_proof=None,source_revision=None):
     identity=answer.get('searchIdentity',{})
-    if (answer.get('status')!='ready' or answer.get('stopped')!='complete' or answer.get('simulations',0)<profile['simulations']
+    if (answer.get('status')!='ready' or answer.get('stopped')!='complete' or answer.get('fallback') is not None or answer.get('policyMask') is not True
             or identity.get('stateHash')!=row.get('stateHash') or identity.get('controller')!=row.get('controller')
             or identity.get('requestedProfile')!=profile or identity.get('valuePerspective')!='P1'
             or answer.get('legality',{}).get('complete') is not True or answer['legality'].get('indices')!=row.get('legal')):
         raise ValueError('teacher screen lacks completed bound root/search work')
+    return completed_teacher_work(row,answer,profile,proof_seconds=proof_seconds,retained_proof=retained_proof,source_revision=source_revision)
 
 
 def apply_policy_refresh(positions,binding,*,require_all=False,annotate=False):
@@ -279,26 +334,64 @@ def teacher(plan,directory,execution,work_ids,*,seconds):
     from .checkpoint import load_checkpoint
     from .device import selected_device
     mode=plan.get('mode','refresh')
-    inventories={}
-    if mode=='refresh':
-        from .policy_pool import prepare_pool
-        from .execution_recipe import verify_runtime
-        recipe=verify_runtime()
-        if not recipe or not recipe['settings'].get('attentionMethod'):raise ValueError('policy pool requires audited incumbent execution recipe')
-        rows,inventories=prepare_pool(plan.get('pool'),execution,work_ids,
-            guard_sha256=recipe['settings']['attentionMethod']['guardsSha256'],deadline=deadline)
-    else:rows=json.loads(read_bound(plan['rows']))
-    if plan.get('kind')!='policy-only-teacher-refresh' or [r.get('workId',r['id']) for r in rows]!=work_ids:
-        raise ValueError('frozen teacher work inventory mismatch')
-    if mode not in ('screen','refresh') or any(row.get('partition') not in ('train','validation') for row in rows):
-        raise ValueError('final or unknown rows cannot enter teacher search')
-    if mode=='refresh' and any(row.get('partition')!='train' or row.get('targetOrigin')!='fresh-self-play' or row.get('policyMask') is not True or len(row.get('legal',[]))<2 for row in rows):
-        raise ValueError('only eligible fresh training policies may be refreshed')
+    inventories={};assessment=None;receipts=[];paths=[]
+    if mode not in ('screen','refresh') or plan.get('kind')!='policy-only-teacher-refresh':
+        raise ValueError('frozen teacher mode required')
     path=resolve_reference(plan['teacher']['path'],expected_sha256=plan['teacher']['sha256'])
     meta=json.loads(resolve_reference(path.with_suffix('.json')).read_bytes());model=model_from_record(meta)
     load_checkpoint(path,model,manifest_sha256=meta['manifestSha256'])
     device=selected_device();model=model.to(device).eval()
-    refreshed=[];receipts=[];paths=[]
+    pool_ids=[r['workId'] for r in plan['pool']['selections']] if mode=='refresh' else work_ids
+    if mode=='refresh':
+        from .development_assessment import produce_assessment,work_ids as assessment_work_ids
+        component=plan.get('developmentAssessment',{})
+        if component.get('indexSha256')!=plan.get('developmentSuiteSha256') or not component.get('indexSha256'):
+            raise ValueError('frozen teacher development assessment required')
+        context=json.loads(resolve_reference(os.environ['RIGHELT_EXECUTION_CONTEXT']).read_bytes())
+        inputs={b['sha256']:b for b in context['inputObjects']}
+        def read_object(sha):
+            if sha not in inputs:raise ValueError('development input absent from frozen execution')
+            return read_bound(inputs[sha])
+        index=json.loads(read_object(component['indexSha256']))
+        profile_sha=index.get('profiles',[None])[0] if len(index.get('profiles',[]))==1 else None
+        if (profile_sha is None or index.get('beforeProfiles',{}).get(profile_sha)!=component.get('beforeProfileSha256')
+                or not component.get('beforeProfileSha256') or json.loads(read_object(profile_sha))!=plan['profile']):
+            raise ValueError('assessment must use exact teacher target profile and frozen comparator')
+        if work_ids!=assessment_work_ids(index)+pool_ids:raise ValueError('frozen assessment and target work inventory mismatch')
+        assessment=produce_assessment(component,execution,model=model,model_sha256=plan['teacher']['sha256'],device=device,
+            deadline=deadline,read_object=read_object,output=Path(directory)/'development')
+        receipts.extend(assessment['workReceipts']);paths.extend(assessment['artifactPaths'])
+        if not assessment['qualified']:
+            # Preserve settled target receipts, but do not prepare fresh rows or
+            # infer after the preregistered usefulness gate has failed.
+            namespace='policy-refresh:'+execution['manifestSha256']+':'+execution['phase']
+            for wid in pool_ids:
+                claim=hosted_receipts.evaluation_claim(namespace,wid,create=False)
+                raw=claim.get('result')
+                if raw is not None:
+                    retained=write_json(Path(directory)/'attempts'/str(execution['generation'])/(hashlib.sha256(wid.encode()).hexdigest()+'.json'),raw);paths.append(retained)
+                    receipts.append({'workId':wid,'status':'unfinished','evidenceSha256':digest(retained.read_bytes())})
+                else:
+                    status='unstarted' if claim.get('unclaimed') else 'unfinished'
+                    missing=write_json(Path(directory)/'attempts'/str(execution['generation'])/(hashlib.sha256(wid.encode()).hexdigest()+'.json'),{'workId':wid,'status':status,'reason':'teacher-useful-correction-unqualified'})
+                    paths.append(missing);receipts.append({'workId':wid,'status':status,'evidenceSha256':digest(missing.read_bytes())})
+            return emit_result(directory,'teacher',execution,receipts,paths,{'mode':mode,'developmentReportSha256':assessment['reportSha256'],
+                'policyOnly':True,'observedValuesUnchanged':True,'originalMasksUnchanged':True,'actualSearchEvidence':True,
+                'publicSearchBudgetsUnchanged':True,'diagnosticStop':'teacher-useful-correction-unqualified'},
+                result_fields={'interventionReady':False,'policyTargetsChanged':False,'policyRefreshSha256':None,'developmentReportSha256':assessment['reportSha256']})
+        from .policy_pool import prepare_pool
+        from .execution_recipe import verify_runtime
+        recipe=verify_runtime()
+        if not recipe or not recipe['settings'].get('attentionMethod'):raise ValueError('policy pool requires audited incumbent execution recipe')
+        rows,inventories=prepare_pool(plan.get('pool'),execution,pool_ids,
+            guard_sha256=recipe['settings']['attentionMethod']['guardsSha256'],deadline=deadline)
+    else:rows=json.loads(read_bound(plan['rows']))
+    if [r.get('workId',r['id']) for r in rows]!=pool_ids:raise ValueError('frozen teacher work inventory mismatch')
+    if any(row.get('partition') not in ('train','validation') for row in rows):
+        raise ValueError('final or unknown rows cannot enter teacher search')
+    if mode=='refresh' and any(row.get('partition')!='train' or row.get('targetOrigin')!='fresh-self-play' or row.get('policyMask') is not True or len(row.get('legal',[]))<2 for row in rows):
+        raise ValueError('only eligible fresh training policies may be refreshed')
+    refreshed=[]
     for game_sha,proof in inventories.items():paths.append(write_json(Path(directory)/'source-inventories'/(game_sha+'.json'),proof))
     for row in rows:
         work_identity=row.get('workId',row['id'])
@@ -316,8 +409,12 @@ def teacher(plan,directory,execution,work_ids,*,seconds):
                     raise ValueError('teacher recovery identity mismatch')
                 raw=retained
                 if raw['status']=='complete':
-                    if mode=='refresh':refreshed.append(refreshed_policy(row,raw['answer'],plan['profile']))
-                    else:verify_screen_answer(row,raw['answer'],plan['profile'])
+                    proofs=raw.get('earlyExitVerification',[])
+                    retained_proof=proofs[0] if len(proofs)==1 else None
+                    verification={'proof_seconds':min(5,max(0,deadline-time.monotonic())),
+                        'source_revision':execution['sourceRevision'],'retained_proof':retained_proof}
+                    if mode=='refresh':refreshed.append(refreshed_policy(row,raw['answer'],plan['profile'],**verification))
+                    else:verify_screen_answer(row,raw['answer'],plan['profile'],**verification)
             path=write_json(Path(directory)/'attempts'/str(execution['generation'])/(hashlib.sha256(row['id'].encode()).hexdigest()+'.json'),raw);paths.append(path)
             receipts.append({'workId':work_identity,'status':raw['status'],'evidenceSha256':digest(path.read_bytes())})
             continue
@@ -325,8 +422,13 @@ def teacher(plan,directory,execution,work_ids,*,seconds):
             try:
                 answer=search_reference(row['state'],model,device,row['seed'],plan['profile'],bound_seconds=min(plan['searchSeconds'],deadline-time.monotonic()))
                 raw['answer']=answer
-                if mode=='refresh':refreshed.append(refreshed_policy(row,answer,plan['profile']))
-                else:verify_screen_answer(row,answer,plan['profile'])
+                verification_work=[]
+                proof_seconds=min(5,max(0,deadline-time.monotonic()))
+                if mode=='refresh':refreshed.append(refreshed_policy(row,answer,plan['profile'],proof_seconds=proof_seconds,verification_log=verification_work,source_revision=execution['sourceRevision']))
+                else:
+                    proof=verify_screen_answer(row,answer,plan['profile'],proof_seconds=proof_seconds,source_revision=execution['sourceRevision'])
+                    if proof is not None:verification_work.append(proof)
+                if verification_work:raw['earlyExitVerification']=verification_work
                 raw['status']='complete'
             except (TimeoutError,ValueError) as error:raw.update(status='unfinished',reason=str(error))
             hosted_receipts.settle(namespace,work_identity,raw)
@@ -337,7 +439,8 @@ def teacher(plan,directory,execution,work_ids,*,seconds):
     changed=any(row['policy']!=row['originalPolicy'] for row in refreshed)
     return emit_result(directory,'teacher',execution,receipts,paths,{'policyOnly':True,'observedValuesUnchanged':True,
         'originalMasksUnchanged':True,'actualSearchEvidence':True,'publicSearchBudgetsUnchanged':True,
-        'mode':mode,'policyRefreshSha256':refresh_sha},result_fields={'policyRefreshSha256':refresh_sha,
+        'mode':mode,'developmentReportSha256':assessment['reportSha256'] if assessment else None,'policyRefreshSha256':refresh_sha},result_fields={'policyRefreshSha256':refresh_sha,
+        'developmentReportSha256':assessment['reportSha256'] if assessment else None,
         'policyTargetsChanged':changed,'interventionReady':mode=='refresh' and changed and all(r['status']=='complete' for r in receipts)})
 
 
@@ -408,6 +511,7 @@ def training(plan,directory,execution,work_ids,*,seconds,resume=False):
     updates=runner.state['updates']-initial_updates
     if updates<=0 or not math.isfinite(delta) or delta<=0:raise ValueError('training stage has no actual new update')
     adoption=recovered_adoption(recovered['recovery']['state'],runner.state)
+    dose=None
     if recovered['recovery']['state'].get('policyRefreshInputQualified')!=runner.state.get('policyRefreshInputQualified'):
         raise ValueError('recovered policy source qualification differs')
     if refresh:
@@ -415,6 +519,8 @@ def training(plan,directory,execution,work_ids,*,seconds,resume=False):
         if (not adoption or adoption.get('bindingSha256')!=refresh['sha256'] or set(adoption.get('ids',[]))!=expected
                 or adoption.get('positions',0)<=0):raise ValueError('treatment has zero or missing scheduled policy adoption')
         adoption={**adoption,'complete':True,'missing':[]}
+        from .policy_pool import policy_refresh_dose
+        dose=policy_refresh_dose(adoption,replacements,execution['phase'])
     model_path=directory/'model.onnx';export_onnx(restored,model_path)
     positions=list(buffer.positions)[:32]
     if not positions:raise ValueError('numeric parity needs actual recovered replay states')
@@ -432,7 +538,8 @@ def training(plan,directory,execution,work_ids,*,seconds,resume=False):
     return emit_result(directory,'training',execution,receipts,[report_path],
         {'checkpointSha256':cp_record['sha256'],'modelSha256':model_record['sha256'],
          'recoveryPassed':True,'numericParityPassed':parity['numericPassed'],**({'policyRefreshAdoption':adoption,
-         'policyRefreshInputQualified':recovered['recovery']['state']['policyRefreshInputQualified']} if adoption else {}),**endpoint},
+         'policyRefreshInputQualified':recovered['recovery']['state']['policyRefreshInputQualified'],
+         'policyRefreshDose':dose} if adoption else {}),**endpoint},
         additional_artifacts=[model_record,cp_record],result_fields={'updates':updates,'parameterDelta':delta})
 
 
