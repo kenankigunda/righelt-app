@@ -1156,6 +1156,8 @@ export function createEngineBoardAdapter() {
       if (boardEl?.setAttribute) {
         boardEl.setAttribute("data-interaction-mode", effectiveInteractionMode);
         boardEl.setAttribute("data-presentation-context", ['history','previous-turn'].includes(overlay?.presentationContext) ? overlay.presentationContext : 'default');
+        if(overlay?.presentationContext==='previous-turn'&&overlay?.previousTurnEpisode)boardEl.setAttribute('data-previous-turn-episode',overlay.previousTurnEpisode);
+        else boardEl.removeAttribute('data-previous-turn-episode');
       }
       const removalByCoordinateKey = new Map(
         (Array.isArray(removalEffects) ? removalEffects : []).map((effect) => [coordKey(effect.position), effect]),

@@ -23,6 +23,5 @@ export function renderBoardLegend(snapshot) {
       ${legendRow({entry:'supply',className:'legend-family-child',hidden:true,icon:'<i class="swatch supply legend-key-icon" aria-hidden="true"></i>',label:'Supply line'})}
     </div>
     ${legendRow({entry:'group',className:'legend-peer',hidden:true,icon:'<i class="swatch group legend-key-icon" aria-hidden="true"></i>',label:'Group strength'})}
-    ${legendRow({entry:'previousTurn',className:'legend-context-row',hidden:true,icon:'<i class="previous-turn-key-swatch legend-key-icon" aria-hidden="true"></i>',label:'Previous turn'})}
   </div>`;
 }

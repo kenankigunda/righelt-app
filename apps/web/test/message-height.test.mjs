@@ -20,7 +20,7 @@ function fixture(initialPadding=0,initialFloor=75,{metrics=null,fontSize=16,init
  const label={...events(),ownerDocument:doc,closest:()=>slot,contains:node=>node===button};
  const controller=createMessageHeightController(label);
  const flush=()=>{for(const fn of frames.values()){frames.clear();fn();}};
- return{controller,slot,label,doc,win,fonts,motion,animations,observers,frames,button,contextButton,flush,setFloors:(a,b)=>{primary=a;fallback=b;},setPadding:value=>{padding=value;},setCurrent:value=>{current=value;},setButtonTop:value=>{buttonTop=value;},setContextButtonTop:value=>{contextButtonTop=value;},setWidth:value=>{width=value;},setRendered:value=>{rendered=value;},change(height,liveHeight=height){current=height;rendered=liveHeight;observers[0].fn();flush();}};
+ return{controller,slot,label,doc,win,fonts,motion,animations,observers,frames,button,contextButton,flush,setFloors:(a,b)=>{primary=a;fallback=b;},setPadding:value=>{padding=value;},setCurrent:value=>{current=value;},setButtonTop:value=>{buttonTop=value;},setContextButtonTop:value=>{contextButtonTop=value;},setWidth:value=>{width=value;},setRendered:value=>{rendered=value;},mutateTransition(){observers[1].fn([{target:{closest:selector=>selector==='[data-board-message-height-transition]'?{}:null}}]);flush();},change(height,liveHeight=height){current=height;rendered=liveHeight;observers[0].fn();flush();}};
 }
 test('controller fixes ordinary content geometry and defers finite-grammar metric changes until release',()=>{
  const f=fixture();assert.equal(f.slot.style.height,'75px');assert.equal(f.animations.length,0);
@@ -93,6 +93,20 @@ test('Board guidance expansion and collapse share the measured owner and animate
  f.controller.setContentHeightOwner('board-guidance:selection:false');f.setCurrent(40);f.setRendered(168);f.change(40,168);
  assert.deepEqual(f.animations.at(-1).options,{duration:260,easing:'cubic-bezier(.22,.72,.2,1)'});
  assert.equal(f.animations.length,2);f.controller.destroy();
+});
+
+test('marked contextual content shares smooth overflow transitions and reduced-motion snapping',()=>{
+ const f=fixture(4);f.setCurrent(160);f.setRendered(83);f.mutateTransition();
+ assert.equal(f.slot.style.height,'168px');
+ assert.deepEqual(f.animations.at(-1).options,{duration:260,easing:'cubic-bezier(.22,.72,.2,1)'});
+ f.motion.matches=true;f.setCurrent(40);f.setRendered(168);f.mutateTransition();
+ assert.equal(f.slot.style.height,'83px');assert.equal(f.animations.length,1);f.controller.destroy();
+});
+
+test('a size-neutral marked mutation cannot animate a later unrelated overflow',()=>{
+ const f=fixture(4);f.setCurrent(40);f.setRendered(83);f.mutateTransition();
+ assert.equal(f.animations.length,0);
+ f.change(160,83);assert.equal(f.slot.style.height,'168px');assert.equal(f.animations.length,0);f.controller.destroy();
 });
 
 test('reduced motion replay height settles synchronously without animating',()=>{

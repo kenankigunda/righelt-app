@@ -127,6 +127,7 @@ import { createAccountController, safeAccountIntent } from './account-controller
 import { createAccountDialog } from './account-dialog.js';
 import { renderPieceSymbol } from '../piece-symbols.js';
 import {renderBoardLegend} from './board-legend.js';
+import {createPreviousTurnKeyInteraction} from './previous-turn-key.js';
 import { invitationOptions, renderInvitationSurface, createHostInvitation, hostInvitationSettled } from './invitations.js';
 import { createIntroductionPreferences, createOpponentSession } from './opponent-session.js';
 import { renderWordmark, createBrandController, resolveActionAffiliation } from './brand.js';
@@ -3103,7 +3104,7 @@ const mountBoardForGame = (game) => {
         getAllowFreeSelection: () => Boolean(currentRoute.scenarios && scenarioCapture?.mode === 'frozen' && scenarioCapture.gameId === game.id),
         getSupportsHover: () => hoverCapability.getSupportsHover(),
         getForceClickTargetSelection: () => Boolean(currentRoute.scenarios && scenarioCapture?.gameId === game.id),
-        onVisualsUpdated: visible => { const legend=document.querySelector('.overlay-key'),state=boardRuntime?.getState();updateLegendVisibility(legend,visible,prefersReducedMotion());updatePreviousTurnLegend(legend,document.querySelector('#shell-board'),state,prefersReducedMotion());updateInspectionLegend(legend,state,{selectedPieceId:boardRuntime?.getSelection()?.selectedPieceId,...visible}); },
+        onVisualsUpdated: visible => { const panel=document.querySelector('[data-shell-panel="board"]'),legend=panel?.querySelector('.overlay-key'),state=boardRuntime?.getState();updateLegendVisibility(legend,visible,prefersReducedMotion());updatePreviousTurnLegend(panel,document.querySelector('#shell-board'),state,prefersReducedMotion());updateInspectionLegend(legend,state,{selectedPieceId:boardRuntime?.getSelection()?.selectedPieceId,...visible}); },
         onStateUpdated: ({ state, selectedPieceId, selectedSource, selectedTarget, overlay }) => {
           if (currentRoute.scenarios && scenarioCapture?.gameId === game.id && toStableKey(state) === toStableKey(capturePosition())) {
             scenarioCapture.selection = buildSavedSelectionFromRuntimeSelection({ source: selectedSource, target: selectedTarget }, state);
@@ -4328,6 +4329,8 @@ const openBoardAccountGate = async source => {
   if (state.available === false || state.maintenance || account.canPlay() || accountDialog.isOpen()) return;
   accountDialog.open("login", null, source);
 };
+
+createPreviousTurnKeyInteraction(appEl,{getSupportsHover:()=>hoverCapability.getSupportsHover()});
 
 appEl.addEventListener("pointerdown", event => {
   if (event.target.closest?.("#shell-board") && !account.canPlay()) {

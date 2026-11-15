@@ -8,7 +8,7 @@ const completeMoves = moves => moves.length > 0 && moves.every((move,index)=>mov
 const roleSide = value => value === 'p1' || value === 'P1' ? 'P1' : value === 'p2' || value === 'P2' ? 'P2' : null;
 
 /** A live cue uses only soft square washes. History owns routes, ghosts and replay decoration. */
-export function buildPreviousTurnOverlay(moves,side) {
+export function buildPreviousTurnOverlay(moves,side,episodeKey=null) {
   const preview=buildTurnPreview(moves,{context:'history'}),cells=new Map();
   for(const role of preview.overlay.endpointRoles??[]){
     const key=`${role.row},${role.col}`;
@@ -19,7 +19,7 @@ export function buildPreviousTurnOverlay(moves,side) {
     cell.deletionSide=roleSide(removed.ownerSeat);
     cells.set(key,cell);
   }
-  return {mode:'previous-turn',presentationContext:'previous-turn',previousTurnCells:[...cells.values()]};
+  return {mode:'previous-turn',presentationContext:'previous-turn',previousTurnCells:[...cells.values()],...(episodeKey?{previousTurnEpisode:episodeKey}:{})};
 }
 
 /** Recorded presentation owners take precedence over an optional live overview. */
@@ -48,7 +48,7 @@ export function createLiveTurnOverview({loadMoves,onChange=()=>{}}) {
     if (!candidate) return;
     if (preview) return;
     const ordered=[...completed.moves].sort((a,b)=>a.turnMoveIndex-b.turnMoveIndex);
-    if (completeMoves(ordered)) {preview=buildPreviousTurnOverlay(ordered,historyTurnSide(completed.turn,ordered));return;}
+    if (completeMoves(ordered)) {preview=buildPreviousTurnOverlay(ordered,historyTurnSide(completed.turn,ordered),key);return;}
     const requestKey=`${key}:${game.gameplayRevision}`;
     if (attempt===requestKey) return;
     attempt=requestKey;
@@ -57,7 +57,7 @@ export function createLiveTurnOverview({loadMoves,onChange=()=>{}}) {
       if (owner!==generation || candidate?.key!==key) return;
       const ordered=[...moves].filter(move=>!move.undone).sort((a,b)=>a.turnMoveIndex-b.turnMoveIndex);
       if (!completeMoves(ordered)) return;
-      preview=buildPreviousTurnOverlay(ordered,historyTurnSide(completed.turn,ordered));onChange();
+      preview=buildPreviousTurnOverlay(ordered,historyTurnSide(completed.turn,ordered),key);onChange();
     }).catch(()=>{}); // A visual overview never introduces recovery UI or blocks play.
   };
   return {
