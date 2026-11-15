@@ -61,6 +61,7 @@ import {renderGameSummaryPanel as renderGameSummaryPanelContent} from './game-su
 import {renderConnectionStatusIcon} from './participant-status.js';
 import { createDesktopBoardFit } from './desktop-board-fit.js';
 import { AUTOMATIC_LIVE_TIMING, createComputerReplay } from './computer-replay.js';
+import {immediateRemovalRecords,moveInspectionSnapshot,settlementRemovalRecords} from './destruction-presentation.js';
 import { createForcedFollow } from './forced-follow.js';
 import { deriveBoardView, createViewingIntent } from './viewing-state.js';
 import { mountMobileNavigation } from './mobile-navigation.js';
@@ -3896,7 +3897,9 @@ const showForcedFollowVisual = async (state, move = null) => {
   const visual=forcedFollowVisual = createComputerReplay({rootEl,createAdapter:()=>createEngineBoardAdapter(),automatic:Boolean(move),blocksInput:!move,reducedMotion:prefersReducedMotion,holdFinal:!move,
     timing:move?AUTOMATIC_LIVE_TIMING:{motion:0,pause:0},onFrame:presented,onChange:updateForcedFollowUi,onFinish:event=>{if(forcedFollowVisual===visual)forcedFollowVisual=null;updateForcedFollowUi(event);}});
   const context = currentReplayContext();
-  const playback=visual.play({gameId:context.gameId,revision:context.revision,lineageHead:context.lineageHead,frames:[{decisionId:move?.moveId ?? move?.clientCommandId ?? 'follow-wait',action:move?.action ?? {type:'hold'},before:move?.selectionSnapshot ?? state,after:move?.snapshot ?? state,destroyedPieces:move?.destroyedPieces ?? []}]});
+  const playback=visual.play({gameId:context.gameId,revision:context.revision,lineageHead:context.lineageHead,frames:[{decisionId:move?.moveId ?? move?.clientCommandId ?? 'follow-wait',action:move?.action ?? {type:'hold'},before:move?.selectionSnapshot ?? state,
+    after:moveInspectionSnapshot(move)??state,destroyedPieces:immediateRemovalRecords(move),
+    ...(move?.inspectionSnapshot&&move?.snapshot?{settledAfter:move.snapshot,settlementDestroyedPieces:settlementRemovalRecords(move)}:{})}]});
   if(!move){await playback;return;}
   const shown=await Promise.race([displayed.then(()=>true),playback.then(()=>false)]);
   if(!shown)throw new Error('follow_visual_unavailable');

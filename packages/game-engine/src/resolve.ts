@@ -932,7 +932,12 @@ function evaluateTerminalPhase(state: GameState): boolean {
   return true;
 }
 
-function runResolvePass(state: GameState, mode: ArtifactMode, onRemoval?: RemovalCollector): boolean {
+function runResolvePass(
+  state: GameState,
+  mode: ArtifactMode,
+  onRemoval?: RemovalCollector,
+  onInspectionFrame?: (frame: GameState) => void,
+): boolean {
   let changed = false;
 
   // Phase 1: connectivity + artifact baseline.
@@ -970,6 +975,9 @@ function runResolvePass(state: GameState, mode: ArtifactMode, onRemoval?: Remova
   // Action-family legality integration lands after Track A merge sync.
 
   // Phase 5: forced effects.
+  if (!state.continuation && onInspectionFrame) {
+    try { onInspectionFrame(structuredClone(state)); } catch {}
+  }
   if (applyForcedEffectsPhase(state, onRemoval)) {
     changed = true;
   }
@@ -983,6 +991,8 @@ export function resolveToStability(
     artifactMode?: ArtifactMode;
     maxPasses?: number;
     onRemoval?: RemovalCollector;
+    /** Read-only, unhashed observation immediately before turn-settlement effects. */
+    onInspectionFrame?: (frame: GameState) => void;
   },
 ): GameState {
   const mode = options?.artifactMode ?? "minimal";
@@ -990,7 +1000,7 @@ export function resolveToStability(
 
   let pass = 0;
   while (pass < maxPasses) {
-    const changed = runResolvePass(state, mode, options?.onRemoval);
+    const changed = runResolvePass(state, mode, options?.onRemoval, options?.onInspectionFrame);
     if (!changed) {
       if (!state.continuation) {
         evaluateTerminalPhase(state);

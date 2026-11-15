@@ -768,7 +768,7 @@ function evaluateTerminalPhase(state) {
     state.outcome = outcome;
     return true;
 }
-function runResolvePass(state, mode, onRemoval) {
+function runResolvePass(state, mode, onRemoval, onInspectionFrame) {
     let changed = false;
     // Phase 1: connectivity + artifact baseline.
     const nextArtifacts = computeBaselineArtifacts(state, mode);
@@ -802,6 +802,12 @@ function runResolvePass(state, mode, onRemoval) {
     }
     // Action-family legality integration lands after Track A merge sync.
     // Phase 5: forced effects.
+    if (!state.continuation && onInspectionFrame) {
+        try {
+            onInspectionFrame(structuredClone(state));
+        }
+        catch { }
+    }
     if (applyForcedEffectsPhase(state, onRemoval)) {
         changed = true;
     }
@@ -812,7 +818,7 @@ export function resolveToStability(state, options) {
     const maxPasses = options?.maxPasses ?? MAX_RESOLVE_PASSES;
     let pass = 0;
     while (pass < maxPasses) {
-        const changed = runResolvePass(state, mode, options?.onRemoval);
+        const changed = runResolvePass(state, mode, options?.onRemoval, options?.onInspectionFrame);
         if (!changed) {
             if (!state.continuation) {
                 evaluateTerminalPhase(state);

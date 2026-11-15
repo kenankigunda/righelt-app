@@ -31,6 +31,19 @@ test('replay includes authoritative finalization without adding gameplay moves',
   assert.equal(moves().length,3);
 });
 
+test('replay separates causal move narration from the later authoritative removal boundary',()=>{
+ const records=moves(),pending=state(6),settled={pieces:[]};
+ records[0].destroyedPieces=[];
+ records[2].inspectionSnapshot=pending;records[2].snapshot=settled;
+ records[2].destroyedPieces=[{pieceId:'A',position:{row:6,col:3},reason:'loss_of_supply',removalPhase:'turn_settlement',causalMoveId:'push'}];
+ const result=buildComputerTurnReplay({moves:records,completedTurnIndex:2});
+ assert.deepEqual(result.frames[0].recordedMove.destroyedPieces,records[2].destroyedPieces);
+ assert.deepEqual(result.frames[2].after,pending);
+ assert.deepEqual(result.frames[2].settledAfter,settled);
+ assert.deepEqual(result.frames[2].destroyedPieces,[]);
+ assert.deepEqual(result.frames[2].settlementDestroyedPieces,records[2].destroyedPieces);
+});
+
 function fixture({manual=true,throwRender=false,withTokens=false,baseTransform='none',holdFinal=false,automatic=false,blocksInput=true}={}) {
   const handlers=new Map(),events=[],renders=[],timers=new Map(),motions=[],ghosts=[]; let nextTimer=0,destroyed=0,tokens=[];
   const doc={hidden:false,addEventListener:(key,fn)=>handlers.set(key,fn),removeEventListener:key=>handlers.delete(key),defaultView:{getComputedStyle:()=>({transform:baseTransform}),addEventListener:(key,fn)=>handlers.set(key,fn),removeEventListener:key=>handlers.delete(key)}};

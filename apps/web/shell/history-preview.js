@@ -1,5 +1,6 @@
 import {visibleRecordedMoves} from './recorded-narration.js';
 import { getTurnOwnerSideForState } from '../generated/packages/shared-types/src/shell-live-turn.js';
+import { immediateRemovalRecords, moveInspectionSnapshot, turnInspectionRemovalRecords } from './destruction-presentation.js';
 
 const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
 
@@ -73,13 +74,13 @@ const historyRoleOverlay = (actions, context) => {
 };
 
 export const buildMovePreview = (move, {context} = {}) => ({
-  snapshot: move?.snapshot ?? move?.selectionSnapshot ?? null,
+  snapshot: moveInspectionSnapshot(move),
   overlay: {
     mode: "recorded-action",
     ...historyRoleOverlay([move?.action], context),
     recordedAction: move?.action ?? null,
     recordedActionStartPiece: findRecordedActionStartPiece(move?.selectionSnapshot, move?.action),
-    destroyedPieces: buildDestroyedPieceOverlays({destroyedPieceRecords: move?.destroyedPieces, preActionSnapshot: move?.selectionSnapshot}),
+    destroyedPieces: buildDestroyedPieceOverlays({destroyedPieceRecords: immediateRemovalRecords(move), preActionSnapshot: move?.selectionSnapshot}),
   },
 });
 
@@ -101,8 +102,9 @@ export const buildTurnPreview = (moves, {context} = {}) => {
     return [overlay];
   });
   return {
-    snapshot: previews.at(-1)?.snapshot ?? null,
-    overlay: {mode:'recorded-turn', ...historyRoleOverlay(ordered.map(move => move.action), context), recordedActions:actions, destroyedPieces:previews.flatMap(preview => preview.overlay.destroyedPieces)},
+    snapshot: ordered.at(-1)?.snapshot ?? previews.at(-1)?.snapshot ?? null,
+    overlay: {mode:'recorded-turn', ...historyRoleOverlay(ordered.map(move => move.action), context), recordedActions:actions,
+      destroyedPieces:buildDestroyedPieceOverlays({destroyedPieceRecords:ordered.flatMap(turnInspectionRemovalRecords),preActionSnapshot:ordered[0]?.selectionSnapshot})},
   };
 };
 

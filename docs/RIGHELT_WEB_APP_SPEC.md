@@ -301,6 +301,22 @@ When a recipient opens either invite type:
   - A clear visual indicator must state that user is not on live state.
   - A prominent `Return to live` action must be visible and restore `Live view`.
 
+### 7.1 Destruction attribution and inspection
+
+**Timing principle:** History animations match the timing of actual piece removal in live play. The move credited with causing a destruction and the event that finalized it are separate facts.
+
+- Attribute a finalized supply destruction to the move that began that piece's final uninterrupted loss of supply within the sequence. Restoration clears the earlier attribution; a later cut starts a new attribution.
+- Immediate no-retreat destruction takes precedence and stays with the action where actual removal occurred.
+- `DESTROYED (row,col)` sub-bullets are not clickable and add no explanatory copy.
+- Selecting a move shows its trustworthy post-action, pre-turn-settlement state. Pieces awaiting turn-end destruction remain present and pending; move inspection does not animate their later removal.
+- Selecting a completed turn shows the finalized position and its turn-end destructions. It does not repeat earlier immediate removals. Deliberate reselection may repeat the turn effect; refresh, reconciliation and layout changes may not.
+- “Show me again” follows live chronology through cuts, restorations and repeated cuts, and removes pieces only at their actual finalization boundary.
+- Preserve ownership and pending/restored/finalized meaning in accessible text and reduced-motion presentation. Color and motion cannot be the only explanations.
+- Gameplay snapshots, hashes, removal events, chronology, Undo and branch-before authority remain unchanged. The inspection frame is observational evidence, not playable authority.
+- When retained evidence is incomplete, keep the existing recorded attribution and presentation rather than reconstructing or guessing.
+
+Commander finality remains a gameplay decision. Preserve the accepted terminal action and actual terminal position without adding unplayed actions or fabricating commander removal.
+
 ## 8. Home Page Game List and Public Entry (Flow 6)
 
 On home page, users must see a game list in reverse chronological order by latest activity timestamp (latest move time; if no moves, creation time).

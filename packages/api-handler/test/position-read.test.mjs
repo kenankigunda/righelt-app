@@ -5,6 +5,7 @@ import { createInitialGame, withPositionViewModel } from '../src/shell-live-core
 import { handleLiveGameRequest } from '../src/shell-live.ts';
 import { sanitizeGameResponse } from '../src/auth-game.ts';
 import { withEngineComputationGuard } from '../../game-engine/src/index.ts';
+import {compactHistoryResponse} from '../src/game-room-do.ts';
 
 const saved = () => {
   const game = createInitialGame({ gameId: 'game-position', identityId: 'id-owner', selfPlayMode: true });
@@ -25,6 +26,15 @@ test('position projection and account sanitization never enumerate legal actions
   assert.equal(view.sharedMutationsBlocked, true);
   assert.deepEqual(game, before);
   assert.equal(view.inviteTokens, undefined);
+});
+
+test('bounded history summaries omit inspection evidence except on the current full move',()=>{
+ const state=saved().board.state,move=index=>({index,selectionSnapshot:state,snapshot:state,inspectionSnapshot:state});
+ const compact=compactHistoryResponse({game:{moves:[move(0),move(1)]}});
+ assert.equal(compact.game.moves[0].selectionSnapshot,state);
+ assert.equal(compact.game.moves[0].snapshot,undefined);
+ assert.equal(compact.game.moves[0].inspectionSnapshot,undefined);
+ assert.equal(compact.game.moves[1].inspectionSnapshot,state);
 });
 
 test('account position projection ignores spoofed roles and strips private invitation authority', () => {
@@ -74,5 +84,5 @@ test('position route reads durable data without invoking a room or writing', asy
   assert.equal(response.body.game.positionOnly, true);
   assert.deepEqual(response.body.game.board.state.pieces, game.board.state.pieces);
   assert.equal(reads.length, 1);
-  assert.match(reads[0], /json_remove\(value, '\$\.snapshot', '\$\.selectionSnapshot'\)/);
+  assert.match(reads[0], /json_remove\(value, '\$\.snapshot', '\$\.selectionSnapshot', '\$\.inspectionSnapshot'\)/);
 });

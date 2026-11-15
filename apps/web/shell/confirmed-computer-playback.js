@@ -1,6 +1,7 @@
 import {visibleRecordedMoves,recordedMoveWithClosure,recordedMoveNumber} from './recorded-narration.js';
 import {computerRetryDisposition} from './computer-recovery.js';
 import {SYNC_TIMING} from '../generated/packages/shared-types/src/sync-protocol.js';
+import {immediateRemovalRecords,moveInspectionSnapshot,presentationDestroyedPiecesForMove,settlementRemovalRecords} from './destruction-presentation.js';
 const clone=value=>structuredClone(value);
 const activeMoves=game=>visibleRecordedMoves(game?.moves??[]);
 const id=move=>move.moveId;
@@ -23,7 +24,11 @@ export function createConfirmedComputerPlayback({loadMove=async move=>move,prese
     if(run!==generation||signal.aborted)return;
     if(move?.moveId!==entry.move.moveId||!move.selectionSnapshot||!move.snapshot)throw Error('invalid_confirmed_playback_frame');
     loading=false;retrying=false;retryNotBefore=0;
-    const frame=clone({decisionId:move.moveId,action:move.action,before:move.selectionSnapshot,after:move.snapshot,destroyedPieces:move.destroyedPieces??[],recordedMove:move,moveNumber:recordedMoveNumber(move)});
+    const recordedMove={...move,destroyedPieces:presentationDestroyedPiecesForMove(move,entry.game.moves)};
+    const frame=clone({decisionId:move.moveId,action:move.action,before:move.selectionSnapshot,after:moveInspectionSnapshot(move),
+      destroyedPieces:immediateRemovalRecords(move),
+      ...(move.inspectionSnapshot&&move.snapshot?{settledAfter:move.snapshot,settlementDestroyedPieces:settlementRemovalRecords(move)}:{}),
+      recordedMove,moveNumber:recordedMoveNumber(move)});
     current={...entry,move:clone(move),frame:clone(frame)};notify();
     await present(frame,{signal,onDisplayed:()=>{if(run===generation&&!signal.aborted&&!announced.has(move.moveId)){announced.add(move.moveId);onMove(clone(move),clone(entry.game));}}});
     if(run!==generation||signal.aborted)return;

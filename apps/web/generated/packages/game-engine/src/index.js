@@ -12,4 +12,5 @@ export * from "./continuation.js";
 export * from "./computation-guard.js";
 export * from "./decision-cache.js";
 export * from "./removals.js";
+export * from "./destruction-attribution.js";
 export * from '../../shared-types/src/retreat-rules.js';
