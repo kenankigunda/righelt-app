@@ -6,18 +6,18 @@ import {readCleanupRegistry} from '../manual-authority.mjs';
 import {canonical,encode,sha256} from '../policy.mjs';
 const hash=value=>sha256(encode(canonical(value)));
 
-async function fixture(){const f=await actualFixture({elapsedAfterFirstMs:0});return {...f,retained:await includeRetainedOwner(f)};}
+async function fixture(options){const f=await actualFixture({elapsedAfterFirstMs:0});return {...f,retained:await includeRetainedOwner(f,options)};}
 async function reconcile(f){await f.core.reconcileActualSpend('pilot',f.retained.basis);}
 async function rejectWithoutMutation(f,pattern){const before=await f.core.load();let tokens=0;f.core.token=async()=>{tokens++;return 'forbidden';};await assert.rejects(f.core.manualPrepare('actual-next',f.intent),pattern);assert.deepEqual(await f.core.load(),before);assert.equal(tokens,0);}
 
-test('three-owner admission preserves original and cancelled uncertain owner without phantom historical debits',async()=>{
+test('three-owner admission preserves original and retained uncertain owner without phantom historical debits',async()=>{
  const f=await fixture();await reconcile(f);const before=await f.core.load();
  await f.core.manualPrepare('actual-next',f.intent);const after=await f.core.load();
  assert.deepEqual(after.campaigns.pilot,before.campaigns.pilot);assert.deepEqual(after.campaigns.ui,before.campaigns.ui);
  assert.equal(after.actualSpendBasis.observedDebitCents,3);assert.equal(after.pilotReservedCents,3);assert.equal(after.actualSpendBasis.admissions['actual-next'].forecastCents,227);
  assert.equal(after.campaigns.ui.attempts[0].uncertain,true);assert.equal(f.providers.creates,1);
 });
-test('legacy dual registry cannot omit a cancelled uncertain historical owner',async()=>{
+test('legacy dual registry cannot omit a unresolved historical owner',async()=>{
  const f=await fixture();await reconcile(f);f.retained.registry.kind='runpod-dual-cleanup-registry';f.retained.registry.references.splice(1,1);f.retained.ready.kind='dual-cleanup-readiness';f.retained.ready.run.results.splice(1,1);await f.retained.freezeRegistry();
  await rejectWithoutMutation(f,/unresolved ownership coverage/);
 });
@@ -70,4 +70,40 @@ test('a fourth unresolved ownership set stops admission instead of evicting a pr
 });
 test('three-owner admission never falls back to the legacy additive funding path',async()=>{
  const f=await fixture();delete f.intent.actualSpendBasisSha256;await rejectWithoutMutation(f,/three-owner admission requires fresh actual-spend/);
+});
+
+
+test('retained-watch exception never permits active, provisioning, running, stopping or manual-pending conflicts',async()=>{
+ for(const status of ['provisioning','running','stopping','manual-pending','queued','repairing']){
+  const f=await fixture();await reconcile(f);const db=await f.core.load();db.campaigns.ui.status=status;await f.core.save(db);
+  await rejectWithoutMutation(f,/another campaign owns compute/);
+ }
+});
+test('retained-watch exception requires terminal readiness and an uncertain historical attempt',async()=>{
+ for(const mutate of [async f=>{f.retained.ready.run.results[1].state='waiting';await f.retained.freezeRegistry();},async f=>{const db=await f.core.load();db.campaigns.ui.attempts[0].uncertain=false;await f.core.save(db);}]){
+  const f=await fixture();await reconcile(f);await mutate(f);await rejectWithoutMutation(f,/another campaign owns compute/);
+ }
+});
+test('fresh positive active-resource evidence blocks the retained-watch exception despite older absence proof',async()=>{
+ const f=await fixture();f.observation.inventory.ordinary.resourceIds=['evidenced-retained'];f.observation.balance.currentHourlyCents=74;
+ f.observation.activeResources=[{id:'evidenced-retained',campaignId:'ui',generation:1,name:f.retained.owner.attempts[0].name,hourlyCents:74}];
+ const basis=await f.freeze();f.intent.actualSpendBasisSha256=basis.sha256;f.funding.basisSha256=basis.sha256;f.retained.basis=basis;
+ Object.assign(f.funding.aggregate,{runpodEncumberedCents:457,repairEncumberedCents:457});await f.freezeFunding();await reconcile(f);
+ await rejectWithoutMutation(f,/another campaign owns compute/);
+});
+
+test('previously supported cancelled retained owner and exact bootstrap replay remain unchanged',async()=>{
+ for(const retainedStatus of ['cancelled','cleanup-uncertain']){
+  const f=await fixture({retainedStatus});await reconcile(f);const original=(await f.core.load()).campaigns.ui;
+  const first=await f.core.manualPrepare('actual-next',f.intent),beforeReplay=await f.core.load();
+  assert.deepEqual(await f.core.manualPrepare('actual-next',f.intent),first);assert.deepEqual(await f.core.load(),beforeReplay);
+  assert.deepEqual(beforeReplay.campaigns.ui,original);assert.equal(f.providers.creates,1);
+ }
+});
+
+test('confirmed retained resource without verified end or cleanup remains a compute conflict',async()=>{
+ for(const ended of [false,true]){
+  const f=await fixture();await reconcile(f);const db=await f.core.load();db.campaigns.ui.attempts[0].resourceId='confirmed-retained';if(ended)db.campaigns.ui.attempts[0].endedAt=f.now();await f.core.save(db);
+  await rejectWithoutMutation(f,/another campaign owns compute/);
+ }
 });

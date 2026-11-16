@@ -13,6 +13,7 @@ const {Miniflare}=require(require.resolve('miniflare',{paths:[require.resolve('w
 test('real private CLI and Worker admit exact three-owner cleanup without a provider create or historical rewrite',async t=>{
  const f=await actualFixture({elapsedAfterFirstMs:0}),retained=await includeRetainedOwner(f);
  await f.core.reconcileActualSpend('pilot',retained.basis);const before=await f.core.load();
+ assert.equal(before.campaigns.ui.status,'cleanup-uncertain');assert.equal(before.campaigns.ui.attempts[0].uncertain,true);
  const records=new Map();for(const ref of retained.registry.references)records.set(ref.path,await f.core.externalControl(f.m).store.readPrearm(ref));
  const bundle=await build({stdin:{contents:`import app,{ComputeController}from'./apps/compute-controller/index.mjs';export class SeedableControl extends ComputeController{constructor(ctx,env){super(ctx,env);this.core.now=()=>Number(env.FIXTURE_NOW);const external=this.core.externalControl;this.core.externalControl=m=>{const control=external(m);control.clock=this.core.now;return control;};}async fetch(req){if(new URL(req.url).pathname==='/fixture-seed')return this.serialize(async()=>{await this.core.save(await req.json());return Response.json({ok:true});});if(new URL(req.url).pathname==='/fixture-ledger')return Response.json(await this.core.load());return super.fetch(req);}}export default app;`,resolveDir:process.cwd(),sourcefile:'finite-cleanup-fixture.mjs'},bundle:true,write:false,format:'esm',platform:'browser'});
  let providerCalls=0;
