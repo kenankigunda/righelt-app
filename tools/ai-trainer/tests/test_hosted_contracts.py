@@ -25,6 +25,8 @@ class HostedContractsTest(unittest.TestCase):
             with patch.dict(os.environ,env()),self.assertRaisesRegex(ValueError,'runtime differs'):verify_runtime()
             record['settings']=settings('ordinary-continuation');record['settings']['teaching']='deeper'
             with patch.dict(os.environ,env()),self.assertRaisesRegex(ValueError,'runtime differs'):verify_runtime()
+            record['settings']=settings('ordinary-continuation');record['settings'].pop('arithmeticPolicy')
+            with patch.dict(os.environ,env()),self.assertRaisesRegex(ValueError,'runtime differs'):verify_runtime()
 
     def test_equal_trajectories_and_missing_diagnostic_do_not_discard_candidate_pair(self):
         jobs=[{'id':seat,'pairId':'pair','candidateSeat':seat,'profile':'horus','familyId':'family','role':'candidate'} for seat in ('P1','P2')]

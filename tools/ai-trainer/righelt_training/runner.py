@@ -697,6 +697,10 @@ class Runner:
                     'trainingHealthOnly': True, 'productionGatesPassed': False})
 
 
+from .arithmetic import hosted_arithmetic
+
+
+@hosted_arithmetic
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--run-dir', required=True)

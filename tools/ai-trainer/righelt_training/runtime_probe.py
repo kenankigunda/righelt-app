@@ -3,8 +3,10 @@ import json
 import platform
 import subprocess
 import re
+from .arithmetic import ieee_fp32, arithmetic_record
 
 
+@ieee_fp32()
 def probe():
     import torch
     if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
@@ -25,7 +27,8 @@ def probe():
             'machine': platform.machine(), 'torchVersion': torch.__version__.split('+')[0],
             'cudaVersion': torch.version.cuda, 'driverVersion': driver[0], 'gpuCount': 1,
             'gpuName': device.name, 'computeCapability': [device.major, device.minor],
-            'gpuMemoryBytes': device.total_memory, 'kernelPassed': True}
+            'gpuMemoryBytes': device.total_memory, 'kernelPassed': True,
+            'arithmetic': arithmetic_record()}
 
 
 def main():

@@ -1,6 +1,7 @@
 import {assert,canonical,encode,sha256,reserveCents,TERMINAL} from './policy.mjs';
 import {cashPlan,cloudflareCoverage} from './cash.mjs';
 import {readCleanupRegistry,readOperatorReceipt,sameReference,validateManualIntent,operatorAttemptBinding} from './manual-authority.mjs';
+import {validateRuntimeUpgrade} from './runtime-upgrade.mjs';
 
 const hash=value=>sha256(encode(canonical(value)));
 export async function manualAuthority(core,db,c,intent){
@@ -8,15 +9,20 @@ export async function manualAuthority(core,db,c,intent){
   validateManualIntent(intent);
   const now=core.now(),prior=core.campaign(db,intent.priorCampaignId),old=prior.attempts.at(-1);
   assert(c.manifest.id===intent.campaignId&&c.manifestSha256===intent.manifestSha256&&prior!==c&&prior.manifestSha256===intent.priorManifestSha256,'manual campaign binding differs');
-  assert(c.manifest.sourceRevision===intent.sourceRevision&&c.manifest.sourceRevision===prior.manifest.sourceRevision&&c.manifest.runtimeSha256===prior.manifest.runtimeSha256,'manual frozen source/runtime differs');
-  for(const key of ['dependencySha256','checkpointSha256','corpusSha256','recipeSha256','executionRecipeSha256','seed','inputs'])assert(canonical(c.manifest[key])===canonical(prior.manifest[key]),'manual frozen public inputs differ');
+  assert(c.manifest.sourceRevision===intent.sourceRevision,'manual source differs from intent');
+  if(intent.runtimeUpgrade)await validateRuntimeUpgrade(core,prior,c,intent);
+  else{
+    assert(c.manifest.sourceRevision===prior.manifest.sourceRevision&&c.manifest.runtimeSha256===prior.manifest.runtimeSha256,'manual frozen source/runtime differs');
+    for(const key of ['executionRecipeSha256','inputs'])assert(canonical(c.manifest[key])===canonical(prior.manifest[key]),'manual frozen public inputs differ');
+    assert(c.manifest.phases[0].host.image===prior.manifest.phases[prior.phase].host.image,'manual frozen image differs');
+  }
+  for(const key of ['dependencySha256','checkpointSha256','corpusSha256','recipeSha256','seed'])assert(canonical(c.manifest[key])===canonical(prior.manifest[key]),'manual frozen public inputs differ');
   assert(c.manifest.mode==='supervised-qualification'&&c.manifest.purpose!=='scientific-comparison'&&c.manifest.phases.length===1,'manual public qualification only');
   assert(prior.attempts.length===1&&old?.uncertain===true&&['stopping','cleanup-uncertain'].includes(prior.status),'original uncertain owner required');
   assert(canonical(intent.priorAttempt)===canonical({generation:prior.generation,name:old.name,prearmSha256:old.prearmSha256,startedAt:old.startedAt}),'original attempt binding differs');
   const repairStartedAt=operatorAttemptBinding(prior).repairStartedAt;
   assert(Number.isSafeInteger(repairStartedAt)&&repairStartedAt>=old.startedAt&&intent.repairStartedAt===repairStartedAt,'original repair clock differs');
   assert(now>=intent.createdAt&&now<intent.expiresAt&&now<intent.repairDeadline,'manual admission window expired');
-  assert(c.manifest.phases[0].host.image===prior.manifest.phases[prior.phase].host.image,'manual frozen image differs');
   const host=c.manifest.phases[0].host;assert(host.quoteObservedAt<=now&&host.quoteExpires>now,'manual host quote expired');
   assert(intent.fundingSha256===await hash(c.manifest.cash),'manual funding identity differs');
   const control=core.externalControl(c.manifest),registry=await readCleanupRegistry(control.store,intent.registry);

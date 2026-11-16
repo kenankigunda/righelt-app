@@ -12,8 +12,9 @@ from .training_recipe import recipe_binding
 from .architecture import architecture_binding, model_architecture
 from .sequence_targets import FUTURE_LOSS_WEIGHT
 from .pilot_recipe import DEFINITION
+from .arithmetic import POLICY
 
-SOURCES = ('trainer.py', 'model.py', 'curriculum.py', 'runner.py', 'replay.py',
+SOURCES = ('trainer.py', 'model.py', 'curriculum.py', 'runner.py', 'replay.py', 'arithmetic.py', 'export.py', 'device.py', 'runtime_probe.py',
            'checkpoint.py', 'production.py', 'training_recipe.py', 'canary.py', 'hosted_canary.py', 'execution_recipe.py',
            'portable.py', 'attention_method.py', 'pilot_recipe.py', 'sequence_targets.py', 'board_attention.py',
            'hosted_science.py','policy_pool.py','export_runtime.py','hosted_receipts.py','source_image.py',
@@ -34,7 +35,7 @@ def settings(mode, training_recipe=None, attention_method=None, policy_refresh=N
     elif attention_method is not None:raise ValueError('attention method in ordinary recipe')
     if policy_refresh is not None and (not attention or not isinstance(policy_refresh,dict) or set(policy_refresh)!={'path','sha256'}):
         raise ValueError('policy refresh needs explicit attention intervention binding')
-    return {'schema': 1, 'mode': mode, 'architecture': attention_method['architecture'] if attention else architecture_binding(),
+    return {'schema': 1, 'mode': mode, 'arithmeticPolicy':dict(POLICY), 'architecture': attention_method['architecture'] if attention else architecture_binding(),
             **({'attentionMethod':attention_method} if attention else {}),
             **({'policyRefresh':policy_refresh} if policy_refresh is not None else {}),
             'trainingRecipe': training_recipe or recipe_binding(),

@@ -10,7 +10,7 @@ export const LOCK_PATHS=Object.freeze(['pnpm-lock.yaml','tools/ai-trainer/requir
 const rootFiles=new Set(['package.json','pnpm-lock.yaml','pnpm-workspace.yaml','tsconfig.json','tsconfig.base.json']);
 const hostedFiles=new Set(['worker.mjs','runtime.mjs','client.mjs','result.mjs','policy.mjs','policy.json','cash.mjs','data-contract.mjs','fixture-contract.json','image-identity.mjs','s05-observations.mjs','search-diagnosis.mjs','development-suite.mjs','development-suite-assessment.mjs','Dockerfile','Dockerfile.dockerignore']);
 const trainerJson=new Set(['followup-policy-v1.json','learning-evidence-contract.json']);
-const packageJson=new Set(['local-teaching-v2.json','followup-teaching-v1.json']);
+const packageJson=new Set(['local-teaching-v2.json','followup-teaching-v1.json','arithmetic-policy-v1.json']);
 export function safeSourcePath(name) { return typeof name==='string' && /^[A-Za-z0-9_@.+/-]+$/.test(name) && !name.startsWith('/') && name.split('/').every(p=>p && !p.startsWith('.')); }
 export function isRuntimeSourcePath(name) {
   if(!safeSourcePath(name)) return false;

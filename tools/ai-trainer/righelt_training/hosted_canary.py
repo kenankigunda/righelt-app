@@ -18,6 +18,7 @@ from .replay import ReplayBuffer, save_game
 from .runner import default_state, verify_game
 from .trainer import make_optimizer
 from .training_recipe import recipe_binding
+from .arithmetic import hosted_arithmetic
 
 
 def file_record(path, role, root):
@@ -57,6 +58,7 @@ class Monitor:
     def operation(self, *_): return nullcontext()
 
 
+@hosted_arithmetic
 def run(directory, checkpoint, corpus, *, resume=False):
     if resume: raise ValueError('partial fixture requires review and a new separately accounted attempt')
     directory = Path(directory).resolve(); directory.mkdir(parents=True, exist_ok=True)
@@ -98,7 +100,8 @@ def run(directory, checkpoint, corpus, *, resume=False):
     exported = directory/'model.onnx'; metadata = export_onnx(model, exported)
     import numpy as np
     inputs = np.asarray([p['encoded'] for p in buffer.positions], dtype=np.float32).reshape(-1,46,10,10)
-    parity = numeric_parity(model, exported, inputs, reference_device=device)
+    parity = numeric_parity(model, exported, inputs, reference_device=device,
+                            report_path=directory/'numeric-parity.json')
     if not parity['numericPassed']: raise ValueError('export proof failed')
     proof = {'schema': 1, 'kind': 'pipeline-proof', 'execution': execution, 'fixtureOnly': True, 'strengthEstablished': False, 'initialWeightsSha256': before,
         'resultWeightsSha256': after, 'checkpointSha256': training['checkpointSha256'], 'export': metadata,
