@@ -181,7 +181,11 @@ def execute(plan,directory,execution,work_ids,*,context,seconds,barrier,profiles
     if expected is not None:require(len(expected)==len(schedule) and all(job['startIdentity']==root for job,root in zip(schedule,expected)),'canonical zero-warmup start differs')
     preparation_ms=max(0.,clock()-preparation_started)*1000
     namespace='public-timing:'+execution['manifestSha256']+':'+execution['phase']
-    pending=expected is not None and clock()<deadline and barrier.evaluation_pending(namespace,work_ids)
+    pending=False
+    if expected is not None:
+        for job in schedule:
+            if clock()+job['gameSeconds']+10<=deadline and barrier.evaluation_pending(namespace,[job['id']]) and clock()+job['gameSeconds']+10<=deadline:
+                pending=True;break
     model_started=clock();model=None;model_failure=False;model_error=False
     if expected is None or clock()>=deadline or not pending:model_failure=True
     else:

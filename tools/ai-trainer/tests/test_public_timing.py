@@ -202,6 +202,10 @@ class PublicTimingTest(unittest.TestCase):
         self.assertEqual(result['completedWorkIds'],self.ids[:-1]);self.assertEqual(self.calls,6)
         namespace='public-timing:'+self.execution['manifestSha256']+':'+self.execution['phase']
         self.assertNotIn((namespace,reserved['id']),self.barrier.records)
+        claims_before=copy.deepcopy(self.barrier.records);self.execution['generation']=2;self.barrier.generation=2;self.now=60.;model_calls=[]
+        def forbidden(binding):model_calls.append(binding);raise RuntimeError('unnecessary reload')
+        recovered=self.run_timing(seconds=720,model_factory=forbidden,player=lambda *_a,**_k:self.fail('replayed'))
+        self.assertEqual(model_calls,[]);self.assertEqual(recovered['completedWorkIds'],self.ids[:-1]);self.assertEqual(self.barrier.records,claims_before)
         attempts=[json.loads(path.read_bytes()) for path in (self.root/'.ai-runs/run/attempts/1').glob('*.json')]
         self.assertEqual(next(a for a in attempts if a['workId']==reserved['id'])['status'],'unstarted')
 

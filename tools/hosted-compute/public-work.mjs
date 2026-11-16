@@ -45,6 +45,7 @@ export async function publicWorkAuthority(core,db,c,intent,authority){
   const attempted=await object(core,prior,receipt.evidenceSha256);
   const key=await sha256(encode('public-timing:'+prior.manifestSha256+':'+m.phases[0].id+':'+work.id));
   assert(attempted.status==='unstarted'&&attempted.workId===work.id&&!prior.claims?.[key],'diagnostic item has durable consumption');
+  assert(phase.seconds>work.gameSeconds+next.accountingReserveSeconds+e.terminationReserveSeconds+10,'diagnostic declared phase cannot fit original job and reserves');
   assert(r.executionDeadline-intent.startup.deadline>work.gameSeconds*1000+next.accountingReserveSeconds*1000+e.terminationReserveSeconds*1000+10000,'diagnostic item cannot fit its original declared bound');
   const used=db.publicQualificationEscalation;
   assert(!used||used.campaignId===c.manifest.id&&used.intentSha256===await sha256(encode(canonical(intent)))&&used.receiptSha256===intent.publicWorkAuthority.sha256,'one diagnostic escalation already consumed');

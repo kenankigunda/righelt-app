@@ -85,6 +85,7 @@ def _upload(raw):
 
 def evaluation_pending(namespace,identities):
     """Inspect claim metadata only. No new consumption or game-object reads."""
+    if not identities:return False
     if not enabled():return True
     for identity in identities:
         key=hashlib.sha256((namespace+':'+identity).encode()).hexdigest()

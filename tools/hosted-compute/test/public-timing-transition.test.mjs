@@ -162,3 +162,12 @@ test('diagnostic rejects consumed or claimed items, changed identity/bound, late
  q.claims={[key]:{generation:1,at:f.f.now(),phaseIndex:0}};await f.core.save(db);
  await assert.rejects(f.core.manualPrepare(f.m.id,f.intent),/durable consumption/);assert.equal((await f.core.load()).publicQualificationEscalation,undefined);
 });
+
+test('a coherently shortened diagnostic phase cannot consume the marker even with a later external cutoff',async t=>{
+ const f=await setup(t,{diagnostic:true}),db=await f.core.load(),c=db.campaigns[f.m.id];
+ c.manifest.phases[0].seconds=120;for(const argv of [c.manifest.phases[0].argv,c.manifest.phases[0].resumeArgv])argv[argv.indexOf('--seconds')+1]='120';
+ c.manifestSha256=await hash(c.manifest);const intent={...f.intent,manifestSha256:c.manifestSha256};
+ const authority={...f.publicWork,manifestSha256:c.manifestSha256,phaseSeconds:120};intent.publicWorkAuthority=await f.receipt(authority,'e');
+ await assert.rejects(publicWorkAuthority(f.core,db,c,intent,{cutoff:c.manifest.deadline}),/declared phase cannot fit/);
+ assert.equal(db.publicQualificationEscalation,undefined);assert.equal(f.f.providers.creates,1);
+});
