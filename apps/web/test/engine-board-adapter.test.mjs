@@ -669,7 +669,6 @@ test("recorded-action project overlay decorates the existing history target piec
       sideToMove: "P2",
       continuation: null,
       pieces: [
-        { id: "A1", owner: "P1", kind: "commander", position: { row: 6, col: 5 }, supplied: true, commanded: true },
         { id: "A2", owner: "P1", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: true },
       ],
     };
@@ -698,6 +697,9 @@ test("recorded-action project overlay decorates the existing history target piec
     });
 
     const targetCell = getCell(boardEl, 5, 5);
+    const sourceCell = getCell(boardEl, 6, 5);
+    assert.equal(sourceCell?.querySelector(".recorded-action-source-piece") !== null, true);
+    assert.equal(sourceCell?.getAttribute("aria-label"), "Red commander at (6, 5)");
     assert.equal(targetCell?.querySelectorAll(".piece-token").length, 1);
     assert.equal(targetCell?.querySelector(".piece-token")?.classList.contains("preview-created"), true);
     assert.equal(targetCell?.querySelector(".move-ghost"), null);
@@ -836,6 +838,7 @@ test("recorded-action push overlay keeps push group highlight and count", async 
 
     assert.equal(boardEl.querySelectorAll(".group-member").length, 2);
     assert.equal(boardEl.querySelectorAll(".group-strength-badge").length, 1);
+    assert.equal(getCell(boardEl, 4, 2)?.getAttribute("aria-label"), "Red unit, Group strength 2 at (4, 2)");
   });
 });
 
@@ -1004,6 +1007,7 @@ test("push continuation badge counts only preserved members still present on the
 
     assert.equal(boardEl.querySelectorAll(".group-strength-badge").length, 1);
     assert.equal(getCell(boardEl, 5, 2)?.querySelector(".group-strength-badge")?.textContent, "2");
+    assert.equal(getCell(boardEl, 5, 2)?.getAttribute("aria-label"), "Red unit, Group strength 2 at (5, 2)");
   });
 });
 

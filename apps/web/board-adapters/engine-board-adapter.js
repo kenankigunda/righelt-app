@@ -457,6 +457,7 @@ function applyContinuationHighlights(snapshot, legalActions, cellByCoordinateKey
       const badge = document.createElement("span");
       badge.className = "group-strength-badge";
       badge.textContent = String(continuationGroupMembers.length);
+      badge.setAttribute("aria-label", `Group strength ${continuationGroupMembers.length}`);
       anchorCell.appendChild(badge);
     }
   }
@@ -518,6 +519,7 @@ function applyGroupDecorations(snapshot, piece, cellByCoordinateKey, { showBadge
     const badge = document.createElement("span");
     badge.className = "group-strength-badge";
     badge.textContent = String(groupInfo.strength);
+    badge.setAttribute("aria-label", `Group strength ${groupInfo.strength}`);
     anchorCell.appendChild(badge);
   }
 }
@@ -1483,18 +1485,6 @@ export function createEngineBoardAdapter() {
             cell.appendChild(rowAxis);
           }
 
-          // Native cell names own coordinates so axis text cannot leak into them.
-          // Preserve rendered piece/status meaning, while later rush guidance may
-          // replace this base name with its more specific coordinate-bearing copy.
-          if (effectiveInteractionMode === "interactive") {
-            const contents = accessibleDescendantLabels(cell);
-            cell.setAttribute(
-              "aria-label",
-              contents.length > 0
-                ? `${contents.join(", ")} at (${row}, ${col})`
-                : `Square (${row}, ${col})`,
-            );
-          }
           if (!existingCell) boardEl.appendChild(cell);
           cellByCoordinateKey.set(key, cell);
         }
@@ -1513,6 +1503,23 @@ export function createEngineBoardAdapter() {
         sequenceProjection,
         mutationSurface,
       });
+      // Overlays may add source pieces or group-strength meaning. Compose the
+      // final base name only after they settle so the cell label never hides it.
+      // Later rush guidance may replace this with more specific copy that already
+      // owns its target coordinate.
+      if (effectiveInteractionMode === "interactive") {
+        for (const cell of cellByCoordinateKey.values()) {
+          const row = Number(cell.dataset.row);
+          const col = Number(cell.dataset.col);
+          const contents = accessibleDescendantLabels(cell);
+          cell.setAttribute(
+            "aria-label",
+            contents.length > 0
+              ? `${contents.join(", ")} at (${row}, ${col})`
+              : `Square (${row}, ${col})`,
+          );
+        }
+      }
       if (rushSupplyGuidance && overlay?.mode === 'interactive' && !overlay?.inspection) {
         const entries = new Map(rushSupplyGuidance.actions.map(entry => [rushActionKey(entry.action), entry]));
         annotateRushSourceCells({actions:rushSupplyGuidance.actions,snapshot,cells:cellByCoordinateKey,findPieceById,coordKey});
