@@ -9,6 +9,8 @@ import { providerFailureDiagnostic } from './providers.mjs';
 import {prepareManual,attachManual,checkManualLiability} from './manual-admission.mjs';
 import {operatorAttemptBinding,manualStartupUntil} from './manual-authority.mjs';
 import {spendBinding,reconcileActualSpend,knownManualCost} from './actual-spend.mjs';
+import {providerRefusalBinding,resolveProviderRefusal} from './provider-refusal.mjs';
+import {refusalFor,latchRefusalContradiction} from './refusal-state.mjs';
 import { POLICY, TERMINAL, assert, artifact, canonical, encode, safeName, sha256, validateManifest, reserveCents } from './policy.mjs';
 
 const stopping = new Set(['stopping', 'cleanup-uncertain']);
@@ -24,6 +26,8 @@ export class Controller {
   amendProgramWindow(id,reference){return amendProgramWindow(this,id,reference);}
   async actualSpendBinding(){return spendBinding(await this.load());}
   reconcileActualSpend(id,reference){return reconcileActualSpend(this,id,reference);}
+  providerRefusalBinding(id){return providerRefusalBinding(this,id);}
+  resolveProviderRefusal(id,reference){return resolveProviderRefusal(this,id,reference);}
   async attemptBinding(id){const db=await this.load();return operatorAttemptBinding(this.campaign(db,id));}
   async manualReady(id,generation,claim){
     const db=await this.load(),c=this.campaign(db,id);
@@ -284,8 +288,18 @@ export class Controller {
   async reconcile() {
     const db = await this.load();
     for (const c of Object.values(db.campaigns)) {
-      if (TERMINAL.has(c.status) || c.status === 'staged') continue;
-      try { await this.step(db, c); }
+      if (c.status === 'staged') continue;
+      try {
+        if(TERMINAL.has(c.status)){
+          if(!refusalFor(db,c))continue;
+          const a=c.attempts.at(-1),matches=await this.providers.find(a.provider,a.name);
+          if(!latchRefusalContradiction(this,db,c,{source:'resolved-owner-inventory',evidenceSha256:null,resourceIds:matches.map(r=>r.id)}))continue;
+          // A resolved label cannot suppress fresh contradictory ownership.
+          // Persist the hold before the normal stopping path may remove it.
+          await this.save(db);
+        }
+        await this.step(db, c);
+      }
       catch(error) { this.event(c, 'provider-unavailable',{diagnostic:providerFailureDiagnostic(error)}); await this.save(db); }
     }
   }
@@ -317,7 +331,9 @@ export class Controller {
       await this.save(db);
       if (!a) { c.cleanupVerified = true; c.status = c.nextStatus ?? 'failed'; await this.save(db); return; }
       const matches = await this.providers.find(a.provider, a.name);
-      if (matches.length && a.uncertain) { a.uncertain = false; await this.save(db); }
+      if(matches.length&&refusalFor(db,c)){
+        latchRefusalContradiction(this,db,c,{source:'owned-inventory',evidenceSha256:null,resourceIds:matches.map(r=>r.id)});await this.save(db);
+      }else if (matches.length && a.uncertain) { a.uncertain = false; await this.save(db); }
       for (const resource of matches) await this.providers.remove(a.provider, resource.id, a.name);
       if (matches.length) { c.cleanupVerified = false; await this.save(db); return; }
       if (a.resourceId) {
@@ -383,7 +399,9 @@ export class Controller {
     const db = await this.load(), c = this.campaign(db, id), a = c.attempts.at(-1);
     if (a?.uncertain) {
       const matches = await this.providers.find(a.provider, a.name);
-      if (matches.length) { a.uncertain = false; await this.save(db); }
+      if(matches.length&&refusalFor(db,c)){
+        latchRefusalContradiction(this,db,c,{source:'uncertain-inventory',evidenceSha256:null,resourceIds:matches.map(r=>r.id)});await this.save(db);
+      }else if (matches.length) { a.uncertain = false; await this.save(db); }
     }
   }
   async inventory(id) {

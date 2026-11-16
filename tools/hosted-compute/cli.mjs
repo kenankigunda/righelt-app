@@ -99,6 +99,10 @@ export async function main(argv = process.argv.slice(2), env = process.env, serv
     assert(options['--receipt'],'private --receipt reference required');return client.json('program-window-amend',await privateJson(path.resolve(options['--receipt'])));
   }
   if(command==='program-window-binding')return client.json('program-window-binding');
+  if(command==='provider-refusal-binding')return client.json('provider-refusal-binding');
+  if(command==='provider-refusal-resolve'){
+    assert(options['--receipt'],'private --receipt reference required');return client.json('provider-refusal-resolve',await privateJson(path.resolve(options['--receipt'])));
+  }
   if(command==='actual-spend-reconcile'){
     assert(options['--receipt'],'private --receipt reference required');
     return client.json('actual-spend-reconcile',await privateJson(path.resolve(options['--receipt'])));

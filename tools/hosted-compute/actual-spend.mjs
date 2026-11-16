@@ -1,5 +1,6 @@
 import {assert,canonical,encode,sha256,reserveCents,POLICY} from './policy.mjs';
 import {readOperatorReceipt,operatorAttemptBinding} from './manual-authority.mjs';
+import {latchRefusalContradiction} from './refusal-state.mjs';
 const hash=value=>sha256(encode(canonical(value)));
 const cents=value=>Number.isSafeInteger(value)&&value>=0;
 const digest=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
@@ -13,6 +14,7 @@ export async function spendBinding(db){
     cleanupVerified:c.cleanupVerified,attempts:c.attempts,manual:c.manual??null})).sort((a,b)=>a.id.localeCompare(b.id));
   const state={campaigns,cashFunding:db.cashFunding??null,creditAllocatedCents:db.creditAllocatedCents??0,pilotReservedCents:db.pilotReservedCents??0,
     manualRiskHolds:db.manualRiskHolds??{},manualFundingReservations:db.manualFundingReservations??{},manualProgram:db.manualProgram??null,publicQualificationEscalation:db.publicQualificationEscalation??null,
+    providerRefusalResolution:db.providerRefusalResolution??null,providerRefusalContradictions:db.providerRefusalContradictions??[],capacityRecoveryShort:db.capacityRecoveryShort??null,
     priorBasisSha256:db.actualSpendBasis?.receiptSha256??null};
   return {schema:1,kind:'actual-spend-binding',ledgerSha256:await hash(state),priorBasisSha256:state.priorBasisSha256,
     financialBasis:db.actualSpendBasis?'verified-account-observation':'legacy-reservations',observedDebitCents:db.actualSpendBasis?.observedDebitCents??null,
@@ -70,6 +72,8 @@ export async function reconcileActualSpend(core,id,reference){
   // Supersede financial counters only. Original attempts, receipt records,
   // unresolved create status, fences and all program/repair clocks stay intact.
   db.creditAllocatedCents=balance.debitsCents;db.pilotReservedCents=balance.debitsCents;db.manualRiskHolds={};
+  const resolved=db.providerRefusalResolution;
+  if(resolved)latchRefusalContradiction(core,db,core.campaign(db,resolved.campaignId),{source:'actual-spend',evidenceSha256:reference.sha256,resourceIds:receipt.activeResources.filter(r=>r.campaignId===resolved.campaignId).map(r=>r.id)});
   assert(core.now()<receipt.validUntil,'actual-spend observation expired during reconciliation');
   await core.save(db);
   return {receiptSha256:reference.sha256,reconciled:true,observedDebitCents:balance.debitsCents};

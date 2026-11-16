@@ -5,6 +5,7 @@ import {cashPlan,cloudflareCoverage} from './cash.mjs';
 import {readCleanupRegistry,readOperatorReceipt,sameReference,validateManualIntent,validateRepairAllowance,operatorAttemptBinding,MANUAL_STARTUP_MS,CLEANUP_CONTRACTS} from './manual-authority.mjs';
 import {validateRuntimeUpgrade} from './runtime-upgrade.mjs';
 import {actualEnvelope} from './actual-spend.mjs';
+import {needsOwnershipWatch,effectiveRefusal,refusalFor,refusalHeld} from './refusal-state.mjs';
 
 const hash=value=>sha256(encode(canonical(value)));
 export async function manualAuthority(core,db,c,intent){
@@ -12,6 +13,8 @@ export async function manualAuthority(core,db,c,intent){
   validateManualIntent(intent);
   validateRepairAllowance(intent,core.config.authorizedCents);
   const now=core.now(),prior=core.campaign(db,intent.priorCampaignId),old=prior.attempts.at(-1);
+  assert(!db.providerRefusalResolution||!refusalHeld(db,db.providerRefusalResolution),'capacity refusal contradicted: cleanup hold required');
+  assert(!db.providerRefusalResolution||c.manifest.purpose===POLICY.publicTiming.purpose&&intent.publicTimingTransition,'resolved refusal requires the public timing authority ladder');
   const actual=Boolean(db.actualSpendBasis);
   if(actual){
     assert(now<db.actualSpendBasis.validUntil&&intent.expiresAt<=db.actualSpendBasis.validUntil,'fresh actual-spend reconciliation required');
@@ -19,7 +22,8 @@ export async function manualAuthority(core,db,c,intent){
   }else assert(intent.actualSpendBasisSha256===undefined,'actual-spend reconciliation missing');
   assert(c.manifest.id===intent.campaignId&&c.manifestSha256===intent.manifestSha256&&prior!==c&&prior.manifestSha256===intent.priorManifestSha256,'manual campaign binding differs');
   assert(c.manifest.sourceRevision===intent.sourceRevision,'manual source differs from intent');
-  if(intent.publicTimingTransition)await validatePublicTimingTransition(core,db,prior,c,intent);
+  let transition;
+  if(intent.publicTimingTransition)transition=await validatePublicTimingTransition(core,db,prior,c,intent);
   else if(intent.runtimeUpgrade)await validateRuntimeUpgrade(core,prior,c,intent);
   else{
     assert(c.manifest.sourceRevision===prior.manifest.sourceRevision&&c.manifest.runtimeSha256===prior.manifest.runtimeSha256,'manual frozen source/runtime differs');
@@ -43,10 +47,7 @@ export async function manualAuthority(core,db,c,intent){
   // Every historical unresolved attempt retains exact independent cleanup,
   // regardless of the campaign's current label or a later finished attempt.
   for(const owner of Object.values(db.campaigns)){
-    const unresolved=owner.attempts.filter((a,index)=>{
-      const observed=db.actualSpendBasis?.activeResources.some(r=>r.campaignId===owner.manifest.id&&r.generation===index+1&&!(a.endedAt>db.actualSpendBasis.observedAt&&owner.cleanupVerified));
-      return a.uncertain===true||!Number.isSafeInteger(a.endedAt)||owner.cleanupVerified!==true||observed;
-    });
+    const unresolved=owner.attempts.filter((a,index)=>needsOwnershipWatch(db,owner,a,index));
     if(!unresolved.length)continue;
     const reference=owner.manifest.externalControl;
     const index=registry.references.findIndex(r=>sameReference(r,reference));
@@ -105,7 +106,7 @@ export async function manualAuthority(core,db,c,intent){
   assert(total?.runpodEncumberedCents===encumberedCents&&total.repairEncumberedCents===encumberedCents&&total.runpodEncumberedCents<=total.runpodCeilingCents&&total.runpodCeilingCents<=10000&&total.repairEncumberedCents<=intent.repairMaxCents&&total.repairCeilingCents===intent.repairMaxCents&&total.cloudflareEncumberedCents<=total.cloudflareCeilingCents&&total.cloudflareCeilingCents<=2000&&total.githubPaidOverageAuthorized===false,'operator aggregate funding exceeded');
   cloudflareCoverage(c.manifest.cash,{now,deadline:c.manifest.deadline,forecastUntil:authority.forecastUntil});
   assert(core.now()<intent.expiresAt&&core.now()<(publicWork?.admissionDeadline??intent.repairDeadline),'manual admission expired during authorization');
-  return {prior,old,authority,registry,publicWork,retainedWatchOwnerIds};
+  return {prior,old,authority,registry,publicWork,retainedWatchOwnerIds,capacityRecovery:transition?.capacityRecovery};
 }
 function repairCost(core,db,prior){
   let total=core.cost(prior);
@@ -139,8 +140,8 @@ export async function prepareManual(core,id,intent){
   assert(c.status==='staged'&&core.config.enabled===true,'manual campaign unavailable');
   assert(!db.manualFundingReservations?.[intent.fundingReservation?.sha256],'funding reservation already assigned');
   assert(!db.manualProgram||core.now()<db.manualProgram.deadline,'overall actual program ended');
-  const {prior,authority,publicWork,retainedWatchOwnerIds}=await manualAuthority(core,db,c,intent),now=core.now();
-  for(const other of Object.values(db.campaigns))assert(other===c||other===prior||TERMINAL.has(other.status)||other.status==='staged'||retainedWatchOwnerIds.has(other.manifest.id),'another campaign owns compute');
+  const {prior,authority,publicWork,retainedWatchOwnerIds,capacityRecovery}=await manualAuthority(core,db,c,intent),now=core.now();
+  for(const other of Object.values(db.campaigns))assert(other===c||other===prior||effectiveRefusal(db,other)||TERMINAL.has(other.status)&&!refusalFor(db,other)||other.status==='staged'||retainedWatchOwnerIds.has(other.manifest.id),'another campaign owns compute');
   for(const input of c.manifest.inputs)assert(c.objects[input.sha256]?.bytes===input.bytes,'manual inputs incomplete');
   const host=c.manifest.phases[0].host;assert(host.quoteObservedAt<=now&&host.quoteExpires>now,'manual host quote expired');
   const cash=cashPlan(c.manifest.cash,c.manifest.maxCents),{computeUsageCapCents,cloudflareUsageCapCents,...funding}=c.manifest.cash;
@@ -162,6 +163,7 @@ export async function prepareManual(core,id,intent){
   else{db.creditAllocatedCents+=c.manifest.maxCents+additionalRisk;db.pilotReservedCents+=c.manifest.maxCents+additionalRisk;}
   db.cloudflareAllocatedCents+=cloudflareUsageCapCents;
   c.manual.requiredAuthorizationCents=actual?envelope.requiredCents:db.pilotReservedCents;
+  if(capacityRecovery&&!db.capacityRecoveryShort)db.capacityRecoveryShort={campaignId:id,intentSha256,transitionSha256:intent.publicTimingTransition.sha256,refusalReceiptSha256:capacityRecovery.refusalReceiptSha256,preparedAt:now,programAcceptedAt:db.manualProgram.acceptedAt};
   core.event(c,'manual-prepared',{intentSha256});await core.save(db);
   return {intentSha256,generation:1,workerToken:await core.token(id,1)};
 }
