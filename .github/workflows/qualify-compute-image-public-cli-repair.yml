@@ -1,0 +1,90 @@
+# One-time source-only qualification on the existing feature branch.
+# Install only after the frozen runtime source has passed its required gate.
+name: Qualify repaired public timing client image
+on:
+  push:
+    branches: [codex/t-132-hosted-compute]
+    paths: [.github/workflows/qualify-compute-image-public-cli-repair.yml]
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: qualify-hosted-compute-public-cli-repair-source-image
+  cancel-in-progress: false
+jobs:
+  build:
+    if: ${{ github.repository == 'kenankigunda/righelt-app' && github.ref == 'refs/heads/codex/t-132-hosted-compute' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      SOURCE_REVISION: ea726e0f77594dde18563a3c82a99f6ff7a96664
+      NODE_IMAGE: node:22.23.4-bookworm-slim@sha256:aaa4b5baf1ecff3b283486bb1f90405cdda225a3e6f79660d2c559fa510a7292
+      PYTHON_IMAGE: python:3.14-slim-bookworm@sha256:1faf2343e747208b2a36e5f2b5ff908ec3b2d0078a6a7bfe73b535698fe83909
+      TORCH_INDEX: https://download.pytorch.org/whl/cu130
+      TORCH_VERSION: 2.14.1
+      TARGET_PLATFORM: linux/amd64
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          ref: ${{ env.SOURCE_REVISION }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.23.4'
+      - name: Prepare only audited committed source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_REVISION"
+          node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          const config={schema:1,nodeImage:process.env.NODE_IMAGE,pythonImage:process.env.PYTHON_IMAGE,platform:'linux/amd64',pythonVersion:'3.14',torchVersion:'2.14.1',torchIndex:'https://download.pytorch.org/whl/cu130',cudaVersion:'13.0',evidenceReference:'righelt-source-image-build-config-20261115'};
+          fs.writeFileSync(`${process.env.RUNNER_TEMP}/build-config.json`,JSON.stringify(config));
+          JS
+          node tools/hosted-compute/prepare-context.mjs "$RUNNER_TEMP/compute-source" "$RUNNER_TEMP/build-config.json"
+          df -h .
+      - name: Build and check Linux CUDA wheel and runtime imports without a GPU
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="ghcr.io/kenankigunda/righelt-compute:source-$SOURCE_REVISION"
+          docker build --platform "$TARGET_PLATFORM" --target runtime \
+            --file "$RUNNER_TEMP/compute-source/tools/hosted-compute/Dockerfile" \
+            --build-arg NODE_IMAGE="$NODE_IMAGE" --build-arg PYTHON_IMAGE="$PYTHON_IMAGE" \
+            --build-arg SOURCE_REVISION="$SOURCE_REVISION" --build-arg TORCH_INDEX="$TORCH_INDEX" \
+            --build-arg TORCH_VERSION="$TORCH_VERSION" --build-arg TARGET_PLATFORM="$TARGET_PLATFORM" \
+            --label org.opencontainers.image.source=https://github.com/kenankigunda/righelt-app \
+            --label org.opencontainers.image.revision="$SOURCE_REVISION" \
+            --tag "$image" "$RUNNER_TEMP/compute-source"
+          docker run --rm "$image" node --input-type=module -e "await import('./tools/hosted-compute/worker.mjs'); console.log('Hosted worker module closure passed.');"
+          docker run --rm "$image" python -c "import torch,onnx,onnxruntime; import righelt_training.hosted_science; assert torch.__version__.split('+')[0]=='2.14.1'; assert torch.version.cuda=='13.0'; print('Linux dependency imports passed; GPU execution is unqualified.')"
+          docker run --rm -e RIGHELT_HOSTED=1 "$image" python -m righelt_training.public_timing --verify-import
+          docker run --rm "$image" node --import tsx tools/ai-trainer/public-evaluation-profiles.mjs
+          docker run --rm -i \
+            -e COMPUTE_URL=https://righelt-compute-controller.kenankigunda.workers.dev \
+            -e COMPUTE_ID=public-timing-20261116-189fa3b4 -e COMPUTE_GENERATION=1 \
+            -e COMPUTE_WORKER_TOKEN=unauthenticated-image-qualification-no-authority \
+            "$image" python - <<'PYPROBE'
+          from righelt_training import hosted_receipts
+          try:
+              hosted_receipts.request('status',method='GET',record_failure=False)
+              raise AssertionError('invalid probe unexpectedly authorized')
+          except hosted_receipts.HostedContractError as error:
+              assert error.http_status==409
+              print('Production Python first-party transport reached controller; invalid credential rejected; no claims or work.')
+          PYPROBE
+      - name: Publish checked source-only image with temporary workflow credentials
+        shell: bash
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth_root=$(mktemp -d)
+          trap 'rm -rf "$auth_root"' EXIT
+          export DOCKER_CONFIG="$auth_root"
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username kenankigunda --password-stdin
+          unset REGISTRY_TOKEN
+          image="ghcr.io/kenankigunda/righelt-compute:source-$SOURCE_REVISION"
+          docker push "$image"
+          docker image inspect "$image" --format '{{json .RepoDigests}}'
+          docker logout ghcr.io
