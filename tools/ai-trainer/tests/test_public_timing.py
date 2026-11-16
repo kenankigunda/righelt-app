@@ -75,6 +75,85 @@ class PublicTimingTest(unittest.TestCase):
         with patch('righelt_training.prospective_durability.time.monotonic',self.clock):
             return timing.execute(self.plan,self.root/'.ai-runs/run',self.execution,self.ids,**options)
     def report(self):return json.loads((self.root/f".ai-runs/run/timing-report-{self.execution['generation']}.json").read_bytes())
+    def invoke_cli(self,*,profile_error=None,pending_error=None):
+        """Run the real CLI/input/execute path with synthetic external primitives."""
+        import contextlib,io,os,sys,types,time
+        from unittest.mock import Mock
+        raw=timing.encoded(self.plan)
+        image={'sourceRevision':'a'*40,'dependencySha256':'2'*64,'sourceInventorySha256':'3'*64,'proofInventorySha256':'4'*64}
+        recipe=timing.recipe_for(raw,image);recipe_raw=timing.encoded(recipe)
+        execution={**self.execution,'dependencySha256':image['dependencySha256'],'recipeSha256':timing.digest(raw),
+            'executionRecipeSha256':timing.digest(recipe_raw),'publicTiming':{'schema':1,**{k:recipe[k] for k in ('modelSha256','profilesSha256','planSha256','producerSha256','qualifiedRuntimeSha256')}}}
+        directory=self.root/'.ai-runs/run';directory.mkdir(parents=True,exist_ok=True)
+        context={'execution':execution,'completedWorkIds':self.ids,'phaseSeconds':120,'phaseDeadline':time.time()*1000+120000}
+        for name,value in [('plan.json',self.plan),('execution-recipe.json',recipe),('execution-context.json',context),('runtime-1.json',{'runtimeSha256':'f'*64})]:
+            (directory/name).write_bytes(timing.encoded(value))
+        modules={}
+        for name,attrs in {
+            'source_image':{'source_image':lambda:image},
+            'hosted_science':{'authoritative_profiles':Mock(return_value=self.profiles,side_effect=profile_error)},
+            'evaluation_start':{'expected_evaluation_starts':lambda jobs,**_:[self.start for _ in jobs],'verify_evaluation_game_start':self.start_verify},
+            'runner':{'verify_game':self.verify},'arena':{'play_game':self.player},
+            'export_runtime':{'ExportedModel':lambda _:Model()}}.items():
+            module=types.ModuleType('righelt_training.'+name);module.__dict__.update(attrs);modules[module.__name__]=module
+        pending=Mock(side_effect=pending_error) if pending_error else self.barrier.evaluation_pending
+        env={'RIGHELT_HOSTED':'1','RIGHELT_EXPECTED_RECIPE_SHA256':timing.digest(raw),
+            'RIGHELT_EXECUTION_RECIPE_PATH':'.ai-runs/run/execution-recipe.json','RIGHELT_EXECUTION_RECIPE_SHA256':timing.digest(recipe_raw),
+            'RIGHELT_EXECUTION_CONTEXT':'.ai-runs/run/execution-context.json'}
+        stderr=io.StringIO();stdout=io.StringIO();self.cli_stderr=stderr
+        previous=Path.cwd()
+        try:
+            os.chdir(self.root)
+            with patch.dict(sys.modules,modules),patch.dict(os.environ,env,clear=True),patch.object(sys,'argv',['public_timing','--plan','.ai-runs/run/plan.json','--run-dir','.ai-runs/run','--seconds','120']),contextlib.redirect_stderr(stderr),contextlib.redirect_stdout(stdout),patch.object(hosted_receipts,'evaluation_pending',pending),patch.object(hosted_receipts,'evaluation_claim',self.barrier.evaluation_claim),patch.object(hosted_receipts,'settle',self.barrier.settle),patch.object(hosted_receipts,'publish_progress',lambda _:None):
+                timing.main()
+        finally:os.chdir(previous)
+        return json.loads(stdout.getvalue())
+
+    def test_actual_cli_wires_bound_inputs_runtime_and_every_synthetic_work_item(self):
+        result=self.invoke_cli()
+        self.assertTrue(result['accountingComplete']);self.assertTrue(result['scopeCoverageComplete']);self.assertEqual(self.calls,6)
+        self.assertTrue((self.root/'.ai-runs/run/latest.json').is_file())
+        self.assertEqual(json.loads((self.root/'.ai-runs/run/result.json').read_bytes())['completedWorkIds'],self.ids)
+
+    def test_cli_preflight_failure_retains_cause_without_secrets_or_false_accounting(self):
+        secret='Bearer synthetic-credential-do-not-retain'
+        with self.assertRaisesRegex(ValueError,secret):self.invoke_cli(profile_error=ValueError(secret))
+        record=json.loads((self.root/'.ai-runs/run/public-timing-failure-1.json').read_bytes())
+        self.assertEqual(record['stage'],'authoritative-profiles');self.assertEqual(record['exceptionType'],'ValueError')
+        self.assertFalse(record['accountingComplete']);self.assertEqual(record['originalPhaseDeadline'],json.loads((self.root/'.ai-runs/run/execution-context.json').read_bytes())['phaseDeadline'])
+        self.assertEqual(record['retainedAccounting'],{'resultPresent':False,'prefixPointerPresent':False})
+        self.assertTrue(record['frames']);self.assertNotIn(secret,self.cli_stderr.getvalue());self.assertNotIn(secret,json.dumps(record))
+        self.assertEqual(self.calls,0);self.assertEqual(self.barrier.records,{})
+        self.assertFalse((self.root/'.ai-runs/run/result.json').exists())
+
+    def test_cli_metadata_barrier_failure_is_retained_and_never_dispatches(self):
+        with self.assertRaises(ValueError):self.invoke_cli(pending_error=ValueError('synthetic controller contract rejected'))
+        record=json.loads((self.root/'.ai-runs/run/public-timing-failure-1.json').read_bytes())
+        self.assertEqual(record['stage'],'execute');self.assertEqual(record['exceptionType'],'ValueError')
+        self.assertEqual(self.calls,0);self.assertEqual(self.barrier.records,{})
+        self.assertFalse(record['accountingComplete'])
+
+    def test_failure_diagnostic_keeps_existing_prefix_result_and_first_failure(self):
+        import contextlib,io
+        directory=self.root/'.ai-runs/run';directory.mkdir(parents=True)
+        (directory/'latest.json').write_bytes(b'original prefix');(directory/'result.json').write_bytes(b'original result')
+        diagnostic={'stage':'execute','directory':directory,'execution':self.execution,'phaseDeadline':1120000}
+        with contextlib.redirect_stderr(io.StringIO()):timing.retain_failure(hosted_receipts.HostedContractError(409),diagnostic)
+        path=directory/'public-timing-failure-1.json';first=path.read_bytes();record=json.loads(first)
+        self.assertEqual(record['httpStatus'],409);self.assertEqual(record['retainedAccounting'],{'resultPresent':True,'prefixPointerPresent':True})
+        with contextlib.redirect_stderr(io.StringIO()):timing.retain_failure(ValueError('another failure'),diagnostic)
+        self.assertEqual(path.read_bytes(),first);self.assertEqual((directory/'latest.json').read_bytes(),b'original prefix');self.assertEqual((directory/'result.json').read_bytes(),b'original result')
+
+    def test_failure_diagnostic_allowlists_execution_identity_not_context_extensions(self):
+        import contextlib,io
+        execution={**self.execution,'credential':'secret-extension','publicTiming':{'token':'secret-nested'},'campaign':{'token':'secret-campaign'}}
+        diagnostic={'stage':'execute','directory':self.root,'execution':execution,'phaseDeadline':1120000}
+        stderr=io.StringIO()
+        with contextlib.redirect_stderr(stderr):timing.retain_failure(ValueError('secret-error'),diagnostic)
+        record=json.loads((self.root/'public-timing-failure-1.json').read_bytes())
+        self.assertEqual(record['execution'],{'manifestSha256':'b'*64,'sourceRevision':'a'*40,'generation':1,'phase':'public-timing'})
+        self.assertNotIn('secret',stderr.getvalue());self.assertNotIn('secret',json.dumps(record))
+
     def test_public_all_profile_seat_accounting_and_raw_before_verification(self):
         result=self.run_timing();self.assertTrue(result['accountingComplete']);self.assertTrue(result['scopeCoverageComplete'])
         self.assertEqual(result['completedWorkIds'],self.ids);self.assertEqual(self.calls,6)

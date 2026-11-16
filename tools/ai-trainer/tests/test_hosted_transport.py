@@ -91,6 +91,40 @@ class HostedTransportTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'response malformed'):receipts.evaluation_claim('public','job')
                 self.assertEqual(remote.call_count,1)
 
+    def test_first_party_transport_identity_preserves_auth_session_and_payloads(self):
+        import io
+        session='7'*32
+        with patch.dict(receipts.os.environ,{'COMPUTE_URL':'https://compute.example','COMPUTE_ID':'public','COMPUTE_WORKER_TOKEN':'private','COMPUTE_GENERATION':'1','COMPUTE_STARTUP_SESSION':session}):
+            calls=[]
+            def transport(req,**kwargs):
+                calls.append((req,kwargs))
+                response=__import__('unittest.mock',fromlist=['MagicMock']).MagicMock()
+                response.__enter__.return_value=io.BytesIO(b'{"created":false,"unclaimed":true}')
+                return response
+            with patch.object(receipts.urllib.request,'urlopen',transport):
+                self.assertTrue(receipts.evaluation_pending('public',['job']))
+                self.assertEqual(json.loads(calls[-1][0].data)['allowCreate'],False)
+                receipts.request('objects/'+'a'*64,raw=b'exact bytes',method='PUT')
+                self.assertEqual(calls[-1][0].data,b'exact bytes');self.assertEqual(calls[-1][0].get_method(),'PUT')
+                self.assertEqual(receipts.request('status',method='GET'),b'{"created":false,"unclaimed":true}')
+                self.assertEqual(calls[-1][0].get_method(),'GET');self.assertIsNone(calls[-1][0].data)
+            self.assertEqual(len(calls),3)
+            for req,options in calls:
+                self.assertEqual(req.get_header('User-agent'),'Righelt-Hosted-Compute/1')
+                self.assertEqual(req.get_header('Accept'),'application/json')
+                self.assertEqual(req.get_header('Authorization'),'Bearer private')
+                self.assertEqual(req.get_header('X-compute-generation'),'1')
+                self.assertEqual(req.get_header('X-compute-startup-session'),session)
+                self.assertEqual(options['timeout'],10)
+
+    def test_http_contract_failure_preserves_only_status_and_never_retries(self):
+        import io,urllib.error
+        with patch.dict(receipts.os.environ,{'COMPUTE_URL':'https://compute.example','COMPUTE_ID':'public','COMPUTE_WORKER_TOKEN':'private','COMPUTE_GENERATION':'1'}):
+            error=urllib.error.HTTPError('https://private.example',409,'secret response',{},io.BytesIO(b'secret body'))
+            with patch.object(receipts.urllib.request,'urlopen',side_effect=error) as remote:
+                with self.assertRaises(receipts.HostedContractError) as raised:receipts.evaluation_pending('public',['job'])
+                self.assertEqual(raised.exception.http_status,409);self.assertNotIn('secret',str(raised.exception));self.assertEqual(remote.call_count,1)
+
     def test_changed_settled_hash_is_correctness_failure_without_write_retry(self):
         raw=b'{"x": 1}';descriptor={'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)}
         with patch.object(receipts,'request',side_effect=[descriptor,receipts.HostedInfrastructureError('lost'),{'record':{'result':{'sha256':'f'*64,'bytes':len(raw)}}}]) as remote:
