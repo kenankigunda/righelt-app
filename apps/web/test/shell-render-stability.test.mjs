@@ -401,7 +401,7 @@ test("shell renders and reconciles mini board previews for home and debug surfac
   for(const syncStatus of ['desynced','confirming'])assert.match(presenter.renderHomeGameCard({...card,syncStatus}),/<span class="status-chip">Recovering<\/span>/);
   assert.match(presenter.renderHomeGameCard({...card,pendingPreviewSnapshot:snapshot}),/Update pending/);
   assert.match(html,/<div class="mini-board-card-copy">/);assert.match(html,/<div class="mini-board-card-meta mini-board-card-meta-primary">/);assert.match(html,/Move 5/);
-  const completed=presenter.renderHomeGameCard({...card,confirmedOutcomeStatus:'p2_win'});assert.match(completed,/4 moves/);assert.match(completed,/Review game/);
+  const completed=presenter.renderHomeGameCard({...card,confirmedOutcomeStatus:'p2_win',completedActionCount:4});assert.match(completed,/4 moves/);assert.match(completed,/Review game/);
   assert.match(source, /const scenarioPreviewPayload = selectedScenario \? buildScenarioStaticPreviewModel\(selectedScenario\) : null;/);
   const named={myRole:'Player 1',player1:{identityId:'me',profile:{displayName:'Kenan'}},player2:{identityId:'other',profile:{displayName:'Ada'}}};
   const quiet=renderHomeCardIdentity(named,{identityId:'me',quiet:true});

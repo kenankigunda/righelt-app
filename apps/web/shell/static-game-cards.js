@@ -5,6 +5,11 @@ const revision = value => Number.isSafeInteger(value) && value >= 0 ? value : nu
 const confirmedStatus = card => revision(card?.eventSeq) !== null && revision(card?.gameplayRevision) !== null &&
   (card?.confirmedOutcomeStatus === 'ongoing' || isTerminalOutcome(card?.confirmedOutcomeStatus)) &&
   card.confirmedOutcomeStatus === (card.previewSnapshot ?? card.currentSnapshot ?? card.board?.state)?.outcome?.status ? card.confirmedOutcomeStatus : null;
+const normalizeCompletedActionCount = card => {
+  const value=card?.reviewPreview,gameplayRevision=revision(card?.gameplayRevision);
+  return value&&gameplayRevision!==null&&value.gameId===String(card?.id||'')&&revision(value.gameplayRevision)===gameplayRevision
+    &&Number.isSafeInteger(value.completedActionCount)&&value.completedActionCount>=0?value.completedActionCount:null;
+};
 const normalizeReviewPreview = card => {
   const value=card?.reviewPreview,gameplayRevision=revision(card?.gameplayRevision);
   if(!value||value.gameId!==String(card?.id||'')||revision(value.gameplayRevision)!==gameplayRevision||revision(value.turnIndex)===null)return null;
@@ -57,6 +62,7 @@ export const normalizeStaticGameCard = (card) => ({
         : 0,
   previewSnapshot: clone(card?.previewSnapshot ?? card?.currentSnapshot ?? card?.board?.state ?? null),
   previewSelection: clone(card?.previewSelection ?? null),
+  completedActionCount: normalizeCompletedActionCount(card),
   reviewPreview: normalizeReviewPreview(card),
   myRole: typeof card?.myRole === "string" ? card.myRole : "Guest",
   canJoinAsPlayer: card?.canJoinAsPlayer === true,
