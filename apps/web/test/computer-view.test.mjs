@@ -45,7 +45,7 @@ test('computer recovery controls wait for their own phase thresholds', () => {
 test('every profile keeps plain board copy and a persistent cue while ordinary external progress stays quiet',()=>{
  for(const [profile,{name}] of Object.entries(COMPUTER_PROFILES)){
   const game={id:'thinking-game',gameplayRevision:7,canControlComputer:true,computerTurn:profile,computer:{seats:{p1:profile,p2:null},modelId:CURRENT_COMPUTER_MODEL.id}};
-  const cue={dataset:{},hasAttribute:()=>false};let key;
+  const cue={dataset:{},hasAttribute:()=>false,removeAttribute(name){delete this.dataset[name==='data-loading-edge'?'loadingEdge':name];}};let key;
   for(const phase of ['preparing','checking','looking-ahead','initializing-verified-runtime','saving']){
    const status={profile,phase,attemptId:'thinking-attempt',detailed:false};
    assert.equal(renderComputerProgress(game,status),'',`${profile}/${phase} has no early external notice or CTA`);
