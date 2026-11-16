@@ -30,7 +30,7 @@ const statusHtml = html => html.match(/<p class="small mini-board-preview-status
 test('confirmed result and pending Undo retain quiet canonical identities, winner label color and Review game', () => {
   for (const manual of [false, true]) {
     const input = card({confirmedOutcomeStatus:'p2_win', pendingPreviewSnapshot:snapshot(),
-      computer:{manual, seats:{p1:null,p2:'horus'}}});
+      completedActionCount:4,computer:{manual, seats:{p1:null,p2:'horus'}}});
     const before = structuredClone(input), h = renderer();
     const html = h.render(input);
     assert.match(html, /data-winner-side="p2"/);
@@ -46,6 +46,17 @@ test('confirmed result and pending Undo retain quiet canonical identities, winne
     assert.deepEqual(h.registered[0].snapshot, input.previewSnapshot);
     assert.deepEqual(input, before, 'rendering cannot change result, authority or control settings');
   }
+});
+
+test('completed Home counts use proven active actions, omit unknown totals, and retain physical ongoing numbering',()=>{
+ const proven=renderer().render(card({confirmedOutcomeStatus:'p1_win',moveCount:24,completedActionCount:23}));
+ assert.match(proven,/>23 moves</);assert.doesNotMatch(proven,/>24 moves</);
+ const zero=renderer().render(card({confirmedOutcomeStatus:'p1_win',moveCount:1,completedActionCount:0}));
+ assert.match(zero,/>0 moves</);assert.doesNotMatch(zero,/>1 move</);
+ const unknown=renderer().render(card({confirmedOutcomeStatus:'p1_win',moveCount:24}));
+ assert.doesNotMatch(unknown,/mini-board-card-meta-primary|>24 moves</);
+ const ongoing=renderer().render(card({moveCount:24}));
+ assert.match(ongoing,/>Move 25</);
 });
 
 // These original approved cases deliberately bypass normal Home normalization.
