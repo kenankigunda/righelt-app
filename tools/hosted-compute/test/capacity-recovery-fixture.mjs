@@ -1,8 +1,9 @@
 import {publicTransitionFixture} from './public-transition-fixture.mjs';
+import {approvedHost,capacityObservationFixture} from './capacity-availability-fixture.mjs';
 import {canonical,encode,sha256} from '../policy.mjs';
 const hash=v=>sha256(encode(canonical(v)));
 export async function capacityRecoveryFixture(t,options={}){
- const f=await publicTransitionFixture(t,options),core=f.core,db=await core.load();
+ const f=await publicTransitionFixture(t,{...options,host:approvedHost}),core=f.core,db=await core.load();
  // Consumer boundary: exact producer resolution is covered separately by
  // provider-refusal.test, including native evidence and fresh CAS adoption.
  const failed=structuredClone(db.campaigns[f.m.id]);failed.manifest.id='public-timing-20261116-1c3a839f';failed.manifestSha256='1'.repeat(64);failed.generation=1;failed.status='cancelled';failed.cleanupVerified=true;
@@ -17,7 +18,11 @@ export async function capacityRecoveryFixture(t,options={}){
  f.intent.cleanupReady=await f.receipt({schema:1,kind:'finite-cleanup-readiness',registry:registryRef,runtimeRevision:registry.runtimeRevision,workflowSourceSha256:'9'.repeat(64),workflowCommit:'8'.repeat(40),observedAt:f.f.now(),run:{id:123,conclusion:'success',headSha:'8'.repeat(40),results:registry.references.map((r,i)=>({prearmSha256:r.sha256,state:i===2?'waiting':'terminal',failures:0,cleanupObservedAbsent:i!==2,durableReceiptConfirmed:i!==2,usageReviewRequired:false}))}},'9');
  await core.save(db);for(const [key,value]of [...f.f.bucket.data])if(key.startsWith(f.m.id+'/'))await f.f.bucket.put(failed.manifest.id+'/'+key.slice(f.m.id.length+1),value);
  if(!options.long&&!options.diagnostic){
-  f.transition.kind='manual-capacity-recovery-public-timing-transition';f.transition.capacityRecovery={refusalReceiptSha256:'3'.repeat(64),actualSpendBasisSha256:f.intent.actualSpendBasisSha256,capacity:{observedAt:f.f.now(),validUntil:f.f.now()+900000,gpu:f.m.phases[0].host.gpu,dataCenterId:f.m.phases[0].host.dataCenterId,priorAvailability:'LOW',availability:'HIGH',evidenceSha256:'4'.repeat(64)}};
+  const catalog=await capacityObservationFixture({now:f.f.now(),hourlyCents:100});
+  // Synthetic monetary fixture preserves the existing funded100-cent/hour
+  // envelope. Native269-cent pricing is covered by the direct validator test.
+  catalog.capacity.observation.response.price.secure=1;await catalog.freeze();
+  f.transition.kind='manual-capacity-recovery-public-timing-transition';f.transition.capacityRecovery={refusalReceiptSha256:'3'.repeat(64),actualSpendBasisSha256:f.intent.actualSpendBasisSha256,capacity:catalog.capacity};
   await f.freeze();
  }
  return {...f,failed,b6,registry,registryRef};

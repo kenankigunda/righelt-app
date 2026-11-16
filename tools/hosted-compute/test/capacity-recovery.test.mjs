@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {capacityRecoveryFixture} from './capacity-recovery-fixture.mjs';
 import {canonical,encode,sha256} from '../policy.mjs';
 const hash=v=>sha256(encode(canonical(v)));
-test('fixed three-owner registry admits one frozen short while preserving original/B6 watches and consuming before credentials',async t=>{
+test('fresh filtered LOW capacity and fixed three-owner registry admit one frozen short while preserving original/B6 watches and consuming before credentials',async t=>{
  const f=await capacityRecoveryFixture(t),before=await f.core.load();let tokens=0;
  f.core.token=async()=>{tokens++;assert.equal((await f.core.load()).capacityRecoveryShort.campaignId,f.m.id);return 'private-worker-token';};
  await f.core.manualPrepare(f.m.id,f.intent);let db=await f.core.load();const marker=structuredClone(db.capacityRecoveryShort);
@@ -18,9 +18,9 @@ test('ordinary short, consumed slot, stale basis, altered workload or unqualifie
   f=>{f.transition.kind='manual-public-timing-transition';delete f.transition.capacityRecovery;},
   async f=>{const db=await f.core.load();db.capacityRecoveryShort={campaignId:'another-campaign',intentSha256:'0'.repeat(64)};await f.core.save(db);},
   async f=>{const db=await f.core.load();db.providerRefusalResolution.appliedAt=db.actualSpendBasis.observedAt;await f.core.save(db);},
-  f=>{f.transition.capacityRecovery.capacity.availability='LOW';},f=>{f.transition.capacityRecovery.capacity.availability='UNKNOWN';},
-  f=>{f.transition.capacityRecovery.capacity.gpu='different';},f=>{f.transition.capacityRecovery.capacity.dataCenterId='different';},
-  f=>{f.transition.capacityRecovery.capacity.observedAt-=900001;},
+  f=>{f.transition.capacityRecovery.capacity.observation.response.availability='NONE';},
+  f=>{f.transition.capacityRecovery.capacity.observation.query.cloud='COMMUNITY';},
+  f=>{f.transition.capacityRecovery.capacity.observationSha256='0'.repeat(64);},
   async f=>{const db=await f.core.load();db.campaigns[f.failed.manifest.id].manifest.phases[0].seconds++;await f.core.save(db);},
   async f=>{const db=await f.core.load();db.campaigns[f.failed.manifest.id].manifest.publicTiming.profilesSha256='0'.repeat(64);await f.core.save(db);},
   async f=>{const db=await f.core.load();db.providerRefusalContradictions=[{receiptSha256:'3'.repeat(64)}];await f.core.save(db);}

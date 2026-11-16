@@ -8,9 +8,9 @@ import {executionIdentity} from '../result.mjs';
 import {canonical,encode,sha256} from '../policy.mjs';
 import fixtureContract from '../fixture-contract.json' with {type:'json'};
 const hash=value=>sha256(encode(canonical(value)));
-export async function publicTransitionFixture(t,{long=false,diagnostic=false,diagnosticCap=500}={}){
+export async function publicTransitionFixture(t,{long=false,diagnostic=false,diagnosticCap=500,host}={}){
  long=long||diagnostic;
- const fixture=await publicTimingFixture(t,{sourceRevision:'e'.repeat(40),...(diagnostic?{unavailable:'diagnostic'}:{}),...(long?{time:Date.UTC(2026,10,16,diagnostic?14:17,30)}:{})}),f=fixture.f,core=f.core;
+ const fixture=await publicTimingFixture(t,{sourceRevision:'e'.repeat(40),host,...(diagnostic?{unavailable:'diagnostic'}:{}),...(long?{time:Date.UTC(2026,10,16,diagnostic?14:17,30)}:{})}),f=fixture.f,core=f.core;
  f.config.authorizedCents=2000;f.manifest.maxCents=1000;f.manifest.cash.computeUsageCapCents=1000;f.manifest.dependencySha256=fixture.manifest.dependencySha256;
  f.providers.create=async()=>{f.providers.creates++;throw Error('synthetic original lost response');};
  await f.stage();await core.start('pilot');await core.reconcile();await core.reconcile();f.advance(3600000);
@@ -29,7 +29,7 @@ export async function publicTransitionFixture(t,{long=false,diagnostic=false,dia
  const result=await upload('qualified',encode(JSON.stringify({schema:1,kind:'compute-result',disposition:'complete',passed:true,execution,completedWorkIds:fixtureContract.workIds,updates:2,parameterDelta:1,artifacts:[model,checkpoint,proof]})),'result','.ai-runs/qualified/run/result.json');
  await core.finish('qualified',1,{kind:'complete',outputs:{proof:result},files:[model,checkpoint,proof,runtime,result]});await core.reconcile();await core.reconcile();
  assert.equal((await core.load()).campaigns.qualified.status,'complete');f.advance(1000);
- const m=structuredClone(fixture.manifest);m.maxCents=diagnostic?diagnosticCap:long?500:300;m.cash.computeUsageCapCents=m.maxCents;m.cash.cloudflareUsageCapCents=50;m.deadline=f.now()+(long?3600000:900000);
+ const m=structuredClone(fixture.manifest);if(host){m.phases[0].host.quoteObservedAt=f.now();m.phases[0].host.quoteExpires=f.now()+900000;}m.maxCents=diagnostic?diagnosticCap:long?500:300;m.cash.computeUsageCapCents=m.maxCents;m.cash.cloudflareUsageCapCents=50;m.deadline=f.now()+(long?3600000:900000);
  if(long){m.phases[0].seconds=3600;for(const argv of [m.phases[0].argv,m.phases[0].resumeArgv])argv[argv.indexOf('--seconds')+1]='3600';}
  if(diagnostic){
   const planInput=m.inputs.find(a=>a.role==='public-timing-plan'),recipeInput=m.inputs.find(a=>a.role==='public-timing-execution');
@@ -47,7 +47,7 @@ export async function publicTransitionFixture(t,{long=false,diagnostic=false,dia
  const registry={schema:1,kind:'runpod-dual-cleanup-registry',runtimeRevision:'c'.repeat(40),references:[f.manifest.externalControl,m.externalControl]},registryRef={repository:'fixture/private-control',commit:'d'.repeat(40),path:`control/prearms/${'9'.repeat(32)}.json`,sha256:await hash(registry)};f.control.records.set(`${registryRef.path}@${registryRef.commit}`,registry);
  let shortTiming;
  if(long){
-  const sf=await publicTimingFixture(t,{sourceRevision:m.sourceRevision,time:f.now(),campaignId:'short-public',...(diagnostic?{unavailable:'diagnostic'}:{})}),sc=sf.f.core;await sc.stage(sf.manifest);
+  const sf=await publicTimingFixture(t,{sourceRevision:m.sourceRevision,time:f.now(),campaignId:'short-public',host,...(diagnostic?{unavailable:'diagnostic'}:{})}),sc=sf.f.core;await sc.stage(sf.manifest);
   let sd=await sc.load(),s=sd.campaigns['short-public'];s.status='running';s.generation=1;s.phaseDeadline=sf.phaseDeadline;
   s.attempts=[{provider:'runpod',name:'short-pod',resourceId:'short-pod',hourlyCents:100,startedAt:sf.f.now(),workStartedAt:sf.f.now(),leaseExpires:sf.f.now()+120000,placement:{id:'short-pod'}}];await sc.save(sd);sf.f.providers.resources.set('short-pod',{id:'short-pod',name:'short-pod',host:sf.phase.host});
   const files=[];for(const a of sf.result.artifacts){await sc.putObject('short-public',a,await sf.read(a),1);files.push(a);}
@@ -55,7 +55,7 @@ export async function publicTransitionFixture(t,{long=false,diagnostic=false,dia
   await sc.finish('short-public',1,{kind:'complete',outputs:{timing:out},files});await sc.reconcile();await sc.reconcile();
   const closed=(await sc.load()).campaigns['short-public'];assert.equal(closed.status,'complete');assert.equal(closed.cleanupVerified,true);
   db=await core.load();db.campaigns['short-public']=closed;await core.save(db);for(const [key,value]of sf.f.bucket.data)await f.bucket.put(key,value);
-  shortTiming={campaignId:'short-public',manifestSha256:closed.manifestSha256,resultSha256:out.sha256};
+  shortTiming={campaignId:'short-public',host,manifestSha256:closed.manifestSha256,resultSha256:out.sha256};
  }
  const binding=await core.actualSpendBinding(),observation={schema:1,kind:'operator-actual-spend-reconciliation',id:'5'.repeat(32),priorCampaignId:'pilot',ledgerSha256:binding.ledgerSha256,priorBasisSha256:binding.priorBasisSha256,authority:{kind:'user-actual-spend-basis-correction',evidenceSha256:'a'.repeat(64),repairCeilingCents:2000,runpodCeilingCents:10000},accountId:'test-account',observedAt:f.now(),validUntil:f.now()+900000,balance:{openingCreditCents:10000,currentCreditCents:9997,debitsCents:3,creditsCents:0,currentHourlyCents:0,autoPay:false,evidenceSha256:'b'.repeat(64)},inventory:{ordinary:{complete:true,evidenceSha256:'c'.repeat(64),resourceIds:[]},queued:{complete:true,evidenceSha256:'d'.repeat(64),resourceIds:[]}},activeResources:[]};
  const actual=await receipt(observation,'5');await core.reconcileActualSpend('pilot',actual);

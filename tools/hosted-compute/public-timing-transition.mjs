@@ -4,6 +4,7 @@ import {POLICY,assert,canonical,encode,sha256} from './policy.mjs';
 import {readOperatorReceipt} from './manual-authority.mjs';
 import {runtimeUpgradeEndpoint} from './runtime-upgrade.mjs';
 import {effectiveRefusal,refusalHeld} from './refusal-state.mjs';
+import {validateCapacityAvailability} from './capacity-availability.mjs';
 import fixture from './fixture-contract.json' with {type:'json'};
 const hex=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 const shape=(value,keys)=>value&&Object.keys(value).sort().join(',')===keys.split(',').sort().join(',');
@@ -54,8 +55,8 @@ export async function validatePublicTimingTransition(core,db,prior,c,intent){
   assert(effectiveRefusal(db,failed),'capacity refusal no longer resolves ownership');
   assert(shape(proof,'refusalReceiptSha256,actualSpendBasisSha256,capacity')&&proof.refusalReceiptSha256===resolution.receiptSha256&&proof.actualSpendBasisSha256===db.actualSpendBasis.receiptSha256&&db.actualSpendBasis.observedAt>resolution.appliedAt,'fresh actual basis after refusal resolution required');
   assert(!marker||marker.campaignId===c.manifest.id&&marker.intentSha256===await sha256(encode(canonical(intent)))&&marker.transitionSha256===intent.publicTimingTransition.sha256&&marker.refusalReceiptSha256===resolution.receiptSha256,'global capacity recovery short already consumed');
-  const capacity=proof.capacity,host=phase.host;
-  assert(shape(capacity,'observedAt,validUntil,gpu,dataCenterId,priorAvailability,availability,evidenceSha256')&&capacity.priorAvailability==='LOW'&&['MEDIUM','HIGH'].includes(capacity.availability)&&hex(capacity.evidenceSha256)&&capacity.gpu===host.gpu&&capacity.dataCenterId===host.dataCenterId&&Number.isSafeInteger(capacity.observedAt)&&capacity.observedAt<=intent.createdAt&&intent.createdAt-capacity.observedAt<=900000&&Number.isSafeInteger(capacity.validUntil)&&capacity.validUntil>=intent.expiresAt&&capacity.validUntil<=capacity.observedAt+900000&&core.now()<capacity.validUntil,'fresh improved same-cohort catalog evidence required');
+  const host=phase.host;
+  await validateCapacityAvailability(core,host,intent,proof.capacity);
   const oldPlan=await object(core,failed,failed.manifest.publicTiming.planSha256),oldPhase=failed.manifest.phases[0];
   assert(!failed.manual?.publicWork&&c.manifest.seed===failed.manifest.seed&&t.modelSha256===failed.manifest.publicTiming.modelSha256&&t.profilesSha256===failed.manifest.publicTiming.profilesSha256&&canonical(plan.schedule)===canonical(oldPlan.schedule)&&canonical(plan.profiles)===canonical(oldPlan.profiles)&&plan.accountingReserveSeconds===oldPlan.accountingReserveSeconds&&phase.seconds===oldPhase.seconds&&c.manifest.maxCents<=failed.manifest.maxCents,'recovery must retain the refused short workload and reserve');
   for(const key of ['gpu','dataCenterId','minVcpu','minRamGb','diskGb','minCudaVersion'])assert(canonical(host[key])===canonical(oldPhase.host[key]),'recovery refused cohort differs');
