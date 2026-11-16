@@ -10,7 +10,7 @@ import {executionIdentity} from '../result.mjs';
 import {canonical,encode,sha256} from '../policy.mjs';
 import fixtureContract from '../fixture-contract.json' with {type:'json'};
 const hash=value=>sha256(encode(canonical(value)));
-async function setup(t,{long=false,diagnostic=false}={}){
+async function setup(t,{long=false,diagnostic=false,diagnosticCap=500}={}){
  long=long||diagnostic;
  const fixture=await publicTimingFixture(t,{sourceRevision:'e'.repeat(40),...(diagnostic?{unavailable:'diagnostic'}:{}),...(long?{time:Date.UTC(2026,10,16,diagnostic?14:17,30)}:{})}),f=fixture.f,core=f.core;
  f.config.authorizedCents=2000;f.manifest.maxCents=1000;f.manifest.cash.computeUsageCapCents=1000;f.manifest.dependencySha256=fixture.manifest.dependencySha256;
@@ -31,7 +31,7 @@ async function setup(t,{long=false,diagnostic=false}={}){
  const result=await upload('qualified',encode(JSON.stringify({schema:1,kind:'compute-result',disposition:'complete',passed:true,execution,completedWorkIds:fixtureContract.workIds,updates:2,parameterDelta:1,artifacts:[model,checkpoint,proof]})),'result','.ai-runs/qualified/run/result.json');
  await core.finish('qualified',1,{kind:'complete',outputs:{proof:result},files:[model,checkpoint,proof,runtime,result]});await core.reconcile();await core.reconcile();
  assert.equal((await core.load()).campaigns.qualified.status,'complete');f.advance(1000);
- const m=structuredClone(fixture.manifest);m.maxCents=long?500:300;m.cash.computeUsageCapCents=m.maxCents;m.cash.cloudflareUsageCapCents=50;m.deadline=f.now()+(long?3600000:900000);
+ const m=structuredClone(fixture.manifest);m.maxCents=diagnostic?diagnosticCap:long?500:300;m.cash.computeUsageCapCents=m.maxCents;m.cash.cloudflareUsageCapCents=50;m.deadline=f.now()+(long?3600000:900000);
  if(long){m.phases[0].seconds=3600;for(const argv of [m.phases[0].argv,m.phases[0].resumeArgv])argv[argv.indexOf('--seconds')+1]='3600';}
  if(diagnostic){
   const planInput=m.inputs.find(a=>a.role==='public-timing-plan'),recipeInput=m.inputs.find(a=>a.role==='public-timing-execution');
@@ -64,7 +64,7 @@ async function setup(t,{long=false,diagnostic=false}={}){
  const attempt=await core.attemptBinding('pilot');
  const intent={schema:1,kind:'manual-ui-admission',id:'1'.repeat(32),campaignId:m.id,manifestSha256:await hash(m),sourceRevision:m.sourceRevision,priorCampaignId:'pilot',priorManifestSha256:prior.manifestSha256,priorAttempt:{generation:1,name:attempt.attempt.name,prearmSha256:attempt.attempt.prearmSha256,startedAt:attempt.attempt.startedAt},accountId:'test-account',name:prearm.launches[0].name,registry:registryRef,createdAt:f.now(),expiresAt:f.now()+300000,liabilityUntil:f.now()+(long?10800000:8100000),repairStartedAt:attempt.repairStartedAt,repairDeadline:Date.UTC(2026,10,16,18),repairMaxCents:2000,priorRiskReserveCents:0,runtimeWindowMs:86400000,fundingSha256:await hash(m.cash),actualSpendBasisSha256:actual.sha256,startup:{schema:1,kind:'confirmed-pod-startup',deadline:f.now()+900000,maximumMs:900000}};
  intent.cleanupReady=await receipt({schema:1,kind:'dual-cleanup-readiness',registry:registryRef,runtimeRevision:'c'.repeat(40),workflowSourceSha256:'9'.repeat(64),workflowCommit:'8'.repeat(40),observedAt:f.now(),run:{id:123,conclusion:'success',headSha:'8'.repeat(40),results:registry.references.map(r=>({prearmSha256:r.sha256,state:'waiting',failures:0,cleanupObservedAbsent:false,durableReceiptConfirmed:false}))}},'6');
- intent.fundingReservation=await receipt({schema:1,kind:'operator-actual-funding-freeze',basisSha256:actual.sha256,oldAttempt:{id:'pilot',manifestSha256:prior.manifestSha256,startedAt:new Date(attempt.attempt.startedAt).toISOString(),originalAllocationCents:1000,supplementalRiskHoldCents:0,protectedShutdownReserveCents:0,hourlyCeilingCents:100},newIntent:{computeAllocationCents:m.maxCents,protectedShutdownReserveCents:long?100:60,allInHourlyCeilingCents:100,host:m.phases[0].host.gpu,dataCenterId:m.phases[0].host.dataCenterId,diskGb:m.phases[0].host.diskGb,gpuCount:1,latestAdmission:new Date(f.now()+900000).toISOString(),maximumIntentMs:900000,latestWorkCutoff:new Date(m.deadline).toISOString(),responseUntil:new Date(intent.liabilityUntil).toISOString(),startupDeadline:intent.startup.deadline},aggregate:{runpodEncumberedCents:long?403:288,repairEncumberedCents:long?403:288,runpodCeilingCents:10000,repairCeilingCents:2000,cloudflareEncumberedCents:150,cloudflareCeilingCents:2000,githubPaidOverageAuthorized:false}},'7');
+ intent.fundingReservation=await receipt({schema:1,kind:'operator-actual-funding-freeze',basisSha256:actual.sha256,oldAttempt:{id:'pilot',manifestSha256:prior.manifestSha256,startedAt:new Date(attempt.attempt.startedAt).toISOString(),originalAllocationCents:1000,supplementalRiskHoldCents:0,protectedShutdownReserveCents:0,hourlyCeilingCents:100},newIntent:{computeAllocationCents:m.maxCents,protectedShutdownReserveCents:Math.ceil(m.maxCents/5),allInHourlyCeilingCents:100,host:m.phases[0].host.gpu,dataCenterId:m.phases[0].host.dataCenterId,diskGb:m.phases[0].host.diskGb,gpuCount:1,latestAdmission:new Date(f.now()+900000).toISOString(),maximumIntentMs:900000,latestWorkCutoff:new Date(m.deadline).toISOString(),responseUntil:new Date(intent.liabilityUntil).toISOString(),startupDeadline:intent.startup.deadline},aggregate:{runpodEncumberedCents:long?303+Math.ceil(m.maxCents/5):288,repairEncumberedCents:long?303+Math.ceil(m.maxCents/5):288,runpodCeilingCents:10000,repairCeilingCents:2000,cloudflareEncumberedCents:150,cloudflareCeilingCents:2000,githubPaidOverageAuthorized:false}},'7');
  const transition={schema:1,kind:'manual-public-timing-transition',scope:'public-original-incumbent-evaluation-cost',createdAt:f.now(),expiresAt:f.now()+900000,prior:runtimeUpgradeEndpoint(prior),next:publicTimingEndpoint((await core.load()).campaigns[m.id]),qualification:{campaignId:'qualified',manifestSha256:q.manifestSha256,resultSha256:result.sha256,runtimeArtifactSha256:runtime.sha256},publicInputs:{modelSha256:m.publicTiming.modelSha256,profilesSha256:m.publicTiming.profilesSha256,planSha256:m.publicTiming.planSha256,seed:m.seed},review:{sourceRevision:m.sourceRevision,proofInventorySha256:'4'.repeat(64),localEvidenceSha256:'6'.repeat(64),independentReviewSha256:'7'.repeat(64),qualificationReviewSha256:'8'.repeat(64)},historicalDisposition:'preserve-all-prior-failures-and-unknown-ownership'};
  const freeze=async()=>{intent.publicTimingTransition=await receipt(transition,'8');};await freeze();
  let publicWork;
@@ -170,4 +170,12 @@ test('a coherently shortened diagnostic phase cannot consume the marker even wit
  const authority={...f.publicWork,manifestSha256:c.manifestSha256,phaseSeconds:120};intent.publicWorkAuthority=await f.receipt(authority,'e');
  await assert.rejects(publicWorkAuthority(f.core,db,c,intent,{cutoff:c.manifest.deadline}),/declared phase cannot fit/);
  assert.equal(db.publicQualificationEscalation,undefined);assert.equal(f.f.providers.creates,1);
+});
+
+test('diagnostic complete-envelope design cap accepts1200 cents and rejects1201 without authority',async t=>{
+ const accepted=await setup(t,{diagnostic:true,diagnosticCap:1200});await accepted.core.manualPrepare(accepted.m.id,accepted.intent);
+ assert.equal((await accepted.core.load()).campaigns[accepted.m.id].manifest.maxCents,1200);
+ const rejected=await setup(t,{diagnostic:true,diagnosticCap:1201}),before=await rejected.core.load();let tokens=0;rejected.core.token=async()=>{tokens++;return 'forbidden';};
+ await assert.rejects(rejected.core.manualPrepare(rejected.m.id,rejected.intent),/diagnostic lower-bound\/budget binding/);
+ assert.deepEqual(await rejected.core.load(),before);assert.equal(tokens,0);assert.equal((await rejected.core.load()).publicQualificationEscalation,undefined);
 });
