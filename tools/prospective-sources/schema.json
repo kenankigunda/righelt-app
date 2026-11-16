@@ -51,5 +51,9 @@
   ],
   "executionModes": [
     "synthetic"
-  ]
+  ],
+  "guardValueFormats": {
+    "sha256-encoded-float32-le": "lowercase-hex-sha256",
+    "commander-geometry-alias": "simple:lowercase-hex-sha256"
+  }
 }

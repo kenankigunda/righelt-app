@@ -68,7 +68,7 @@ function validateAssignment(a){
   for(const guard of a.exposure)validateGuard(guard);
 }
 function validateGuard(g){
-  requireValue(shape(g,['domain','digest'])&&[SCHEMA.domains.encoded,SCHEMA.domains.geometry].includes(g.domain)&&hex(g.digest),'invalid-guard-domain');
+  requireValue(shape(g,['domain','value'])&&(g.domain===SCHEMA.domains.encoded&&hex(g.value)||g.domain===SCHEMA.domains.geometry&&typeof g.value==='string'&&/^simple:[a-f0-9]{64}$/.test(g.value)),'invalid-guard-domain');
 }
 
 // Custody must provide a durable compare-and-append journal and write-once raw
@@ -123,7 +123,7 @@ export async function openPreparation(assignment,{custody,primitives,now=Date.no
     const seen=new Map();
     for(const item of eligible){
       if(reserved[item.index].reservation.startKind!=='developed')continue;
-      const keys=['state:'+item.settled.stateHash,'fingerprint:'+item.settled.fingerprint,...item.settled.guards.map(g=>g.domain+':'+g.digest)];
+      const keys=['state:'+item.settled.stateHash,'fingerprint:'+item.settled.fingerprint,...item.settled.guards.map(g=>g.domain+':'+g.value)];
       for(const key of keys){if(seen.has(key)){duplicates.add(item.index);duplicates.add(seen.get(key));}else seen.set(key,item.index);}
     }
     const complete=records.length===a.attemptLimit&&records.every(x=>x.settled&&x.settled.status!=='missing');

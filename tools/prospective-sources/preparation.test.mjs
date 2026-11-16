@@ -14,7 +14,7 @@ async function fixture(t,{kinds=['developed'],partitions=kinds.map(()=> 'final')
  const registry=kinds.map((_,i)=>({id:hex(i+1),partition:partitions[i],relations:[],exposure:'unexposed'}));
  const reservations=kinds.map((startKind,i)=>({id:hex(i+100),sourceFamily:registry[i].id,parents:[],partition:partitions[i],startKind,seed:i+1000}));
  const assignment={context:{authoritySha256:hex(910),producer:{revision:'a'.repeat(40),codeSha256:implementationCodeSha256,dependencySha256:hex(911),configSha256:hex(912),runtimeSha256:hex(913)},schema:structuredClone(schemaIdentity),primitives:structuredClone(primitiveIdentity),custody:structuredClone(custody.identity),registrySha256:hash(registry),exposureSha256:hash([]),selection:SCHEMA.selection,continuationMaximum:0,executionMode:'synthetic'},deadline:2000,attemptLimit:reservations.length,reservations,registry,exposure:[]};
- const calls=[],primitives={identity:primitiveIdentity,async construct({command,seed}){calls.push({command,seed});const normal=command==='canonical-normal';return raw({type:normal?'canonical-normal':'opening-generated',initial:normal,state:{synthetic:true,privateMarker:'SYNTHETIC_RAW_STATE',seed:normal?0:seed},actions:normal?[]:['synthetic-action'],fingerprint:normal?'normal-root':'synthetic-'+seed});},async verify({command,state,startKind}){calls.push({command});return raw({ongoing:true,initial:startKind==='normal',fingerprint:startKind==='normal'?'normal-root':'synthetic-'+state.seed,stateHash:hash(state),constructionSha256:hash({synthetic:state}),guards:startKind==='normal'?[]:[{domain:'sha256-encoded-float32-le',digest:hash({encoded:state})},{domain:'commander-geometry-alias',digest:hash({geometry:state})}]});}};
+ const calls=[],primitives={identity:primitiveIdentity,async construct({command,seed}){calls.push({command,seed});const normal=command==='canonical-normal';return raw({type:normal?'canonical-normal':'opening-generated',initial:normal,state:{synthetic:true,privateMarker:'SYNTHETIC_RAW_STATE',seed:normal?0:seed},actions:normal?[]:['synthetic-action'],fingerprint:normal?'normal-root':'synthetic-'+seed});},async verify({command,state,startKind}){calls.push({command});return raw({ongoing:true,initial:startKind==='normal',fingerprint:startKind==='normal'?'normal-root':'synthetic-'+state.seed,stateHash:hash(state),constructionSha256:hash({synthetic:state}),guards:startKind==='normal'?[]:[{domain:'sha256-encoded-float32-le',value:hash({encoded:state})},{domain:'commander-geometry-alias',value:'simple:'+hash({geometry:state})}]});}};
  let now=1000,nonce=10000;
  const services={custody,primitives,now:()=>now,nonceFactory:()=>hex(++nonce)};
  const refresh=()=>{assignment.context.registrySha256=hash(assignment.registry);assignment.context.exposureSha256=hash(assignment.exposure);};
@@ -61,13 +61,13 @@ test('unresolved or exposed lineage quarantines its whole component and null fam
 });
 test('developed duplicate roots or guard aliases cannot earn distinct family credit',async t=>{
  const f=await fixture(t,{kinds:['developed','developed']}),verify=f.primitives.verify;
- f.primitives.verify=async args=>{const v=JSON.parse(await verify(args));v.guards[1].digest=hex(999);return raw(v);};
+ f.primitives.verify=async args=>{const v=JSON.parse(await verify(args));v.guards[1].value='simple:'+hex(999);return raw(v);};
  const p=await f.open();await p.next();const output=await p.next();assert.equal(output.selected.length,0);assert.deepEqual(output.attempts.map(x=>x.reason),['duplicate-developed-source','duplicate-developed-source']);
 });
 test('guard hashes keep their domains and actual protected collisions reject without waivers',async t=>{
  for(const domain of ['sha256-encoded-float32-le','commander-geometry-alias']){
-  const f=await fixture(t),verify=f.primitives.verify;f.assignment.exposure=[{domain,digest:hex(999)}];f.refresh();
-  f.primitives.verify=async args=>{const v=JSON.parse(await verify(args));v.guards[0].digest=hex(999);return raw(v);};
+  const f=await fixture(t),verify=f.primitives.verify;f.assignment.exposure=[{domain,value:(domain==='commander-geometry-alias'?'simple:':'')+hex(999)}];f.refresh();
+  f.primitives.verify=async args=>{const v=JSON.parse(await verify(args));v.guards[0].value=hex(999);return raw(v);};
   const p=await f.open(),output=await p.next();assert.equal(output.attempts[0].status,domain==='sha256-encoded-float32-le'?'rejected':'eligible');
  }
 });

@@ -19,5 +19,6 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
+          package-manager-cache: false
       - name: Synthetic metadata and private-custody regressions
         run: node --test tools/prospective-sources/preparation.test.mjs
