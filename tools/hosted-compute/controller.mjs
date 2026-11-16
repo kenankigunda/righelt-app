@@ -5,6 +5,7 @@ import { cashPlan,cloudflareCoverage } from './cash.mjs';
 import { validateScientificAdmission } from './experiment.mjs';
 import { verifyResult } from './result.mjs';
 import { providerFailureDiagnostic } from './providers.mjs';
+import {prepareManual,attachManual,checkManualLiability} from './manual-admission.mjs';
 import { POLICY, TERMINAL, assert, artifact, canonical, encode, safeName, sha256, validateManifest, reserveCents } from './policy.mjs';
 
 const stopping = new Set(['stopping', 'cleanup-uncertain']);
@@ -14,6 +15,18 @@ export class Controller {
   }
   async load() { return await this.storage.get('ledger') ?? { schema: 1, campaigns: {}, months: {} }; }
   async save(db) { await this.storage.put('ledger', db); }
+  manualPrepare(id,intent){return prepareManual(this,id,intent);}
+  manualAttach(id,body){return attachManual(this,id,body);}
+  async manualReady(id,generation){
+    const db=await this.load(),c=this.campaign(db,id);
+    assert(c.manual&&c.generation===generation,'manual bootstrap owner differs');
+    const until=Math.min(c.manual.intent.createdAt+300000,c.manual.intent.expiresAt);
+    let ready=false;
+    if(c.manual.attached&&c.attempts.at(-1)?.placement&&this.now()<until){
+      this.fence(c,generation);checkManualLiability(this,db,c);ready=true;
+    }
+    return {ready,until};
+  }
   campaign(db, id) { assert(safeName(id) && db.campaigns[id], 'campaign not found'); return db.campaigns[id]; }
   event(c, type, detail = {}) {
     const last = c.events.at(-1);
@@ -24,7 +37,8 @@ export class Controller {
     return { id: c.manifest.id, manifestSha256: c.manifestSha256, status: c.status, phase: c.manifest.phases[c.phase]?.id,
       phaseIndex: c.phase, generation: c.generation, estimatedCents: this.cost(c), capCents: c.manifest.maxCents,
       deadline: c.manifest.deadline, failure: c.failure, cleanupVerified: !!c.cleanupVerified,
-      snapshot: c.snapshot ?? null, latestLog: c.latestLog ?? null, outputs: c.outputs, events: c.events, cleared: !!c.cleared };
+      programAnchor:c.programAnchor??null, snapshot: c.snapshot ?? null, latestLog: c.latestLog ?? null, outputs: c.outputs, events: c.events, cleared: !!c.cleared,
+      ...(c.manual?{manual:{intentSha256:c.manual.intentSha256,campaignDeadline:c.manual.campaignDeadline??null,acceptedAt:c.manual.attached?.acceptedAt??null,priorCampaignId:c.manual.intent.priorCampaignId}}:{}) };
   }
   cost(c) {
     return Math.ceil(c.attempts.reduce((sum, a) => sum + Math.max(0, (a.endedAt ?? this.now()) - a.startedAt) * a.hourlyCents / 3600000, 0));
@@ -40,6 +54,7 @@ export class Controller {
   async start(id) {
     const db = await this.load(), c = this.campaign(db, id), now = this.now();
     if (c.status !== 'staged') return this.status(c);
+    if(db.manualProgram){assert(c.manifest.deadline<=db.manualProgram.deadline&&now<db.manualProgram.deadline,'overall actual program deadline exceeded');c.programAnchor=structuredClone(db.manualProgram);}
     assert(this.config.enabled === true && this.config.authorizedCents >= c.manifest.maxCents, 'paid compute is not activated or authorized');
     assert(c.manifest.deadline > now && c.manifest.deadline - now <= POLICY.campaignMs, 'pilot deadline must be within 24 hours');
     assert(!Object.values(db.campaigns).some(x => x !== c && !TERMINAL.has(x.status) && x.status !== 'staged'), 'another campaign owns compute');
@@ -93,6 +108,9 @@ export class Controller {
     assert(c.generation === generation && ['provisioning', 'running'].includes(c.status) && a &&
       this.now() < (a.leaseExpires ?? a.startedAt + POLICY.startupMs) && this.now() < c.manifest.deadline &&
       (!c.phaseDeadline || this.now() < c.phaseDeadline), 'worker fenced');
+    assert(!c.manual||c.manual.attached&&this.now()<c.manual.campaignDeadline,'manual worker fenced');
+    assert(!c.manual||a.workStartedAt||this.now()<c.manual.intent.expiresAt,'manual startup expired');
+    assert(!c.manual||this.config.enabled===true&&this.config.authorizedCents>=c.manual.requiredAuthorizationCents,'manual authorization revoked');
     assert(!a.cutoff || this.now() < a.cutoff, 'external funded cutoff reached');
   }
   durabilityAt(c, attempt) {
@@ -102,6 +120,7 @@ export class Controller {
     return c.manifest.phases[c.phase].kind !== 'training' || c.snapshot?.phaseIndex === c.phase;
   }
   async qualifyAttempt(db,c) {
+    checkManualLiability(this,db,c);
     const a=c.attempts.at(-1),phase=c.manifest.phases[c.phase];
     if(!a.placement){
       const record=await this.providers.inspect(a.provider,a.resourceId);
@@ -134,7 +153,7 @@ export class Controller {
       this.event(c, 'recovery-complete');
     }
     c.lastHeartbeat = this.now(); c.status = 'running';
-    a.workStartedAt ??= this.now(); c.phaseDeadline ??= this.now() + phase.seconds * 1000;
+    a.workStartedAt ??= this.now(); c.phaseDeadline ??= Math.min(this.now() + phase.seconds * 1000,c.manual?.campaignDeadline??Infinity);
     a.leaseExpires = Math.min(this.now() + POLICY.leaseMs, c.manifest.deadline, c.phaseDeadline, a.cutoff ?? Infinity); await this.save(db);
     return { leaseExpires: a.leaseExpires, phaseDeadline:c.phaseDeadline };
   }
@@ -244,6 +263,12 @@ export class Controller {
   }
   async step(db, c) {
     const now = this.now(), phase = c.manifest.phases[c.phase], a = c.attempts.at(-1);
+    if(c.manual){
+      try{checkManualLiability(this,db,c);}catch{c.status='stopping';c.nextStatus='failed';c.failure='manual-liability-or-repair-exhausted';}
+      if(c.status==='manual-pending'&&now<c.manual.intent.expiresAt&&now<a.cutoff)return;
+      if(c.status==='manual-pending'){c.status='stopping';c.nextStatus='failed';c.failure='manual-admission-expired';}
+      if(c.manual.campaignDeadline&&now>=c.manual.campaignDeadline){c.status='stopping';c.nextStatus='failed';c.failure='manual-program-deadline';}
+    }
     if (now >= c.manifest.deadline || (a?.cutoff && now >= a.cutoff) || this.cost(c) >= c.manifest.maxCents - reserveCents(c.manifest.maxCents) || !this.config.enabled) {
       c.status = 'stopping'; c.nextStatus = 'failed'; c.failure = 'deadline-budget-or-disabled';
     }
@@ -285,6 +310,7 @@ export class Controller {
       c.status = 'queued'; c.recovering = true;
     }
     if (c.status !== 'queued') return;
+    assert(!c.manual,'manual campaign cannot create a provider resource');
     if (!this.config.enabled || phase.host.quoteExpires <= now || (c.phaseDeadline && now >= c.phaseDeadline)) {
       c.status = 'failed'; c.failure = 'admission-quote-or-deadline'; await this.save(db); return;
     }
