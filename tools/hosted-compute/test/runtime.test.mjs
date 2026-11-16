@@ -48,3 +48,12 @@ test('actual worker child retains CUDA configuration while excluding operator cr
  const seen=JSON.parse(await fs.readFile(path.join(root,'.ai-runs/pilot/run/hosted-1.log'),'utf8'));
  for(const name of keys.slice(0,5))assert.equal(seen[name],environment[name]);for(const name of keys.slice(5))assert.equal(seen[name],null);
 });
+test('actual worker child receives the bound process session without logging it or accepting an ambient substitute',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'righelt-child-session-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const f=await fixture();f.manifest.phases[0].device='cpu';f.manifest.phases[0].argv=[process.execPath,'-e',`process.exit(process.env.COMPUTE_STARTUP_SESSION==='${'a'.repeat(32)}'?17:18)`];
+ await f.launch();await fs.writeFile(path.join(root,'.compute-source.json'),JSON.stringify({sourceRevision:f.manifest.sourceRevision,dependencySha256:f.manifest.dependencySha256}));
+ const client={startupSessionId:'a'.repeat(32),json:async(action,body)=>action==='work'?f.core.work('pilot',1):action==='heartbeat'?f.core.heartbeat('pilot',1,body):action==='progress'?f.core.progress('pilot',1,body):action==='finish'?f.core.finish('pilot',1,body):Promise.reject(Error('unexpected action')),
+  upload:async raw=>f.core.putObject('pilot',{name:await sha256(raw),sha256:await sha256(raw),bytes:raw.length},raw,1),download:async a=>new Uint8Array(await (await f.bucket.get(`pilot/${a.sha256}`)).arrayBuffer())};
+ const result=await runWorker({root,env:{PATH:process.env.PATH,HOME:root,COMPUTE_STARTUP_SESSION:'b'.repeat(32)},client,clock:f.now,cleanup:async()=>{}});
+ assert.equal(result.exitCode,17);assert.equal(await fs.readFile(path.join(root,'.ai-runs/pilot/run/hosted-1.log'),'utf8'),'');
+});

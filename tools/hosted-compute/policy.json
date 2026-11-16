@@ -21,5 +21,21 @@
   "maxReplacementAttempts": 2,
   "maxPhases": 12,
   "cleanupEveryMs": 300000,
-  "cleanupJobMinutes": 5
+  "cleanupJobMinutes": 5,
+  "publicTiming": {
+    "schema": 1,
+    "purpose": "public-performance-timing",
+    "planKind": "original-incumbent-public-timing-plan",
+    "recipeKind": "public-timing-execution-recipe",
+    "resultKind": "public-performance-timing-result",
+    "proofKind": "public-performance-timing-proof",
+    "reportKind": "public-performance-timing-report",
+    "maxGameSeconds": 3600,
+    "incumbent": {
+      "id": "trained-20261029-1086",
+      "sha256": "f5b0f38763f290eaecf7f1958738342bb327f42efe95b5021b1f59b2b78f8a0f",
+      "bytes": 322842,
+      "checkpointSha256": "fece7b0b299f3980e257c6c1f29e6f5e5162e32026d73875e78e6c38719c4e44"
+    }
+  }
 }

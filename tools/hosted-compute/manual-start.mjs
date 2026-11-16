@@ -14,6 +14,7 @@ const limit=Math.min(requested,Date.now()+${MANUAL_STARTUP_MS});
 const claim=cold?{podId:process.env.RUNPOD_POD_ID,intentSha256:process.env.COMPUTE_MANUAL_INTENT_SHA256,sessionId:randomBytes(16).toString('hex')}:undefined;
 if(cold&&(!/^[A-Za-z0-9_-]+$/.test(claim.podId??'')||!/^[a-f0-9]{64}$/.test(claim.intentSha256??'')))throw Error('Manual startup identity unavailable');
 const client=new Client({url:process.env.COMPUTE_URL,id:process.env.COMPUTE_ID,token:process.env.COMPUTE_WORKER_TOKEN,generation:Number(process.env.COMPUTE_GENERATION),fetcher:(url,options)=>fetch(url,{...options,headers:{...options.headers,...(cold?{'x-compute-startup-session':claim.sessionId}:{})}})});
+if(cold)Object.defineProperty(client,'startupSessionId',{value:claim.sessionId});
 let ready=false;
 while(Date.now()<limit){
   try{const answer=await client.json('manual-ready',claim);if(!Number.isSafeInteger(answer.until)||Date.now()>=Math.min(limit,answer.until))break;if(answer.ready===true){ready=true;break;}}catch{}

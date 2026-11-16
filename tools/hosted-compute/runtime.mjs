@@ -1,6 +1,6 @@
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {assert,canonical,encode,sha256} from './policy.mjs';
+import {POLICY,assert,canonical,encode,sha256} from './policy.mjs';
 import arithmeticPolicy from '../ai-trainer/righelt_training/arithmetic-policy-v1.json' with {type:'json'};
 const exec=promisify(execFile);
 export function runtimeEnvironment(env={}) {
@@ -21,6 +21,7 @@ export async function verifyRuntime(record,identity,manifest) {
   assert(math&&math.policyApplied===true&&canonical(math.policy)===canonical(arithmeticPolicy)&&['global','cudaMatmul','cudnn','cudnnConvolution'].every(key=>math.precision?.[key]==='ieee')&&math.autocast?.cpu===false&&math.autocast?.cuda===false&&math.cudnnEnabled===true,'actual common IEEE FP32 arithmetic required');
   assert(typeof record.driverVersion==='string'&&/^\d+(?:\.\d+)+$/.test(record.driverVersion)&&typeof record.gpuName==='string'&&record.gpuName.length>0&&Array.isArray(record.computeCapability)&&record.computeCapability.length===2&&record.computeCapability.every(Number.isSafeInteger)&&Number.isSafeInteger(record.gpuMemoryBytes)&&record.gpuMemoryBytes>0,'CUDA driver/hardware identity incomplete');
   const runtimeSha256=await sha256(encode(canonical(record)));
+  if(manifest.purpose===POLICY.publicTiming.purpose)assert(runtimeSha256===manifest.publicTiming.qualifiedRuntimeSha256,'public timing qualified runtime changed');
   if(manifest.mode==='unattended')assert(runtimeSha256===manifest.runtimeSha256,'actual qualified CUDA runtime changed');
   return {runtimeSha256,record};
 }

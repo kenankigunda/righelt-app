@@ -1,0 +1,55 @@
+# Public original-incumbent timing
+
+This is performance readiness. It does not admit scientific families, choose a candidate, run training, change weights or establish strength. The original public incumbent is frozen in `policy.json`: `trained-20261029-1086`, ONNX SHA256 `f5b0f38763f290eaecf7f1958738342bb327f42efe95b5021b1f59b2b78f8a0f`, 322842 bytes. Its retained checkpoint identity is metadata, not an input to this workload. Both seats use those same exported weights on actual CPU ONNX Runtime with one intra/inter-op thread. Seat duplicates are diagnostic coverage, not independent strength games.
+
+Current common engine/search and authoritative Babs/Tau/Horus profiles are separately source-bound. A common search correction can change behavior without being learned improvement or an exact historical production replica. Normal starts use the canonical rules construction with zero warmup. No family ID or train/validation/final partition is manufactured.
+
+## Build and prepare
+
+The new entrypoint, public engine gate, result contract and child-session channel require a new reviewed source-only image. Do not relabel the earlier9f fixture image. Root owns image build/import qualification, the actual host/cohort observation, accounts, funding, cleanup and paid admission. The CUDA/IEEE kernel probe still runs before input hydration and must match the exact qualified runtime record. GPU allocation does not mean GPU inference.
+
+Before any paid Pod, run `RIGHELT_HOSTED=1 python -m righelt_training.public_timing --verify-import` inside that exact image. It verifies the audited source inventory and imports the actual arena, CPU ORT, start and durable-request modules. It loads no model and runs no kernel. Preserve that limited import receipt and the separately required image identity proof.
+
+Use a clean checkout at the exact built image revision. Root supplies a private template with exactly these fields:
+
+| Field | Required meaning |
+| --- | --- |
+| `schema`, `purpose` | `1`, `public-performance-timing` |
+| `campaignId` | Root's distinct new campaign identity |
+| `phaseSeconds` | Root's original bounded phase duration, within the existing manual limit |
+| `accountingReserveSeconds` | Explicit positive reserve inside that duration for accounting/publication |
+| `qualifiedRuntimeSha256` | Canonical hash of the independently accepted actual6000 runtime record |
+| `schedule` | Root's finite ordered work items, each with `id`, `profile`, `referenceSeat`, unsigned32 `seed`, and `gameSeconds` |
+
+There are no default work counts, seed choices, allocation values or automatic replacement jobs. Missing profile/seat cells stay explicit. Prepare only after the actual image and template have been reviewed:
+
+```sh
+PYTHONPATH=tools/ai-trainer python3 -m righelt_training.public_timing \
+  --prepare-template PRIVATE_TEMPLATE_JSON \
+  --image-identity EXACT_BUILT_IMAGE_IDENTITY_JSON \
+  --output NEW_PRIVATE_DIRECTORY
+```
+
+The source-only command checks exact clean source/image producer identity, authoritative profile/start metadata and the approved model bytes. It loads no model, executes no game and contacts no provider/controller. It creates three mode0600 input files inside a new mode0700 directory and writes `preparation.json`. The receipt includes exact input hashes, the execution recipe, `publicTiming` binding and the admitted phase/argv. Its image/template commitments explicitly use canonical JSON. CLI output distinguishes the canonical receipt hash from physical file SHA. Preparation grants no launch or scientific authority.
+
+Root then supplies the actual host/quote, cash, deadline and authorization fields in a `purpose: public-performance-timing`, `mode: supervised-qualification` manifest. Copy the receipt's source/dependency/recipe/publicTiming/input/phase bindings. Do not add checkpoint, corpus, portable historical closure, attention, D1, teacher, development or final inputs. The phase is one CUDA-hosted `benchmark`; inference remains CPU ORT. Its only completion predicates are accounting complete, strength false and scientific admission false. Scope coverage is reported separately and cannot gate honest partial accounting into a fabricated full pass.
+
+## Explicit admission
+
+Direct automatic start is unavailable. Manual preparation requires fresh actual-spend evidence and the existing funded startup/session authority, plus a private immutable `manual-public-timing-transition` receipt. The transition binds the unresolved original owner, exact new endpoint/public inputs, actual completed-and-cleaned CUDA fixture result/runtime, same cohort/dependencies, new source/image and independent source/qualification review. Prior failures, unknown ownership, fences and original repair/program clocks remain unchanged. The receipt does not promote the fixture's newly trained export into the original incumbent.
+
+Existing private staging, dual cleanup readiness, exact inspected Pod attachment, finite startup, process-session claim and funding rules still apply. The same bound Node Client privately passes its session to Python requests. It is never printed, copied into ordinary artifacts or replaced from an ambient environment value. No controller fence is relaxed.
+
+## Accounting and verification
+
+`public_timing` wraps the existing `arena.play_game`, `ExportedModel`, authoritative start check and replay verifier. The shared durability path has an explicit public-purpose branch that rejects scientific lineage. Raw local and remote completion precede verification. Original game measurements are stored with that raw record, and final measurements are separately consumed. Recovery reuses retained work and preserves its original time. It cannot report a fast recovery read as the original game time. Missing measurements remain lower bounds.
+
+Every planned ID has complete, unfinished, failed or unstarted accounting. A truncated game remains unfinished even when replay is valid. Only verified terminal whole games enter completed timing. Reports distinguish accounting, profile/seat scope and original timing coverage. They include model startup, normal-start preparation, inference, engine/game wall time, replay verification, worker startup/probe/hydration and all attempted work. Raw controller/continuation work stays in retained game/decision evidence. It does not automatically qualify the separate developed/full-board, long/repetition or continuation readiness slots.
+
+The producer cannot know cleanup or final billed resource cost before it exits. Those fields explicitly remain `pending-operator-cleanup-and-billing`. Root closes them using actual accepted/start/termination/absence observations and fresh balance evidence before feasibility or numerical learning allocation is frozen. No zero cleanup cost, refund, full-cap spend or optimistic timeout throughput is invented.
+
+The controller independently verifies the typed result, original phase/work deadlines and accounting reserve, exact recipe/model/runtime, every work receipt, raw/start/replay/measurement bindings and reconstructed profile/seat coverage. A single accounting result does not authorize another stage or model promotion.
+
+## Validation boundary
+
+Local contract tests use synthetic service/player/inference fixtures. The cross-language fixture copies the already approved public ONNX bytes solely to bind input checksums; it does not load the model. Native engine protocol tests stop at a tiny explicit deadline before inference. Actual CPU ORT whole-game timing, all-in resource cost and the new image's target-host proof remain separate Root-owned acceptance.
