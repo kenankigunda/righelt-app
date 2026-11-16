@@ -39,6 +39,20 @@ export function requireFreshArchiveProof(receipt,{revision,generation,origin,wor
  assert.equal(receipt.workerBuild,workerBuild,'Canary Worker deployment changed');
  assert.ok(receipt.commands.length>=15&&receipt.resumed&&receipt.twoSockets,'Incomplete archive canary');
 }
+// The archived game remains read-only while the canary verifies replay data.
+export async function verifyArchivedCanaryHistory({request,route,identityId,before,commands,loaded}){
+ assert.ok(commands[0]?.expectedState,'Missing known initial canary state');
+ const history=await request(route+'/decision-history',{identityId,protocolVersion:2});
+ assert.equal(history.nextCursor??null,null,'Canary history exceeds its expected single page');
+ assert.deepEqual(history.items?.find(entry=>entry.kind==='initial')?.state,commands[0].expectedState,'Archived initial state changed');
+ const decisions=history.items?.filter(entry=>entry.kind==='decision').map(entry=>entry.move);
+ assert.deepEqual(decisions,before.moves,'Archived decision records changed');
+ const live=await request(route+'?identityId='+encodeURIComponent(identityId));
+ assert.equal(live.eventSeq,loaded.eventSeq,'History read changed the event revision');
+ assert.equal(live.game.gameplayRevision,before.revision,'History read changed the gameplay revision');
+ assert.deepEqual(live.game.board.state,before.board,'History read changed the live board');
+ assert.deepEqual(live.game.moves,before.moves,'History read changed live history');
+}
 export async function runArchiveCanary({action,receiptPath,origin,revision,apply=false},{fetcher=fetch,run=(command,args)=>execFileSync(command,args,{encoding:'utf8',env:{...process.env,CI:'true'},stdio:['ignore','pipe','pipe']})}={}){
  assert.ok(['prepare','age','status','verify','promotion-check'].includes(action),'Unknown canary action');
  assert.match(revision,/^[a-f0-9]{40}$/);assert.equal(new URL(origin).origin,origin);assert.ok(origin.startsWith('https://'));
@@ -107,8 +121,7 @@ export async function runArchiveCanary({action,receiptPath,origin,revision,apply
  assert.equal((await request('/api/shell/invites/'+receipt.before.invite)).gameId,receipt.gameId);
  const catalog=await request('/api/shell/games?identityId=smoke-player&section=smoke&debug=1&page=0&pageSize=20');
  assert.ok(JSON.stringify(catalog).includes(receipt.gameId),'Canary missing from Home catalog');
- assert.equal((await request(route+'/history',{identityId:receipt.identityId,moveIndex:0})).game.inHistoryMode,true);
- assert.equal((await request(route+'/live',{identityId:receipt.identityId})).game.inHistoryMode,false);
+ await verifyArchivedCanaryHistory({request,route,identityId:receipt.identityId,before:receipt.before,commands:receipt.commands,loaded});
  assert.equal(status().status,'archived');assert.equal(status().retention_activity_at,stored.retention_activity_at,'Read-only work renewed retention');
  const archivedSocket=await recoverySocketSnapshot({origin,gameId:receipt.gameId,identityId:receipt.identityId,generation});assert.equal(archivedSocket.game.moves.length,15);assert.equal(status().status,'archived');
  receipt.archiveVerified=true;save(receipt);
