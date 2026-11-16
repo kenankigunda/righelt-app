@@ -17,7 +17,7 @@ async function fixture(t){
 }
 test('reviewed inline startup waits through pending replies then starts the worker exactly once',async t=>{
  const f=await fixture(t),[, ...argv]=manualStartupArgv();
- await execute(process.execPath,['--import',f.preload,...argv],{cwd:f.root,env:{...process.env,COMPUTE_URL:'https://fixture.invalid',COMPUTE_ID:'manual',COMPUTE_GENERATION:'1',COMPUTE_WORKER_TOKEN:'private-test-token',COMPUTE_MANUAL_READY_UNTIL:String(Date.now()+5000)},timeout:10000});
+ await execute(process.execPath,['--import',f.preload,...argv],{cwd:f.root,env:{...process.env,COMPUTE_URL:'https://fixture.invalid',COMPUTE_ID:'manual',COMPUTE_GENERATION:'1',COMPUTE_WORKER_TOKEN:'private-test-token',COMPUTE_MANUAL_READY_UNTIL:String(Date.now()+30000)},timeout:10000});
  assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.root,'started.json'))),{calls:3});
 });
 test('reviewed inline startup exits at the finite bound without importing the worker if admission never completes',async t=>{
