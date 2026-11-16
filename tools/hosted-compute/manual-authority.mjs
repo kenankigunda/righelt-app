@@ -5,6 +5,7 @@ const registries=new WeakSet();
 const digest=/^[a-f0-9]{64}$/;
 const revision=/^[a-f0-9]{40}$/;
 export const MANUAL_INTENT_MS=300000;
+export const MANUAL_REPAIR_END=Date.UTC(2026,10,16,18);
 export const MANUAL_STARTUP_MS=POLICY.startupMs;
 export function manualStartupUntil(c){
   return c.manual.intent.startup?c.manual.startupDeadline??c.manual.intent.expiresAt:Math.min(c.manual.intent.createdAt+MANUAL_INTENT_MS,c.manual.intent.expiresAt);
@@ -57,7 +58,7 @@ export function validateManualIntent(intent){
   if(Object.hasOwn(intent,'startup')){const s=intent.startup;assert(s&&typeof s==='object'&&!Array.isArray(s)&&Object.keys(s).sort().join(',')==='deadline,kind,maximumMs,schema'&&s.schema===1&&s.kind==='confirmed-pod-startup'&&s.maximumMs===MANUAL_STARTUP_MS&&Number.isSafeInteger(s.deadline)&&s.deadline>intent.createdAt&&s.deadline<=intent.expiresAt+MANUAL_STARTUP_MS&&s.deadline<=intent.repairDeadline,'typed finite confirmed-Pod startup required');}
   // Explicitly scoped authorization for this repair. It does not alter worker
   // policy or extend any old manifest, prearm, lease or campaign deadline.
-  assert(intent.repairDeadline>intent.repairStartedAt&&intent.repairDeadline<=Date.UTC(2026,10,16,18)&&Number.isSafeInteger(intent.repairMaxCents)&&intent.repairMaxCents>0&&intent.repairMaxCents<=POLICY.pilotCents&&Number.isSafeInteger(intent.priorRiskReserveCents)&&intent.priorRiskReserveCents>=0,'manual repair authorization exceeded');
+  assert(intent.repairDeadline>intent.repairStartedAt&&intent.repairDeadline<=MANUAL_REPAIR_END&&Number.isSafeInteger(intent.repairMaxCents)&&intent.repairMaxCents>0&&intent.repairMaxCents<=POLICY.pilotCents&&Number.isSafeInteger(intent.priorRiskReserveCents)&&intent.priorRiskReserveCents>=0,'manual repair authorization exceeded');
   const a=intent.priorAttempt;
   assert(a&&Object.keys(a).sort().join(',')==='generation,name,prearmSha256,startedAt'&&Number.isSafeInteger(a.generation)&&Number.isSafeInteger(a.startedAt)&&typeof a.name==='string'&&digest.test(a.prearmSha256),'exact prior attempt binding required');
   return intent;

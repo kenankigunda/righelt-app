@@ -60,4 +60,17 @@ for(const cold of [false,true])test(`real admin routes privately bootstrap and a
  const ledger=await(await mf.dispatchFetch('https://compute.example/fixture-ledger')).json();assert.deepEqual(ledger.campaigns.pilot.attempts[0],f.old);assert.equal(ledger.creditAllocatedCents,2000);assert.equal(ledger.manualProgram.deadline,f.intent.createdAt+86400000);
  await assert.rejects(worker.json('manual-attach',body),/rejected \(409\)/);
  await assert.rejects(worker.json('attempt-binding'),/rejected \(409\)/);
+ const binding=await admin.json('program-window-binding'),beforeAmend=(await(await mf.dispatchFetch('https://compute.example/fixture-ledger')).json());
+ const amendment={schema:1,kind:'operator-program-deadline-amendment',id:'a'.repeat(32),createdAt:f.now(),expiresAt:f.now()+900000,
+  expectedBindingSha256:binding.bindingSha256,original:binding.original,newDeadline:1794891540000,
+  authority:{kind:'user-approved-program-deadline-extension',evidenceSha256:'b'.repeat(64)},preserveExistingAuthorities:true};
+ const reference=await f.receipt(amendment,'a');
+ await assert.rejects(worker.json('program-window-binding'),/rejected/);await assert.rejects(worker.json('program-window-amend',reference),/rejected/);
+ const refFile=path.join(directory,'program-amendment-reference.json');await fs.writeFile(refFile,JSON.stringify(reference),{mode:0o600});
+ const applied=await main(['program-window-amend','ui','--receipt',refFile],{COMPUTE_URL:'https://compute.example',COMPUTE_ADMIN_TOKEN:'private-admin'},{fetcher});
+ assert.equal(applied.program.deadline,1794891540000);assert.equal((await admin.json('program-window-amend',reference)).idempotent,true);
+ const afterAmend=await(await mf.dispatchFetch('https://compute.example/fixture-ledger')).json();
+ assert.deepEqual(afterAmend.campaigns,beforeAmend.campaigns);assert.equal(afterAmend.manualProgram.acceptedAt,beforeAmend.manualProgram.acceptedAt);
+ assert.equal(afterAmend.programDeadlineAmendments.length,1);assert.equal(posts,0);
+
 });
