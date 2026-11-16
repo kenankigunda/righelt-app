@@ -12,7 +12,7 @@ export async function spendBinding(db){
     phase:c.phase,failure:c.failure??null,repairStartedAt:operatorAttemptBinding(c).repairStartedAt,programAnchor:c.programAnchor??null,
     cleanupVerified:c.cleanupVerified,attempts:c.attempts,manual:c.manual??null})).sort((a,b)=>a.id.localeCompare(b.id));
   const state={campaigns,cashFunding:db.cashFunding??null,creditAllocatedCents:db.creditAllocatedCents??0,pilotReservedCents:db.pilotReservedCents??0,
-    manualRiskHolds:db.manualRiskHolds??{},manualFundingReservations:db.manualFundingReservations??{},manualProgram:db.manualProgram??null,
+    manualRiskHolds:db.manualRiskHolds??{},manualFundingReservations:db.manualFundingReservations??{},manualProgram:db.manualProgram??null,publicQualificationEscalation:db.publicQualificationEscalation??null,
     priorBasisSha256:db.actualSpendBasis?.receiptSha256??null};
   return {schema:1,kind:'actual-spend-binding',ledgerSha256:await hash(state),priorBasisSha256:state.priorBasisSha256,
     financialBasis:db.actualSpendBasis?'verified-account-observation':'legacy-reservations',observedDebitCents:db.actualSpendBasis?.observedDebitCents??null,

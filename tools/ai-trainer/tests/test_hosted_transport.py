@@ -73,6 +73,16 @@ class HostedTransportTest(unittest.TestCase):
             with self.assertRaises(receipts.HostedInfrastructureError):receipts._safe_read('objects/'+'a'*64)
             self.assertEqual(remote.call_count,2)
 
+    def test_pending_preflight_reads_only_metadata_without_create_or_game_objects(self):
+        calls=[]
+        def remote(action,payload=None,**kwargs):
+            calls.append((action,payload));self.assertEqual(action,'claim');self.assertFalse(payload['allowCreate'])
+            return {'created':False,'record':{'generation':1,'result':{'sha256':'a'*64,'bytes':999999}}}
+        with patch.object(receipts,'request',remote):self.assertFalse(receipts.evaluation_pending('public',['one','two']))
+        self.assertEqual(len(calls),2)
+        with patch.object(receipts,'request',return_value={'created':False,'unclaimed':True}) as remote:
+            self.assertTrue(receipts.evaluation_pending('public',['new','unused']));self.assertEqual(remote.call_count,1)
+
     def test_malformed_controller_json_is_a_contract_failure_not_transport_retry(self):
         import io
         with patch.dict(receipts.os.environ,{'COMPUTE_URL':'https://compute.example','COMPUTE_ID':'public','COMPUTE_WORKER_TOKEN':'private','COMPUTE_GENERATION':'1'}):

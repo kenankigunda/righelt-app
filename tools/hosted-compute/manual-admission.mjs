@@ -116,6 +116,7 @@ export async function prepareManual(core,id,intent){
   const actual=Boolean(db.actualSpendBasis),envelope=actual?actualEnvelope(core,db,c,intent):null;
   assert(actual?envelope.requiredCents<=cash.fundedCreditCents:(db.creditAllocatedCents??0)+c.manifest.maxCents+additionalRisk<=cash.fundedCreditCents&&(db.pilotReservedCents??0)+c.manifest.maxCents+additionalRisk<=core.config.authorizedCents,'manual cumulative credit/authorization exhausted');
   assert((db.cloudflareAllocatedCents??0)+cloudflareUsageCapCents<=cash.cloudflareReservedCents,'manual cumulative Cloudflare reserve exhausted');
+  if(publicWork?.diagnostic&&!db.publicQualificationEscalation)db.publicQualificationEscalation={campaignId:id,intentSha256,receiptSha256:publicWork.receiptSha256,preparedAt:now,programAcceptedAt:db.manualProgram.acceptedAt};
   c.manual={intent:structuredClone(intent),intentSha256,...(publicWork?{publicWork:structuredClone(publicWork)}:{})};
   if(actual)c.manual.actualSpendBasisSha256=db.actualSpendBasis.receiptSha256;
   c.attempts.push({manual:true,provider:'runpod',name:authority.name,quote:structuredClone(host),hourlyCents:host.hourlyCents,startedAt:intent.createdAt,cutoff:authority.cutoff,prearmSha256:authority.prearmSha256,uncertain:true});

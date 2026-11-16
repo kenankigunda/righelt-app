@@ -180,8 +180,10 @@ def execute(plan,directory,execution,work_ids,*,context,seconds,barrier,profiles
     expected=start_expected(schedule,seconds=max(.001,min(10,deadline-clock()))) if clock()<deadline else None
     if expected is not None:require(len(expected)==len(schedule) and all(job['startIdentity']==root for job,root in zip(schedule,expected)),'canonical zero-warmup start differs')
     preparation_ms=max(0.,clock()-preparation_started)*1000
+    namespace='public-timing:'+execution['manifestSha256']+':'+execution['phase']
+    pending=expected is not None and clock()<deadline and barrier.evaluation_pending(namespace,work_ids)
     model_started=clock();model=None;model_failure=False;model_error=False
-    if expected is None or clock()>=deadline:model_failure=True
+    if expected is None or clock()>=deadline or not pending:model_failure=True
     else:
         try:model=model_factory(plan['model'])
         except Exception:model_failure=True;model_error=True
@@ -189,7 +191,6 @@ def execute(plan,directory,execution,work_ids,*,context,seconds,barrier,profiles
     models={seat:MeasuredModel(model,seat,clock) for seat in ('P1','P2')} if model else {}
     runtime=model.runtime if model else {'kind':'unavailable','reason':'model-load-failed'}
     receipts=[];attempts=[];paths=[];stop_category=None;stop_work_id=None
-    namespace='public-timing:'+execution['manifestSha256']+':'+execution['phase']
     def save(path,value,role):
         write(path,value);a=artifact(path,role)
         if not any(prior['path']==a['path'] for prior in paths):paths.append(a)
@@ -201,6 +202,16 @@ def execute(plan,directory,execution,work_ids,*,context,seconds,barrier,profiles
         attempt_start=clock();before={seat:(m.calls,m.seconds) for seat,m in models.items()}
         decision_path=directory/'decisions'/str(execution['generation'])/(key+'.jsonl')
         current={**base,'status':'unstarted','reason':'model-load-failed' if model_failure else 'original-budget','elapsedMs':0.,'inferenceMs':0.,'completedWholeGame':False}
+        if stop_category is not None:
+            retained=barrier.evaluation_claim(namespace,job['id'],create=False)
+            if not retained.get('unclaimed'):
+                raw=retained.get('result');current.update(status='unfinished',reason='queue-stopped-consumed-work',timingComplete=False)
+                if raw is not None:
+                    save(directory/'retained'/str(execution['generation'])/(key+'.json'),raw,'raw')
+                    measured=raw.get('publicTimingMeasurements')
+                    if measured:
+                        current.update(publicTimingMeasurements=measured,elapsedMs=measured['elapsedUntilRawMs'],inferenceMs=measured['inferenceMs'],inferenceCalls=measured['inferenceCalls'])
+                        if model is None:runtime=measured['inferenceRuntime']
         if stop_category is None:
             profile=profiles['profiles'][job['profile']]
             versions={seat:plan['model']['sha256'] for seat in ('P1','P2')}
@@ -230,6 +241,7 @@ def execute(plan,directory,execution,work_ids,*,context,seconds,barrier,profiles
                     a=artifact(retained,'verification' if 'verification' in Path(retained).parts else 'raw')
                     if not any(prior['path']==a['path'] for prior in paths):paths.append(a)
                 current.update(record)
+                if record.get('reason')=='consumed-without-settlement':stop_category='retained-custody-incomplete';stop_work_id=job['id']
                 current.update(completedWholeGame=record['status']=='complete',startVerified=record.get('engineReplayVerified') is True,
                     termination=record.get('game',{}).get('termination'),verificationMs=verification_seconds*1000)
                 # The exact raw game remains in its own immutable artifact.
@@ -280,6 +292,7 @@ def execute(plan,directory,execution,work_ids,*,context,seconds,barrier,profiles
             cells.append({'profile':name,'referenceSeat':seat,'planned':len(rows),
                 **{status:sum(a['status']==status for a in rows) for status in ('complete','unfinished','failed','unstarted')}})
     if model_error:stop_category='model-startup-failure'
+    elif model is None and any(a['status'] in ('unfinished','failed') and not a.get('publicTimingMeasurements') for a in attempts):stop_category='retained-custody-incomplete'
     completed=[a for a in attempts if a['status']=='complete']
     report={'schema':1,'kind':TIMING['reportKind'],'accountingComplete':True,'scopeCoverageComplete':all(c['complete']>0 for c in cells) and all(sum(a.get('inferenceCalls',{}).get(seat,0) for a in attempts)>0 for seat in ('P1','P2')),
         'strengthEstablished':False,'scientificAdmission':False,'queueStopped':stop_category is not None,'stopCategory':stop_category,'stopWorkId':stop_work_id,'completedWholeGames':len(completed),'scopeCells':cells,

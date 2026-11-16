@@ -83,6 +83,19 @@ def _upload(raw):
     return uploaded
 
 
+def evaluation_pending(namespace,identities):
+    """Inspect claim metadata only. No new consumption or game-object reads."""
+    if not enabled():return True
+    for identity in identities:
+        key=hashlib.sha256((namespace+':'+identity).encode()).hexdigest()
+        try:record=request('claim',{'key':key,'allowCreate':False},record_failure=False)
+        except HostedInfrastructureError:record=request('claim',{'key':key,'allowCreate':False})
+        if record.get('created') is not False:raise ValueError('read-only claim metadata differs')
+        if record.get('unclaimed'):return True
+        if not isinstance(record.get('record'),dict):raise ValueError('read-only claim metadata missing')
+    return False
+
+
 def evaluation_claim(namespace, identity, *, create=True):
     if not enabled(): return {'created':True} if create else {'created':False,'unclaimed':True}
     key=hashlib.sha256((namespace+':'+identity).encode()).hexdigest()

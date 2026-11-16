@@ -47,7 +47,8 @@ test('actual controller completes, retains and cleans a bound public timing acco
 });
 
 test('unavailable model retains unstarted accounting and aborts without inferred work',async t=>{
- const f=await synthetic(t,{unavailable:true});await assert.rejects(f.verify(f.result),/typed completed result required/);
+ const failed=await synthetic(t,{unavailable:true});await assert.rejects(failed.verify(failed.result),/typed completed result required/);
+ const f=await synthetic(t,{unavailable:'expired'});await f.verify(f.result);
  assert.deepEqual(f.result.completedWorkIds,[]);assert.equal(f.result.scopeCoverageComplete,false);
  const attempt=f.result.artifacts.find(a=>a.role==='attempt'),original=JSON.parse(await f.read(attempt));
  for(const change of [a=>a.status='failed',a=>a.inferenceMs=1,a=>a.inferenceCalls={P1:1,P2:0},a=>a.timingComplete=true]){

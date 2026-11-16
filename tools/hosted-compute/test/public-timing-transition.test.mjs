@@ -1,3 +1,4 @@
+import {publicWorkAuthority} from '../public-work.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {promises as fs} from 'node:fs';
@@ -9,8 +10,9 @@ import {executionIdentity} from '../result.mjs';
 import {canonical,encode,sha256} from '../policy.mjs';
 import fixtureContract from '../fixture-contract.json' with {type:'json'};
 const hash=value=>sha256(encode(canonical(value)));
-async function setup(t,{long=false}={}){
- const fixture=await publicTimingFixture(t,{sourceRevision:'e'.repeat(40),...(long?{time:Date.UTC(2026,10,16,17,30)}:{})}),f=fixture.f,core=f.core;
+async function setup(t,{long=false,diagnostic=false}={}){
+ long=long||diagnostic;
+ const fixture=await publicTimingFixture(t,{sourceRevision:'e'.repeat(40),...(diagnostic?{unavailable:'diagnostic'}:{}),...(long?{time:Date.UTC(2026,10,16,diagnostic?14:17,30)}:{})}),f=fixture.f,core=f.core;
  f.config.authorizedCents=2000;f.manifest.maxCents=1000;f.manifest.cash.computeUsageCapCents=1000;f.manifest.dependencySha256=fixture.manifest.dependencySha256;
  f.providers.create=async()=>{f.providers.creates++;throw Error('synthetic original lost response');};
  await f.stage();await core.start('pilot');await core.reconcile();await core.reconcile();f.advance(3600000);
@@ -31,6 +33,14 @@ async function setup(t,{long=false}={}){
  assert.equal((await core.load()).campaigns.qualified.status,'complete');f.advance(1000);
  const m=structuredClone(fixture.manifest);m.maxCents=long?500:300;m.cash.computeUsageCapCents=m.maxCents;m.cash.cloudflareUsageCapCents=50;m.deadline=f.now()+(long?3600000:900000);
  if(long){m.phases[0].seconds=3600;for(const argv of [m.phases[0].argv,m.phases[0].resumeArgv])argv[argv.indexOf('--seconds')+1]='3600';}
+ if(diagnostic){
+  const planInput=m.inputs.find(a=>a.role==='public-timing-plan'),recipeInput=m.inputs.find(a=>a.role==='public-timing-execution');
+  const plan=JSON.parse(await fs.readFile(path.join(fixture.root,planInput.path)));plan.schedule=plan.schedule.slice(-1);
+  const raw=encode(canonical(plan));planInput.sha256=await sha256(raw);planInput.bytes=raw.length;await fs.writeFile(path.join(fixture.root,planInput.path),raw);
+  const recipe=JSON.parse(await fs.readFile(path.join(fixture.root,recipeInput.path)));recipe.planSha256=planInput.sha256;
+  const recipeRaw=encode(canonical(recipe));recipeInput.sha256=await sha256(recipeRaw);recipeInput.bytes=recipeRaw.length;await fs.writeFile(path.join(fixture.root,recipeInput.path),recipeRaw);
+  m.publicTiming.planSha256=planInput.sha256;m.recipeSha256=planInput.sha256;m.executionRecipeSha256=recipeInput.sha256;m.phases[0].planSha256=planInput.sha256;m.phases[0].workIds=plan.schedule.map(j=>j.id);
+ }
  const prearm=await f.arm(m,'4'.repeat(32));await core.stage(m);
  for(const a of m.inputs)await core.putObject(m.id,a,await fs.readFile(path.join(fixture.root,a.path)));
  db=await core.load();db.manualProgram={acceptedAt:f.now()-60000,deadline:f.now()-60000+86400000,campaignId:'qualified',intentSha256:'f'.repeat(64)};await core.save(db);const anchor=structuredClone(db.manualProgram);
@@ -39,7 +49,7 @@ async function setup(t,{long=false}={}){
  const registry={schema:1,kind:'runpod-dual-cleanup-registry',runtimeRevision:'c'.repeat(40),references:[f.manifest.externalControl,m.externalControl]},registryRef={repository:'fixture/private-control',commit:'d'.repeat(40),path:`control/prearms/${'9'.repeat(32)}.json`,sha256:await hash(registry)};f.control.records.set(`${registryRef.path}@${registryRef.commit}`,registry);
  let shortTiming;
  if(long){
-  const sf=await publicTimingFixture(t,{sourceRevision:m.sourceRevision,time:f.now(),campaignId:'short-public'}),sc=sf.f.core;await sc.stage(sf.manifest);
+  const sf=await publicTimingFixture(t,{sourceRevision:m.sourceRevision,time:f.now(),campaignId:'short-public',...(diagnostic?{unavailable:'diagnostic'}:{})}),sc=sf.f.core;await sc.stage(sf.manifest);
   let sd=await sc.load(),s=sd.campaigns['short-public'];s.status='running';s.generation=1;s.phaseDeadline=sf.phaseDeadline;
   s.attempts=[{provider:'runpod',name:'short-pod',resourceId:'short-pod',hourlyCents:100,startedAt:sf.f.now(),workStartedAt:sf.f.now(),leaseExpires:sf.f.now()+120000,placement:{id:'short-pod'}}];await sc.save(sd);sf.f.providers.resources.set('short-pod',{id:'short-pod',name:'short-pod',host:sf.phase.host});
   const files=[];for(const a of sf.result.artifacts){await sc.putObject('short-public',a,await sf.read(a),1);files.push(a);}
@@ -58,7 +68,13 @@ async function setup(t,{long=false}={}){
  const transition={schema:1,kind:'manual-public-timing-transition',scope:'public-original-incumbent-evaluation-cost',createdAt:f.now(),expiresAt:f.now()+900000,prior:runtimeUpgradeEndpoint(prior),next:publicTimingEndpoint((await core.load()).campaigns[m.id]),qualification:{campaignId:'qualified',manifestSha256:q.manifestSha256,resultSha256:result.sha256,runtimeArtifactSha256:runtime.sha256},publicInputs:{modelSha256:m.publicTiming.modelSha256,profilesSha256:m.publicTiming.profilesSha256,planSha256:m.publicTiming.planSha256,seed:m.seed},review:{sourceRevision:m.sourceRevision,proofInventorySha256:'4'.repeat(64),localEvidenceSha256:'6'.repeat(64),independentReviewSha256:'7'.repeat(64),qualificationReviewSha256:'8'.repeat(64)},historicalDisposition:'preserve-all-prior-failures-and-unknown-ownership'};
  const freeze=async()=>{intent.publicTimingTransition=await receipt(transition,'8');};await freeze();
  let publicWork;
- if(long){publicWork={schema:1,kind:'finite-public-work-authority',id:'b'.repeat(32),createdAt:f.now(),expiresAt:f.now()+900000,campaignId:m.id,manifestSha256:await hash(m),sourceRevision:m.sourceRevision,publicTiming:m.publicTiming,phaseSeconds:3600,admissionDeadline:f.now()+900000,executionDeadline:m.deadline,timingQualification:shortTiming,review:{localEvidenceSha256:'a'.repeat(64),independentReviewSha256:'b'.repeat(64),qualifiedTimingCostSha256:'c'.repeat(64)},historicalDisposition:'preserve-all-prior-authorities-and-failures'};intent.publicWorkAuthority=await receipt(publicWork,'b');}
+ if(long){publicWork={schema:1,kind:'finite-public-work-authority',id:'b'.repeat(32),createdAt:f.now(),expiresAt:f.now()+900000,campaignId:m.id,manifestSha256:await hash(m),sourceRevision:m.sourceRevision,publicTiming:m.publicTiming,phaseSeconds:3600,admissionDeadline:f.now()+900000,executionDeadline:m.deadline,timingQualification:shortTiming,review:{localEvidenceSha256:'a'.repeat(64),independentReviewSha256:'b'.repeat(64),qualifiedTimingCostSha256:'c'.repeat(64)},historicalDisposition:'preserve-all-prior-authorities-and-failures'};if(diagnostic){
+   const priorShort=(await core.load()).campaigns['short-public'];
+   const sfPlan=await core.bucket.get('short-public/'+priorShort.manifest.publicTiming.planSha256);const oldPlan=JSON.parse(new TextDecoder().decode(new Uint8Array(await sfPlan.arrayBuffer())));
+   const oldResult=JSON.parse(new TextDecoder().decode(new Uint8Array(await (await core.bucket.get('short-public/'+shortTiming.resultSha256)).arrayBuffer())));
+   publicWork.kind='public-qualification-escalation';publicWork.escalation={priorPlanSha256:priorShort.manifest.publicTiming.planSha256,priorResultSha256:shortTiming.resultSha256,priorReportSha256:oldResult.artifacts.find(a=>a.role==='report').sha256,workIdentity:oldPlan.schedule.at(-1),selectionRule:'prior-frozen-last-item',terminationReserveSeconds:60,disposition:'lower-bound-only-no-completed-throughput',prospectiveCeilingCents:m.maxCents};
+  }
+  intent.publicWorkAuthority=await receipt(publicWork,'b');}
  return {...fixture,f,core,m,prior,anchor,intent,transition,freeze,publicWork,receipt};
 }
 test('typed public timing admission uses exact completed cohort and fresh actual funding without resetting ownership or clocks',async t=>{
@@ -120,4 +136,29 @@ test('finite public authority cannot renew the five-minute attachment, startup o
   for(let i=0;i<59;i++){f.f.advance(60000);await f.core.heartbeat(f.m.id,1);}
   f.f.advance(60000);await assert.rejects(f.core.heartbeat(f.m.id,1));assert.equal((await f.core.load()).campaigns[f.m.id].manual.campaignDeadline,f.publicWork.executionDeadline);
  }
+});
+
+test('one online diagnostic uses only the frozen last unclaimed item and consumes its marker before any create',async t=>{
+ const f=await setup(t,{diagnostic:true}),before=await f.core.load();
+ await f.core.manualPrepare(f.m.id,f.intent);const prepared=await f.core.load();
+ assert.equal(prepared.publicQualificationEscalation.campaignId,f.m.id);assert.equal(prepared.publicQualificationEscalation.receiptSha256,f.intent.publicWorkAuthority.sha256);
+ assert.equal(f.f.providers.creates,1);assert.equal(f.f.providers.resources.size,0);assert.deepEqual(prepared.campaigns.pilot,before.campaigns.pilot);
+ const duplicate=await f.core.manualPrepare(f.m.id,f.intent);assert.equal(duplicate.generation,1);assert.deepEqual((await f.core.load()).publicQualificationEscalation,prepared.publicQualificationEscalation);
+ await f.core.cancel(f.m.id);const stopped=await f.core.load();assert.deepEqual(stopped.publicQualificationEscalation,prepared.publicQualificationEscalation);
+ const changed={...f.intent,id:'2'.repeat(32),publicWorkAuthority:await f.receipt({...f.publicWork,id:'e'.repeat(32)},'e')};
+ await assert.rejects(publicWorkAuthority(f.core,stopped,stopped.campaigns[f.m.id],changed,{cutoff:f.m.deadline}),/one diagnostic escalation/);
+});
+test('diagnostic rejects consumed or claimed items, changed identity/bound, late execution, cost and selection changes',async t=>{
+ const cases=[f=>f.publicWork.escalation.workIdentity.seed++,f=>f.publicWork.escalation.workIdentity.startIdentity.stateHash='0'.repeat(64),
+  f=>f.publicWork.escalation.workIdentity.gameSeconds++,f=>f.publicWork.escalation.selectionRule='choose-any-unused',
+  f=>f.publicWork.executionDeadline=Date.UTC(2026,10,16,18)+1,f=>f.publicWork.escalation.prospectiveCeilingCents=1001,
+  f=>f.publicWork.escalation.terminationReserveSeconds=0,f=>f.publicWork.phaseSeconds=3601];
+ for(const change of cases){
+  const f=await setup(t,{diagnostic:true});change(f);f.intent.publicWorkAuthority=await f.receipt(f.publicWork,'c');const before=await f.core.load();let tokens=0;f.core.token=async()=>{tokens++;return 'forbidden';};
+  await assert.rejects(f.core.manualPrepare(f.m.id,f.intent));assert.deepEqual(await f.core.load(),before);assert.equal(tokens,0);
+ }
+ const f=await setup(t,{diagnostic:true}),db=await f.core.load(),q=db.campaigns['short-public'];
+ const key=await sha256(encode('public-timing:'+q.manifestSha256+':'+q.manifest.phases[0].id+':'+f.m.phases[0].workIds[0]));
+ q.claims={[key]:{generation:1,at:f.f.now(),phaseIndex:0}};await f.core.save(db);
+ await assert.rejects(f.core.manualPrepare(f.m.id,f.intent),/durable consumption/);assert.equal((await f.core.load()).publicQualificationEscalation,undefined);
 });
