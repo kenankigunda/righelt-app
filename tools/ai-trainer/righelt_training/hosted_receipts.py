@@ -6,6 +6,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 import time
+import re
 
 
 class HostedInfrastructureError(RuntimeError):
@@ -30,13 +31,15 @@ def request(action, payload=None, *, raw=None, method=None):
     base = os.environ['COMPUTE_URL'].rstrip('/')
     if not base.startswith('https://'):
         raise ValueError('hosted controller requires HTTPS')
+    session=os.environ.get('COMPUTE_STARTUP_SESSION')
+    if session is not None and not re.fullmatch('[a-f0-9]{32}',session):raise ValueError('invalid private worker session')
     req = urllib.request.Request(
         base + '/v1/' + os.environ['COMPUTE_ID'] + '/' + action,
         data=raw if raw is not None else json.dumps(payload, allow_nan=False).encode() if payload is not None else None,
         method=method or ('GET' if payload is None and raw is None else 'POST'),
         headers={'Authorization': 'Bearer ' + os.environ['COMPUTE_WORKER_TOKEN'],
                  'X-Compute-Generation': os.environ['COMPUTE_GENERATION'],
-                 'Content-Type': 'application/json'})
+                 'Content-Type': 'application/json',**({'X-Compute-Startup-Session':session} if session is not None else {})})
     try:
         with urllib.request.urlopen(req, timeout=10) as response:
             return response.read() if method == 'GET' else json.load(response)

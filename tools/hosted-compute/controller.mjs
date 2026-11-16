@@ -76,6 +76,7 @@ export class Controller {
   async start(id) {
     const db = await this.load(), c = this.campaign(db, id), now = this.now();
     if (c.status !== 'staged') return this.status(c);
+    assert(c.manifest.purpose!==POLICY.publicTiming.purpose,'public timing requires explicit manual funding and qualification');
     assert(!db.actualSpendBasis,'actual-spend mode requires explicit manual funding');
     if(db.manualProgram){assert(c.manifest.deadline<=db.manualProgram.deadline&&now<db.manualProgram.deadline,'overall actual program deadline exceeded');c.programAnchor=structuredClone(db.manualProgram);}
     assert(this.config.enabled === true && this.config.authorizedCents >= c.manifest.maxCents, 'paid compute is not activated or authorized');
@@ -157,7 +158,7 @@ export class Controller {
     await this.qualifyAttempt(db,c);
     return { manifest: c.manifest, manifestSha256: c.manifestSha256, phaseIndex: c.phase, generation,
       phase: c.manifest.phases[c.phase], resume: c.attempts.at(-1)?.recovery === true, snapshot: c.snapshot ?? null, previousOutputs: c.outputs,
-      leaseExpires: this.now() + POLICY.leaseMs };
+      leaseExpires: this.now() + POLICY.leaseMs,...(c.manifest.purpose===POLICY.publicTiming.purpose?{lifecycle:{acceptedAt:c.manual?.attached?.acceptedAt??null,startupVerifiedAt:c.manual?.startupSession?.verifiedAt??null,controllerWorkGrantedAt:this.now()}}:{}) };
   }
   async heartbeat(id, generation, proof = {}) {
     const db = await this.load(), c = this.campaign(db, id); this.fence(c, generation);
@@ -244,7 +245,7 @@ export class Controller {
       for (const name of phase.outputs) {
         const a = artifact(result.outputs?.[name]); assert(c.objects[a.sha256]?.bytes === a.bytes, 'required output not uploaded');
         const raw = new Uint8Array(await (await this.bucket.get(`${id}/${a.sha256}`)).arrayBuffer());
-        await verifyResult(JSON.parse(new TextDecoder().decode(raw)), { manifest: c.manifest, manifestSha256: c.manifestSha256, phase, generation, snapshot: c.snapshot, expect: phase.expect[name], rawSha256: a.sha256, read: async record => {
+        await verifyResult(JSON.parse(new TextDecoder().decode(raw)), { manifest: c.manifest, manifestSha256: c.manifestSha256, phase, generation,phaseDeadline:c.phaseDeadline,snapshot: c.snapshot, expect: phase.expect[name], rawSha256: a.sha256, read: async record => {
           assert(result.files?.some(f => f.path === record.path && f.sha256 === record.sha256 && f.bytes === record.bytes), 'result missing from run inventory');
           return new Uint8Array(await (await this.bucket.get(`${id}/${record.sha256}`)).arrayBuffer());
         } });

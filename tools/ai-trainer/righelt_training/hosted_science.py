@@ -86,8 +86,8 @@ def execution_objects(execution):
     return context,read
 
 
-def authoritative_profiles():
-    return json.loads(subprocess.check_output(['node','--import','tsx','tools/ai-trainer/public-evaluation-profiles.mjs'],cwd=ROOT,text=True))
+def authoritative_profiles(*,seconds=10):
+    return json.loads(subprocess.check_output(['node','--import','tsx','tools/ai-trainer/public-evaluation-profiles.mjs'],cwd=ROOT,text=True,timeout=seconds))
 
 
 def validate_schedule(plan,profiles,work_ids,execution):

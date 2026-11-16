@@ -1,3 +1,4 @@
+import hostedPolicy from '../hosted-compute/policy.json' with {type:'json'};
 import { readFileSync } from 'node:fs';
 import { experimentConfig } from '../../packages/computer-player/src/index.ts';
 
@@ -12,7 +13,7 @@ const generationCeilingMs = Math.max(experimentConfig.resources.initialSeconds,
 
 export function jobBudgetMs(job) {
   const budgetMs = job.budgetMs === undefined ? defaultBudgetMs : job.budgetMs;
-  const ceiling = job.command === 'generate' && job.partition === 'train'
+  const ceiling = job.command==='arena'&&job.purpose===hostedPolicy.publicTiming.purpose?hostedPolicy.publicTiming.maxGameSeconds*1000:job.command === 'generate' && job.partition === 'train'
     ? generationCeilingMs
     : job.command === 'arena' && job.partition === 'validation'
       && job.evaluationWorkload === followupPolicy.workload

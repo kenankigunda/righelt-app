@@ -22,11 +22,12 @@ export function artifact(a) {
 }
 export function validateManifest(m) {
   assert(m?.schema === 1 && safeName(m.id) && m.id.length <= 40, 'invalid campaign identity');
-  for (const key of ['sourceRevision', 'dependencySha256', 'checkpointSha256', 'corpusSha256', 'recipeSha256', 'executionRecipeSha256']) {
+  const publicTiming=m.purpose===POLICY.publicTiming.purpose;
+  for (const key of ['sourceRevision','dependencySha256','recipeSha256','executionRecipeSha256',...(publicTiming?[]:['checkpointSha256','corpusSha256'])]) {
     assert(new RegExp(key === 'sourceRevision' ? '^[a-f0-9]{40}$' : '^[a-f0-9]{64}$').test(m[key]), `missing ${key}`);
   }
   assert(typeof m.authorizationReference === 'string' && m.authorizationReference.length >= 8, 'explicit spending authorization reference required');
-  assert(Number.isSafeInteger(m.seed) && ['reliability-pilot','scientific-comparison'].includes(m.purpose), 'explicit supported campaign purpose required');
+  assert(Number.isSafeInteger(m.seed) && ['reliability-pilot','scientific-comparison',POLICY.publicTiming.purpose].includes(m.purpose), 'explicit supported campaign purpose required');
   assert(Number.isSafeInteger(m.maxCents) && m.maxCents > 0 && m.maxCents <= POLICY.pilotCents, 'invalid pilot cap');
   assert(['supervised-qualification','unattended'].includes(m.mode),'explicit pilot mode required');
   cashPlan(m.cash,m.maxCents);
@@ -36,7 +37,7 @@ export function validateManifest(m) {
   m.inputs.forEach(a => { artifact(a); assert(safeRunPath(a.path), 'input must have an explicit run-relative path'); });
   assert(new Set(m.inputs.map(a => a.path)).size === m.inputs.length, 'duplicate input path');
   assert(new Set(m.inputs.map(a => a.name)).size === m.inputs.length, 'duplicate input name');
-  assert(m.inputs.some(a => a.sha256 === m.checkpointSha256) && m.inputs.some(a => a.sha256 === m.corpusSha256) && m.inputs.some(a => a.sha256 === m.recipeSha256), 'checkpoint, corpus and recipe must be in input inventory');
+  if(!publicTiming)assert(m.inputs.some(a => a.sha256 === m.checkpointSha256) && m.inputs.some(a => a.sha256 === m.corpusSha256) && m.inputs.some(a => a.sha256 === m.recipeSha256), 'checkpoint, corpus and recipe must be in input inventory');
   assert(m.inputs.some(a => a.sha256 === m.executionRecipeSha256), 'execution recipe input required');
   if(m.portableClosureSha256!==undefined) assert(/^[a-f0-9]{64}$/.test(m.portableClosureSha256)&&m.inputs.some(a=>a.sha256===m.portableClosureSha256),'portable closure must be a frozen input');
   if(m.purpose==='scientific-comparison'){
@@ -91,5 +92,21 @@ export function validateManifest(m) {
     assert(typeof h.minCudaVersion==='string' && /^\d+\.\d+$/.test(h.minCudaVersion),'explicit compatible minimum CUDA driver capability required');
     assert(typeof h.quoteReference==='string' && h.quoteReference.length>=8 && Number.isSafeInteger(h.quoteObservedAt) && h.quoteObservedAt<h.quoteExpires, 'actual quote evidence required');
   }
+  if(publicTiming)validatePublicTimingManifest(m);
   return structuredClone(m);
+}
+
+
+function validatePublicTimingManifest(m){
+  const t=m.publicTiming,fields=['schema','modelSha256','profilesSha256','planSha256','producerSha256','qualifiedRuntimeSha256'];
+  assert(t&&Object.keys(t).sort().join(',')===fields.sort().join(',')&&t.schema===POLICY.publicTiming.schema&&fields.filter(k=>k!=='schema').every(k=>/^[a-f0-9]{64}$/.test(t[k])),'typed public timing identity required');
+  assert(m.mode==='supervised-qualification'&&m.scientific===undefined&&m.developmentEvidence===undefined&&m.portableClosureSha256===undefined&&m.checkpointSha256===undefined&&m.corpusSha256===undefined,'public timing cannot carry scientific or training inputs');
+  assert(t.modelSha256===POLICY.publicTiming.incumbent.sha256&&m.inputs.some(a=>a.role==='public-incumbent-model'&&a.bytes===POLICY.publicTiming.incumbent.bytes),'frozen original public incumbent required');
+  const roles={'public-incumbent-model':t.modelSha256,'public-timing-plan':t.planSha256,'public-timing-execution':m.executionRecipeSha256};
+  assert(m.inputs.length===3&&m.inputs.every(a=>roles[a.role]===a.sha256)&&new Set(m.inputs.map(a=>a.role)).size===3&&m.recipeSha256===t.planSha256,'exact public-only timing input inventory required');
+  assert(m.phases.length===1,'one bounded public timing phase required');
+  const p=m.phases[0],plan=m.inputs.find(a=>a.role==='public-timing-plan');
+  assert(p.kind==='benchmark'&&p.device==='cuda'&&p.planSha256===t.planSha256&&p.outputs.length===1,'public timing benchmark phase required');
+  for(const [index,argv]of[p.argv,p.resumeArgv].entries())assert(canonical(argv)===canonical(['tools/ai-trainer/.venv/bin/python','-m','righelt_training.public_timing','--plan',plan.path,'--run-dir',p.runDir,'--seconds',String(p.seconds),...(index?['--resume']:[])]),'public timing must use its exact admitted entrypoint');
+  const name=p.outputs[0];assert(p.outputPaths[name]===p.runDir+'/result.json'&&canonical(p.expect[name])===canonical({accountingComplete:true,strengthEstablished:false,scientificAdmission:false}),'public timing acceptance must preserve partial scope accounting');
 }

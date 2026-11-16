@@ -76,32 +76,37 @@ async function hydrate(client, root, files) {
 export async function runWorker({ env = process.env, root = process.cwd(), client, clock = Date.now, cleanup, snapshotter, runtimeProbe=probeRuntime } = {}) {
   root = await fs.realpath(root);
   client ??= new Client({ url: env.COMPUTE_URL, id: env.COMPUTE_ID, token: env.COMPUTE_WORKER_TOKEN, generation: Number(env.COMPUTE_GENERATION) });
+  const workerStartedAt=Date.now(),workFetchStarted=performance.now();
   const work = await client.json('work'), { manifest, phase } = work;
+  const timing={workerStartedAt,workFetchMs:performance.now()-workFetchStarted,...(work.lifecycle??{})};
   assert(await sha256(encode(canonical(manifest))) === work.manifestSha256, 'campaign manifest changed');
   const imageIdentity = JSON.parse(await fs.readFile(path.join(root, '.compute-source.json'), 'utf8'));
   assert(imageIdentity.sourceRevision === manifest.sourceRevision && imageIdentity.dependencySha256 === manifest.dependencySha256, 'container/source provenance mismatch');
   let runtime;
   if(phase.device==='cuda'){
-    try{runtime=await verifyRuntime(await runtimeProbe(root,env),imageIdentity,manifest);}
+    const probeStarted=performance.now();
+    try{runtime=await verifyRuntime(await runtimeProbe(root,env),imageIdentity,manifest);timing.runtimeProbeMs=performance.now()-probeStarted;}
     catch{
       await client.json('finish',{kind:'correctness',outputs:{},files:[]});
       return {kind:'correctness',exitCode:null,reason:'unqualified CUDA runtime before input hydration'};
     }
   }
+  const hydrationStarted=performance.now();
   await hydrate(client, root, manifest.inputs);
+  timing.inputHydrationMs=performance.now()-hydrationStarted;
   if (work.snapshot) await hydrate(client, root, work.snapshot.files);
   if(runtime)await fs.writeFile(await containedFile(root,`${phase.runDir}/runtime-${work.generation}.json`,{createParents:true}),canonical(runtime)+'\n',{flag:'wx',mode:0o600});
   // Completed durable phase evidence is reusable, with its original identity.
   // Do not rerun immutable jobs or relabel it as work from this generation.
   if (work.snapshot?.phaseIndex === work.phaseIndex && phase.outputs.every(name => work.snapshot.files.some(f => f.path === phase.outputPaths[name]))) {
-    await client.json('heartbeat', { restoredSnapshotId: work.snapshot.id });
+    const restored=await client.json('heartbeat', { restoredSnapshotId: work.snapshot.id });
     const outputs = {};
     try {
       for (const name of phase.outputs) {
         const a = work.snapshot.files.find(f => f.path === phase.outputPaths[name]);
         const raw = await fs.readFile(await containedFile(root, a.path));
         assert(await sha256(raw) === a.sha256, 'restored receipt changed');
-        await verifyResult(JSON.parse(raw), { manifest, manifestSha256: work.manifestSha256, phase, generation: work.generation, snapshot: work.snapshot, expect: phase.expect[name], rawSha256: a.sha256, read: async record => fs.readFile(await containedFile(root, record.path)) });
+        await verifyResult(JSON.parse(raw), { manifest, manifestSha256: work.manifestSha256, phase, generation: work.generation, snapshot: work.snapshot,phaseDeadline:restored.phaseDeadline,expect: phase.expect[name], rawSha256: a.sha256, read: async record => fs.readFile(await containedFile(root, record.path)) });
         outputs[name] = a;
       }
     } catch (error) {
@@ -118,7 +123,7 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
   assert(recipe, 'approved recipe artifact missing');
   const contextPath = await containedFile(root, `${phase.runDir}/execution-context.json`, { createParents: true });
   const ready = await client.json('heartbeat', { restoredSnapshotId: work.snapshot?.id });
-  await fs.writeFile(contextPath, JSON.stringify({ phaseDeadline:ready.phaseDeadline,phaseSeconds:phase.seconds,execution: executionIdentity(manifest, work.manifestSha256, phase, work.generation), completedWorkIds: phase.workIds, inputObjects:manifest.inputs, recoveryFiles: work.snapshot?.phaseIndex === work.phaseIndex ? work.snapshot.files : [] }), { mode: 0o600 });
+  await fs.writeFile(contextPath, JSON.stringify({ phaseDeadline:ready.phaseDeadline,phaseSeconds:phase.seconds,...(manifest.purpose===POLICY.publicTiming.purpose?{lifecycle:timing,resource:{host:phase.host,cleanupPending:true,billingPending:true}}:{}),execution: executionIdentity(manifest, work.manifestSha256, phase, work.generation), completedWorkIds: phase.workIds, inputObjects:manifest.inputs, recoveryFiles: work.snapshot?.phaseIndex === work.phaseIndex ? work.snapshot.files : [] }), { mode: 0o600 });
   const executionRecipe = manifest.inputs.find(a => a.sha256 === manifest.executionRecipeSha256);
   assert(executionRecipe, 'execution recipe artifact missing');
   const failurePath = `${phase.runDir}/hosted-infrastructure-${work.generation}.json`;
@@ -134,6 +139,7 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
     RIGHELT_HOSTED_FAILURE_FILE: path.join(root, failurePath),
     COMPUTE_URL: env.COMPUTE_URL, COMPUTE_ID: env.COMPUTE_ID, COMPUTE_GENERATION: env.COMPUTE_GENERATION,
     COMPUTE_WORKER_TOKEN: env.COMPUTE_WORKER_TOKEN,
+    ...(client.startupSessionId?{COMPUTE_STARTUP_SESSION:client.startupSessionId}:{}),
   } });
   child.stdout.pipe(output, { end: false }); child.stderr.pipe(output, { end: false });
   let done = false, exitCode = null, failure = null;
@@ -208,7 +214,7 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
       for (const name of phase.outputs) {
         const raw = await fs.readFile(await containedFile(root, phase.outputPaths[name]));
         const evidence = JSON.parse(raw);
-        await verifyResult(evidence, { manifest, manifestSha256: work.manifestSha256, phase, generation: work.generation, snapshot: work.snapshot, expect: phase.expect[name], rawSha256: await sha256(raw), read: async a => fs.readFile(await containedFile(root, a.path)) });
+        await verifyResult(evidence, { manifest, manifestSha256: work.manifestSha256, phase, generation: work.generation, snapshot: work.snapshot,phaseDeadline:ready.phaseDeadline,expect: phase.expect[name], rawSha256: await sha256(raw), read: async a => fs.readFile(await containedFile(root, a.path)) });
         for (const [key, expected] of Object.entries(phase.expect[name])) assert(canonical(evidence[key]) === canonical(expected), 'phase evidence failed');
         outputs[name] = await client.upload(raw);
       }

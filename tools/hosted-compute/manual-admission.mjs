@@ -1,4 +1,5 @@
-import {assert,canonical,encode,sha256,reserveCents,TERMINAL} from './policy.mjs';
+import {validatePublicTimingTransition} from './public-timing-transition.mjs';
+import {POLICY,assert,canonical,encode,sha256,reserveCents,TERMINAL} from './policy.mjs';
 import {cashPlan,cloudflareCoverage} from './cash.mjs';
 import {readCleanupRegistry,readOperatorReceipt,sameReference,validateManualIntent,validateRepairAllowance,operatorAttemptBinding,MANUAL_STARTUP_MS} from './manual-authority.mjs';
 import {validateRuntimeUpgrade} from './runtime-upgrade.mjs';
@@ -17,13 +18,15 @@ export async function manualAuthority(core,db,c,intent){
   }else assert(intent.actualSpendBasisSha256===undefined,'actual-spend reconciliation missing');
   assert(c.manifest.id===intent.campaignId&&c.manifestSha256===intent.manifestSha256&&prior!==c&&prior.manifestSha256===intent.priorManifestSha256,'manual campaign binding differs');
   assert(c.manifest.sourceRevision===intent.sourceRevision,'manual source differs from intent');
-  if(intent.runtimeUpgrade)await validateRuntimeUpgrade(core,prior,c,intent);
+  if(intent.publicTimingTransition)await validatePublicTimingTransition(core,db,prior,c,intent);
+  else if(intent.runtimeUpgrade)await validateRuntimeUpgrade(core,prior,c,intent);
   else{
     assert(c.manifest.sourceRevision===prior.manifest.sourceRevision&&c.manifest.runtimeSha256===prior.manifest.runtimeSha256,'manual frozen source/runtime differs');
     for(const key of ['executionRecipeSha256','inputs'])assert(canonical(c.manifest[key])===canonical(prior.manifest[key]),'manual frozen public inputs differ');
     assert(c.manifest.phases[0].host.image===prior.manifest.phases[prior.phase].host.image,'manual frozen image differs');
   }
-  for(const key of ['dependencySha256','checkpointSha256','corpusSha256','recipeSha256','seed'])assert(canonical(c.manifest[key])===canonical(prior.manifest[key]),'manual frozen public inputs differ');
+  assert(c.manifest.purpose!==POLICY.publicTiming.purpose||intent.publicTimingTransition,'public timing qualification transition missing');
+  if(!intent.publicTimingTransition)for(const key of ['dependencySha256','checkpointSha256','corpusSha256','recipeSha256','seed'])assert(canonical(c.manifest[key])===canonical(prior.manifest[key]),'manual frozen public inputs differ');
   assert(c.manifest.mode==='supervised-qualification'&&c.manifest.purpose!=='scientific-comparison'&&c.manifest.phases.length===1,'manual public qualification only');
   assert(prior.attempts.length===1&&old?.uncertain===true&&['stopping','cleanup-uncertain'].includes(prior.status),'original uncertain owner required');
   assert(canonical(intent.priorAttempt)===canonical({generation:prior.generation,name:old.name,prearmSha256:old.prearmSha256,startedAt:old.startedAt}),'original attempt binding differs');

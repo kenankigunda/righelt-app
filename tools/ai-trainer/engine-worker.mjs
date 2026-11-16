@@ -1,3 +1,4 @@
+import hostedPolicy from '../hosted-compute/policy.json' with {type:'json'};
 import {CURRENT_RETREAT_SEMANTICS,archivedRetreatSemantics} from '../../packages/shared-types/src/retreat-rules.ts';
 import {validateTeaching,teachingDecision,verifyTeachingDecision}from './training-teaching.mjs';
 // JSON-lines protocol. Parent owns inference, resource allocation and hard process termination.
@@ -203,7 +204,7 @@ async function main() {
       initial:ruleFingerprint(current)===ruleFingerprint(createInitialState())});return;
   }
   if (job.command === 'fingerprint') { send({ type: 'fingerprint', fingerprint: ruleFingerprint(job.state) }); return; }
-  const arena=job.command==='arena';
+  const arena=job.command==='arena',publicTiming=job.purpose===hostedPolicy.publicTiming.purpose;
   const evaluationProfile=job.evaluationProfile;
   if(evaluationProfile!==undefined){
     const expected=COMPUTER_PROFILES[evaluationProfile?.name];
@@ -213,8 +214,9 @@ async function main() {
   if (arena && ['P1', 'P2'].some(seat => !job.profiles?.[seat] || !job.modelVersions?.[seat] || !job.profileVersions?.[seat])) {
     throw new Error('Arena model and profile identities are required for both seats');
   }
+  if(publicTiming&&(!arena||!Number.isSafeInteger(job.seed)||job.seed<0||job.seed>=2**32||!['P1','P2'].includes(job.referenceSeat)||job.kind!=='normal'||job.startKind!=='normal'||job.initialState!=null||job.partition!==undefined||job.familyId!==undefined||job.teaching!==undefined||job.rootExploration!==undefined||!evaluationProfile||job.modelVersions.P1!==job.modelVersions.P2||job.modelVersions.P1!==hostedPolicy.publicTiming.incumbent.sha256))throw Error('Invalid public timing scope');
   if (!['generate', 'prepare', 'arena'].includes(job.command) || !Number.isSafeInteger(job.seed) ||
-      (arena ? !['validation','final'].includes(job.partition) : job.partition !== 'train') ||
+      (arena ? !publicTiming&&!['validation','final'].includes(job.partition) : job.partition !== 'train') ||
       !['normal', 'simple', 'continuation'].includes(job.kind)) throw new Error('Invalid training job');
   let state = resolveToStability(normalizeState(job.initialState ?? createInitialState()));
   encodeState(state);
@@ -256,7 +258,7 @@ async function main() {
         termination = 'truncated'; truncationReason = n >= experimentConfig.training.maxDecisions ? 'decision-cap' : 'repetition'; break;
       }
       const seed = (job.seed + n) >>> 0;
-      const decisionController=state.sideToMove;
+      const decisionController=state.sideToMove,controllerContext=publicTiming?{sideToMove:state.sideToMove,turnIndex:state.turnIndex,continuation:structuredClone(state.continuation)}:null;
       const profile=teaching?teaching.profiles[decisionController]:arena ? job.profiles[decisionController] : {simulations:experimentConfig.search.selfPlaySimulations,temperature:1,maxValueGap:.1};
       diagnose(state,'search',n,seed,profile);
       const result = await selectMove({ state, seed, ...searchOptions(profile), ...explorationOptions, deadlineMs: deadline }, async encoded => {
@@ -282,7 +284,7 @@ async function main() {
         ...decisionProvenance(result,SEARCH_POLICY_VERSION), ...adoptionFields });
       const committed=decisions[decisions.length-1];
       send({type:'decision-progress',gameId:job.id,kind:job.kind,decision:{
-        id:committed.id,controller,action:committed.action,beforeHash,afterHash:committed.afterHash,
+        ...(publicTiming?{controllerContext}:{}),id:committed.id,controller,action:committed.action,beforeHash,afterHash:committed.afterHash,
         seed,retreatSemantics:committed.retreatSemantics,modelVersion:committed.modelVersion,profileVersion:committed.profileVersion,
         searchPolicyVersion:SEARCH_POLICY_VERSION,policyMask:committed.policyMask,fallback:committed.fallback,legality:committed.legality,
         trainingRecipe:committed.trainingRecipe,rootExploration:committed.rootExploration,explorationAdoption:committed.explorationAdoption,
@@ -293,7 +295,7 @@ async function main() {
     send({ type: 'unfinished', id: job.id, reason: error.reason, decisions: decisions.length }); return;
   }
   send({ type: 'game', game: { schema: 1,retreatSemantics:CURRENT_RETREAT_SEMANTICS, id: job.id, familyId: job.familyId, partition: job.partition, kind: job.kind,
-    seed: job.seed, modelVersion: job.modelVersion, rootState, warmupActions, initialState, decisions, ...adoptionFields,
+    ...(publicTiming?{purpose:hostedPolicy.publicTiming.purpose}:{}),seed: job.seed, modelVersion: job.modelVersion, rootState, warmupActions, initialState, decisions, ...adoptionFields,
     ...(job.productionSource ? {productionSource:job.productionSource} : {}),
     ...(teaching?{teaching}:{}),
     ...(evaluationProfile?{evaluationProfile}:{}),
