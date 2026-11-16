@@ -183,64 +183,64 @@ def execute(plan,directory,execution,work_ids,*,context,seconds,barrier,profiles
         attempt_start=clock();before={seat:(m.calls,m.seconds) for seat,m in models.items()}
         decision_path=directory/'decisions'/str(execution['generation'])/(key+'.jsonl')
         current={**base,'status':'unstarted','reason':'model-load-failed' if model_failure else 'original-budget','elapsedMs':0.,'inferenceMs':0.,'completedWholeGame':False}
-        if not model_failure:
-            profile=profiles['profiles'][job['profile']]
-            versions={seat:plan['model']['sha256'] for seat in ('P1','P2')}
-            profile_versions={seat:profile['version'] for seat in ('P1','P2')}
-            engine_job={**job,'purpose':TIMING['purpose'],'profiles':{seat:profile for seat in ('P1','P2')},
-                'modelVersions':versions,'profileVersions':profile_versions,
-                'evaluationProfile':{'name':job['profile'],'sourceSha256':profiles['sourceSha256'],
-                    'definition':profile,'artifactSha256':record_digest(profiles)},'decisionLogPath':str(decision_path)}
-            played=False
-            def play(raw_complete):
-                nonlocal played
-                if clock()>=deadline:return {'status':'unfinished','reason':'original-budget-before-dispatch'}
-                played=True
-                return player(engine_job,models,min(deadline,clock()+job['gameSeconds']+10),'cpu-onnxruntime',raw_complete=raw_complete)
-            def capture_measurements():return {'elapsedUntilRawMs':max(0.,clock()-attempt_start)*1000,'inferenceMs':sum(max(0.,m.seconds-before[seat][1]) for seat,m in models.items())*1000,'inferenceCalls':{seat:m.calls-before[seat][0] for seat,m in models.items()},'inferenceRuntime':runtime}
-            verification_seconds=0.
-            def replay(game,bound):
-                nonlocal verification_seconds
-                began=clock()
-                try:return verify(game,bound)
-                finally:verification_seconds+=max(0.,clock()-began)
-            try:
-                record,durable_paths=consume_and_qualify(job=engine_job,base=base,execution=execution,namespace=namespace,
-                    directory=directory,deadline=deadline,barrier=barrier,play=play,verify=replay,
-                    start_verify=start_verify,model_versions=versions,profile_versions=profile_versions,capture_metadata=capture_measurements)
-                for retained in durable_paths:
-                    a=artifact(retained,'verification' if 'verification' in Path(retained).parts else 'raw')
+        profile=profiles['profiles'][job['profile']]
+        versions={seat:plan['model']['sha256'] for seat in ('P1','P2')}
+        profile_versions={seat:profile['version'] for seat in ('P1','P2')}
+        engine_job={**job,'purpose':TIMING['purpose'],'profiles':{seat:profile for seat in ('P1','P2')},
+            'modelVersions':versions,'profileVersions':profile_versions,
+            'evaluationProfile':{'name':job['profile'],'sourceSha256':profiles['sourceSha256'],
+                'definition':profile,'artifactSha256':record_digest(profiles)},'decisionLogPath':str(decision_path)}
+        played=False
+        def play(raw_complete):
+            nonlocal played
+            if model_failure or clock()>=deadline:return {'status':'unfinished','reason':'original-budget-before-dispatch'}
+            played=True
+            return player(engine_job,models,min(deadline,clock()+job['gameSeconds']+10),'cpu-onnxruntime',raw_complete=raw_complete)
+        def capture_measurements():return {'elapsedUntilRawMs':max(0.,clock()-attempt_start)*1000,'inferenceMs':sum(max(0.,m.seconds-before[seat][1]) for seat,m in models.items())*1000,'inferenceCalls':{seat:m.calls-before[seat][0] for seat,m in models.items()},'inferenceRuntime':runtime}
+        verification_seconds=0.
+        def replay(game,bound):
+            nonlocal verification_seconds
+            began=clock()
+            try:return verify(game,bound)
+            finally:verification_seconds+=max(0.,clock()-began)
+        try:
+            record,durable_paths=consume_and_qualify(job=engine_job,base=base,execution=execution,namespace=namespace,
+                directory=directory,deadline=deadline,barrier=barrier,play=play,verify=replay,
+                start_verify=start_verify,model_versions=versions,profile_versions=profile_versions,capture_metadata=capture_measurements,allow_new_work=not model_failure)
+            for retained in durable_paths:
+                a=artifact(retained,'verification' if 'verification' in Path(retained).parts else 'raw')
+                if not any(prior['path']==a['path'] for prior in paths):paths.append(a)
+            current.update(record)
+            current.update(completedWholeGame=record['status']=='complete',startVerified=record.get('engineReplayVerified') is True,
+                termination=record.get('game',{}).get('termination'),verificationMs=verification_seconds*1000)
+            # The exact raw game remains in its own immutable artifact.
+            current.pop('game',None)
+            measured=record.get('publicTimingMeasurements')
+            if measured is not None:
+                if model is None:runtime=measured['inferenceRuntime']
+                origin=record['originalGeneration'];measurement_namespace=namespace+':measurements:'+str(origin)
+                prior=barrier.evaluation_claim(measurement_namespace,job['id'],create=played and clock()<deadline)
+                saved=prior.get('result')
+                binding={**base,'kind':'public-timing-measurement','originalGeneration':origin,'rawEvidenceSha256':record.get('rawEvidenceSha256'),'verificationEvidenceSha256':record.get('verificationEvidenceSha256'),'status':record['status']}
+                if prior.get('created'):
+                    saved={**binding,'elapsedMs':max(0.,clock()-attempt_start)*1000,'verificationMs':verification_seconds*1000,**measured}
+                    write(directory/'measurements'/str(origin)/(key+'.json'),saved);barrier.settle(measurement_namespace,job['id'],saved)
+                complete=saved is not None and all(saved.get(k)==v for k,v in binding.items())
+                current.update(timingComplete=complete,elapsedMs=saved['elapsedMs'] if complete else measured['elapsedUntilRawMs'],
+                    inferenceMs=measured['inferenceMs'],inferenceCalls=measured['inferenceCalls'],verificationMs=saved['verificationMs'] if complete else verification_seconds*1000)
+                if complete:
+                    retained=write(directory/'measurements'/str(origin)/(key+'.json'),saved);measurement_artifact=artifact(retained,'measurements');paths.append(measurement_artifact);current['measurementEvidenceSha256']=measurement_artifact['sha256']
+        except Exception as error:
+            from .hosted_receipts import HostedInfrastructureError
+            if isinstance(error,HostedInfrastructureError):raise
+            current.update(status='failed',reason='public-game-or-verification-failed')
+            for folder,role in [('raw','raw'),('verification','verification')]:
+                for retained in (directory/folder).glob('*/'+key+'.json'):
+                    a=artifact(retained,role)
                     if not any(prior['path']==a['path'] for prior in paths):paths.append(a)
-                current.update(record)
-                current.update(completedWholeGame=record['status']=='complete',startVerified=record.get('engineReplayVerified') is True,
-                    termination=record.get('game',{}).get('termination'),verificationMs=verification_seconds*1000)
-                # The exact raw game remains in its own immutable artifact.
-                current.pop('game',None)
-                measured=record.get('publicTimingMeasurements')
-                if measured is not None:
-                    origin=record['originalGeneration'];measurement_namespace=namespace+':measurements:'+str(origin)
-                    prior=barrier.evaluation_claim(measurement_namespace,job['id'],create=played and clock()<deadline)
-                    saved=prior.get('result')
-                    binding={**base,'kind':'public-timing-measurement','originalGeneration':origin,'rawEvidenceSha256':record.get('rawEvidenceSha256'),'verificationEvidenceSha256':record.get('verificationEvidenceSha256'),'status':record['status']}
-                    if prior.get('created'):
-                        saved={**binding,'elapsedMs':max(0.,clock()-attempt_start)*1000,'verificationMs':verification_seconds*1000,**measured}
-                        write(directory/'measurements'/str(origin)/(key+'.json'),saved);barrier.settle(measurement_namespace,job['id'],saved)
-                    complete=saved is not None and all(saved.get(k)==v for k,v in binding.items())
-                    current.update(timingComplete=complete,elapsedMs=saved['elapsedMs'] if complete else measured['elapsedUntilRawMs'],
-                        inferenceMs=measured['inferenceMs'],inferenceCalls=measured['inferenceCalls'],verificationMs=saved['verificationMs'] if complete else verification_seconds*1000)
-                    if complete:
-                        retained=write(directory/'measurements'/str(origin)/(key+'.json'),saved);measurement_artifact=artifact(retained,'measurements');paths.append(measurement_artifact);current['measurementEvidenceSha256']=measurement_artifact['sha256']
-            except Exception as error:
-                from .hosted_receipts import HostedInfrastructureError
-                if isinstance(error,HostedInfrastructureError):raise
-                current.update(status='failed',reason='public-game-or-verification-failed')
-                for folder,role in [('raw','raw'),('verification','verification')]:
-                    for retained in (directory/folder).glob('*/'+key+'.json'):
-                        a=artifact(retained,role)
-                        if not any(prior['path']==a['path'] for prior in paths):paths.append(a)
-            if not current.get('publicTimingMeasurements'):
-                current.update(elapsedMs=max(0.,clock()-attempt_start)*1000,inferenceMs=sum(max(0.,m.seconds-before[seat][1]) for seat,m in models.items())*1000,inferenceCalls={seat:m.calls-before[seat][0] for seat,m in models.items()},timingComplete=False)
-            if decision_path.exists():paths.append(artifact(decision_path,'decisions'))
+        if not current.get('publicTimingMeasurements'):
+            current.update(elapsedMs=0. if current['status']=='unstarted' else max(0.,clock()-attempt_start)*1000,inferenceMs=sum(max(0.,m.seconds-before[seat][1]) for seat,m in models.items())*1000,inferenceCalls={seat:m.calls-before[seat][0] for seat,m in models.items()},timingComplete=False)
+        if decision_path.exists():paths.append(artifact(decision_path,'decisions'))
         current['kind']='public-timing-attempt'
         a=save(directory/'attempts'/str(execution['generation'])/(key+'.json'),current,'attempt')
         receipts.append({'workId':job['id'],'status':current['status'],'evidenceSha256':a['sha256']});attempts.append(current)

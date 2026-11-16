@@ -83,3 +83,11 @@ test('result recomputes cost aggregates even when a changed report and proof are
   await assert.rejects(verifyResult(result,{manifest:f.manifest,manifestSha256:f.manifestSha256,phase:f.phase,generation:1,phaseDeadline:f.phaseDeadline,read:b=>b.path===a.path?raw:b.path===p.path?proofRaw:f.read(b)}),/aggregate work cost differs/);
  }
 });
+
+test('expired recovery keeps all completed work and original measurements through the verifier',async t=>{
+ const f=await synthetic(t,{unavailable:'recovery-expired'});await f.verify(f.result);
+ assert.equal(f.result.execution.generation,2);assert.equal(f.result.completedWorkIds.length,6);
+ const report=JSON.parse(await f.read(f.result.artifacts.find(a=>a.role==='report')));
+ assert.deepEqual(report.inferenceCalls,{P1:6,P2:6});assert.equal(report.completedWholeGameMs.length,6);
+ assert(report.completedWholeGameMs.every(ms=>ms>6000));
+});

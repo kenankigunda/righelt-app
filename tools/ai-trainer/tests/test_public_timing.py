@@ -129,6 +129,22 @@ class PublicTimingTest(unittest.TestCase):
         self.assertEqual(report['completedWholeGames'],0)
         self.assertFalse(report['timingCoverageComplete'])
 
+    def test_expired_recovery_preserves_completed_work_without_model_or_game_dispatch(self):
+        self.run_timing();before=self.report();self.execution['generation']=2;self.barrier.generation=2;self.now=111.
+        result=self.run_timing(model_factory=lambda _:self.fail('expired recovery loaded model'),player=lambda *_a,**_k:self.fail('replayed'))
+        self.assertEqual(result['completedWorkIds'],self.ids)
+        self.assertEqual(self.report()['completedWholeGameMs'],before['completedWholeGameMs'])
+        self.assertEqual(self.report()['inferenceCalls'],before['inferenceCalls'])
+
+    def test_model_reload_failure_recovers_consumed_work_without_dispatch(self):
+        self.plan['schedule']=self.plan['schedule'][:1];self.ids=self.ids[:1]
+        self.run_timing();before=self.report();self.execution['generation']=2;self.barrier.generation=2;self.now=60.
+        def unavailable(_):raise RuntimeError('synthetic reload failure')
+        result=self.run_timing(model_factory=unavailable,player=lambda *_a,**_k:self.fail('replayed'))
+        self.assertEqual(result['completedWorkIds'],self.ids)
+        self.assertEqual(self.report()['completedWholeGameMs'],before['completedWholeGameMs'])
+        self.assertEqual(self.report()['inferenceCalls'],before['inferenceCalls'])
+
     def test_private_scientific_fields_and_changed_budgets_are_rejected(self):
         for mutate in [lambda p:p.update(familyInventory={}),lambda p:p['schedule'][0].update(partition='validation'),
             lambda p:p['schedule'][0].update(familyId='fake'),lambda p:p['schedule'][0].update(seed=2**32),
@@ -222,6 +238,9 @@ def export_synthetic_fixture(root,context_path=None):
                 return FixtureModel()
             if __import__('os').environ.get('SYNTHETIC_TIMING_UNAVAILABLE')=='expired':case.now=111.
             result=case.run_timing(model_factory=factory,wall=lambda:case.context['phaseDeadline']/1000-case.context['phaseSeconds']+case.now)
+            if __import__('os').environ.get('SYNTHETIC_TIMING_UNAVAILABLE')=='recovery-expired':
+                case.execution['generation']=2;case.barrier.generation=2;case.now=111.
+                result=case.run_timing(model_factory=lambda _:case.fail('expired recovery loaded model'),player=lambda *_a,**_k:case.fail('consumed game replayed'),wall=lambda:case.context['phaseDeadline']/1000-case.context['phaseSeconds']+case.now)
             output={'result':result}
         else:output={'inputs':descriptors,'publicTiming':binding,'image':image,'workIds':case.ids}
     case.doCleanups()

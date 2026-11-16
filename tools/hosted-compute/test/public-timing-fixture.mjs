@@ -22,6 +22,6 @@ export async function publicTimingFixture(t,{sourceRevision='a'.repeat(40),unava
  const contextPath=path.join(root,'context.json');await fs.writeFile(contextPath,JSON.stringify(context));
  const result=JSON.parse((await exec('python3',[script,'--fixture-root',root,'--context',contextPath],{env:environment})).stdout).result;
  const read=a=>fs.readFile(path.join(root,a.path));
- const verify=value=>verifyResult(value,{manifest,manifestSha256,phase,generation:1,phaseDeadline:context.phaseDeadline,read,expect:phase.expect.timing});
+ const verify=value=>verifyResult(value,{manifest,manifestSha256,phase,generation:value.execution.generation,phaseDeadline:context.phaseDeadline,read,expect:phase.expect.timing});
  return {f,root,manifest,manifestSha256,phase,phaseDeadline:context.phaseDeadline,result,read,verify};
 }

@@ -51,7 +51,7 @@ def verifier_binding(source_revision,*,public_timing=False):
     return {'sourceRevision':source_revision,'files':{name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in files}}
 
 
-def consume_and_qualify(*,job,base,execution,namespace,directory,deadline,barrier,play,verify,start_verify,model_versions,profile_versions,capture_metadata=None):
+def consume_and_qualify(*,job,base,execution,namespace,directory,deadline,barrier,play,verify,start_verify,model_versions,profile_versions,capture_metadata=None,allow_new_work=True):
     """Return a scored disposition and all immutable raw/qualification files."""
     public_timing=execution.get('publicTiming') is not None
     if public_timing:
@@ -65,7 +65,7 @@ def consume_and_qualify(*,job,base,execution,namespace,directory,deadline,barrie
             raise ValueError('prospective verification generation bounds')
         return value
     key=hashlib.sha256(job['id'].encode()).hexdigest();paths=[]
-    claim=barrier.evaluation_claim(namespace,job['id'],create=time.monotonic()<deadline-20)
+    claim=barrier.evaluation_claim(namespace,job['id'],create=allow_new_work and time.monotonic()<deadline-20)
     if claim.get('unclaimed'):return {**base,'status':'unstarted','reason':'original-budget'},paths
     retained=claim.get('result')
     if not claim['created'] and retained is None:
