@@ -1,52 +1,52 @@
 {
   "/board-adapters/engine-board-adapter.js": {
     "file": "apps/web/board-adapters/engine-board-adapter.js",
-    "sourceSha256": "15f83f2d1aea4ca428107f80a9f19a29b321e89e8d5b0705cc7b7b1035782095",
-    "outputSha256": "e7be3fc1eb5b6347f86c03cd3bf2351638171a801dc8ea9fb4e2c9bd04a4cb8f",
+    "sourceSha256": "802596f910a6f5a3298506f78746035328c3b232d2b6ac424efdeb516ace73ab",
+    "outputSha256": "f41f0bc982bde19750f58935c9b0be28d81b06119302b8d9485cc0ac930666b8",
     "operations": [
       {
-        "start": 33639,
-        "end": 33639,
+        "start": 34170,
+        "end": 34170,
         "before": "",
         "after": "    boardAdmissionProbe(\"adapter-delegation-entry\", () => ({}), boardEl);\n",
         "anchor": "}\n    }\n  };\n\n  const onBoardClick = (event) => {\n    const cell = event.target.closest(\".cell\");\n  ",
         "anchorCount": 1
       },
       {
-        "start": 33741,
-        "end": 33759,
+        "start": 34272,
+        "end": 34290,
         "before": "    onCellClick({\n",
         "after": "    const coord = {\n",
         "anchor": "    onCellClick({\n",
         "anchorCount": 1
       },
       {
-        "start": 33833,
-        "end": 33867,
+        "start": 34364,
+        "end": 34398,
         "before": "    }, { trigger: cell, event });\n",
         "after": "    };\n    boardAdmissionProbe(\"adapter-cell-click\", () => ({ row: coord.row, col: coord.col }), cell);\n    boardAdmissionProbe(\"adapter-callback\", () => ({}), onCellClick);\n    onCellClick(coord, { trigger: cell, event });\n",
         "anchor": "    }, { trigger: cell, event });\n",
         "anchorCount": 1
       },
       {
-        "start": 35836,
-        "end": 35836,
+        "start": 36367,
+        "end": 36367,
         "before": "",
         "after": "      boardAdmissionProbe(\"adapter-mount\", () => ({ interactive: interactionMode === \"interactive\" }), boardEl);\n",
         "anchor": "active\";\n      onCellClick = options.onCellClick;\n      onCellHoverStart = options.onCellHoverStart ",
         "anchorCount": 1
       },
       {
-        "start": 36329,
-        "end": 36329,
+        "start": 36860,
+        "end": 36860,
         "before": "",
         "after": "      boardAdmissionProbe(\"adapter-unmount\", () => ({}), boardEl);\n",
         "anchor": "onBoardMouseOut);\n      }\n    },\n\n    unmount() {\n      eventLabels?.destroy();\n      eventLabels = ",
         "anchorCount": 1
       },
       {
-        "start": 40305,
-        "end": 40427,
+        "start": 40836,
+        "end": 40958,
         "before": "      if (renderedInteractionMode !== effectiveInteractionMode || cellByCoordinateKey.size !== BOARD_SIZE * BOARD_SIZE) {\n",
         "after": "      if (boardAdmissionValue(\"adapter-mode-changed\", renderedInteractionMode !== effectiveInteractionMode) || boardAdmissionValue(\"adapter-cell-count-invalid\", cellByCoordinateKey.size !== BOARD_SIZE * BOARD_SIZE)) {\n        boardAdmissionProbe(\"adapter-cell-reset\", () => ({}), boardEl);\n",
         "anchor": "      if (renderedInteractionMode !== effectiveInteractionMode || cellByCoordinateKey.size !== BOARD_SIZE * BOARD_SIZE) {\n",

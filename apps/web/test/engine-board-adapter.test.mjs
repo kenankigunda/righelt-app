@@ -207,6 +207,7 @@ test('live sequence losses share the historical crossed-out appearance while act
    assert.equal(token.classList.contains('projected-destruction-piece'),true);
    assert.match(token.getAttribute('aria-label'),/will be destroyed if the turn ends now/);
    assert.equal(cell.classList.contains('unselectable'),false);
+   assert.match(cell.getAttribute('aria-label'),/will be destroyed if the turn ends now at \([67], 4\)$/);
   }
   assert.equal(boardEl.querySelectorAll('.removal-piece').length,0);
   assert.equal(boardEl.querySelectorAll('.history-destruction-piece').length,0,'live pieces remain distinct from informational historical overlays');
@@ -668,7 +669,6 @@ test("recorded-action project overlay decorates the existing history target piec
       sideToMove: "P2",
       continuation: null,
       pieces: [
-        { id: "A1", owner: "P1", kind: "commander", position: { row: 6, col: 5 }, supplied: true, commanded: true },
         { id: "A2", owner: "P1", kind: "unit", position: { row: 5, col: 5 }, supplied: true, commanded: true },
       ],
     };
@@ -697,6 +697,9 @@ test("recorded-action project overlay decorates the existing history target piec
     });
 
     const targetCell = getCell(boardEl, 5, 5);
+    const sourceCell = getCell(boardEl, 6, 5);
+    assert.equal(sourceCell?.querySelector(".recorded-action-source-piece") !== null, true);
+    assert.equal(sourceCell?.getAttribute("aria-label"), "Red commander at (6, 5)");
     assert.equal(targetCell?.querySelectorAll(".piece-token").length, 1);
     assert.equal(targetCell?.querySelector(".piece-token")?.classList.contains("preview-created"), true);
     assert.equal(targetCell?.querySelector(".move-ghost"), null);
@@ -747,6 +750,7 @@ test("recorded-action project overlay decorates the visible top token when the h
     assert.equal(targetCell?.querySelectorAll(".move-ghost").length, 0);
     assert.equal((stackTokens.length > 0 || cellTokens.length > 0), true);
     assert.equal(Array.from(cellTokens).some((token) => token.classList.contains("preview-created")), true);
+    assert.equal(targetCell?.getAttribute("aria-label"), "Red unit, Red commander at (5, 5)");
     assert.equal(overlayLinesEl.querySelectorAll("line").length, 0);
     assert.equal(overlayLinesEl.querySelectorAll("path").length, 0);
   });
@@ -793,6 +797,7 @@ test("history destruction removal effects do not attach live tooltip labels", as
     assert.equal(targetCell?.classList.contains("removal-effect"), false);
     assert.equal(targetCell?.getAttribute("data-removal-label") ?? null, null);
     assert.equal(targetCell?.querySelector(".removal-piece") !== null, true);
+    assert.equal(targetCell?.getAttribute("aria-label"), "Red unit at (4, 3)");
     assert.equal(overlayLinesEl.querySelectorAll("line").length >= 0, true);
   });
 });
@@ -833,6 +838,7 @@ test("recorded-action push overlay keeps push group highlight and count", async 
 
     assert.equal(boardEl.querySelectorAll(".group-member").length, 2);
     assert.equal(boardEl.querySelectorAll(".group-strength-badge").length, 1);
+    assert.equal(getCell(boardEl, 4, 2)?.getAttribute("aria-label"), "Red unit, Group strength 2 at (4, 2)");
   });
 });
 
@@ -1001,6 +1007,7 @@ test("push continuation badge counts only preserved members still present on the
 
     assert.equal(boardEl.querySelectorAll(".group-strength-badge").length, 1);
     assert.equal(getCell(boardEl, 5, 2)?.querySelector(".group-strength-badge")?.textContent, "2");
+    assert.equal(getCell(boardEl, 5, 2)?.getAttribute("aria-label"), "Red unit, Group strength 2 at (5, 2)");
   });
 });
 
@@ -1365,6 +1372,8 @@ test('pending recording presentation follows only the affected live piece and re
   const token=getCell(boardEl,4,3).querySelector('.piece-token');
   assert.equal(token.classList.contains('pending-recording-piece'),true);
   assert.equal(token.getAttribute('aria-label'),'Red unit, recording move');
+  assert.equal(getCell(boardEl,4,3).getAttribute('aria-label'),'Red unit, recording move at (4, 3)');
+  assert.equal(getCell(boardEl,5,3).getAttribute('aria-label'),'Red unit at (5, 3)');
   assert.equal(getCell(boardEl,5,3).querySelector('.piece-token').classList.contains('pending-recording-piece'),false);
   adapter.render({...payload,pendingRecordingPieceIds:new Set()});
   assert.equal(getCell(boardEl,4,3).querySelector('.piece-token').classList.contains('pending-recording-piece'),false);
@@ -1374,7 +1383,7 @@ test('pending recording presentation follows only the affected live piece and re
 });
 
 
-test("empty native Board cells have coordinate names without replacing piece, supply or rush names", async () => {
+test("interactive Board cells compose coordinates with piece, supply, removal and rush names", async () => {
   await withFakeDocument(() => {
     const {adapter, boardEl} = createMountedAdapter();
     const snapshot = {sideToMove:"P1", pieces:[], continuation:null};
@@ -1387,12 +1396,12 @@ test("empty native Board cells have coordinate names without replacing piece, su
     assert.equal(getCell(boardEl,9,7).getAttribute("aria-label"),"Square (9, 7)");
     assert.equal(empty.classList.contains("unselectable"),true);
     const supply = getCell(boardEl,0,9);
-    assert.equal(supply.getAttribute("aria-label"),null);
+    assert.equal(supply.getAttribute("aria-label"),"Red supply point at (0, 9)");
     assert.equal(supply.querySelector(".supply-point-marker").getAttribute("aria-label"),"Red supply point");
     const piece = {id:"A",owner:"P1",kind:"unit",position:{row:4,col:7},supplied:true,commanded:true};
     snapshot.pieces = [piece]; adapter.render(payload);
     assert.equal(getCell(boardEl,4,7),empty,"naming must retain the mounted input target");
-    assert.equal(empty.getAttribute("aria-label"),null,"the live piece keeps its existing content name");
+    assert.equal(empty.getAttribute("aria-label"),"Red unit at (4, 7)","the live piece and coordinate form one stable input name");
     assert.equal(empty.querySelector(".piece-token").getAttribute("aria-label"),"Red unit");
     assert.equal(empty.classList.contains("unselectable"),false);
     snapshot.pieces=[]; adapter.render(payload);
@@ -1400,7 +1409,7 @@ test("empty native Board cells have coordinate names without replacing piece, su
     assert.equal(empty.getAttribute("aria-label"),"Square (4, 7)");
     const removal={piece,position:{row:4,col:7},reason:"destroyed",message:"Removed",startedAt:0};
     adapter.render({...payload,removalEffects:[removal]});
-    assert.equal(empty.getAttribute("aria-label"),null,"a named removal token is not replaced by the fallback");
+    assert.equal(empty.getAttribute("aria-label"),"Red unit at (4, 7)","the removal piece and coordinate form one stable input name");
     assert.equal(empty.querySelector(".removal-piece").getAttribute("aria-label"),"Red unit");
     piece.position={row:4,col:2}; snapshot.pieces=[piece];
     const action={type:"rush",actorId:"A",from:{row:4,col:2},to:{row:4,col:3}};
