@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {waitForDocker} from './docker-readiness.mjs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -53,7 +54,7 @@ test('public context exports committed allowlisted source, with no history, cred
 });
 test('native Docker copy preserves the audited inventory and worker runtime import closure',async t=>{
   const execute=promisify(execFile);
-  try{await execute('docker',['info','--format','{{.ServerVersion}}'],{timeout:5000});}
+  try{await waitForDocker(execute);}
   catch(error){
     if(process.env.GITHUB_ACTIONS==='true')throw Error('native Docker context proof requires the CI Docker daemon',{cause:error});
     t.skip('local Docker daemon unavailable; native context proof is mandatory in GitHub CI');return;
