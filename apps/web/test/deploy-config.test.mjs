@@ -67,13 +67,151 @@ test("client build stamping accepts one exact commit and fails closed otherwise"
 
 test("deployment smoke verifies the exact loaded main artifact commit", async () => {
   const sha = "b".repeat(40), privateOrigin = "https://private.example", origin = "https://public.example";
+  const waits = [];
+  let now = 0;
+  const timing = {
+    now: () => now,
+    wait: async delay => {
+      waits.push(delay);
+      now += delay;
+    },
+    within: operation => operation,
+  };
+  const observed = ["a".repeat(40), "a".repeat(40), sha];
+  const clientOptions = [];
+  const fetcher = async (url, options) => {
+    if (url.pathname === "/api/health" && url.origin === origin) return Response.json({ok:true,bindings:{db:true,gameRooms:true}});
+    if (url.pathname === "/api/health" && url.origin === privateOrigin) return new Response(null,{status:404,headers:{server:"cloudflare"}});
+    if (url.pathname === "/main.js") {
+      clientOptions.push(options);
+      const build = observed.shift();
+      return new Response(`globalThis.__righeltClientBuild = "${build}"; // RIGHELT_CLIENT_BUILD`);
+    }
+    throw Error(`unexpected ${url}`);
+  };
+  await assert.doesNotReject(boundarySmoke({origin,privateOrigin,expectedCommit:sha,fetcher,timing}));
+  assert.deepEqual(waits, [500, 1000]);
+  assert.equal(clientOptions.length, 3);
+  assert.ok(clientOptions.every(options => options.cache === "no-store"));
+  await assert.rejects(boundarySmoke({origin,privateOrigin,expectedCommit:"main",fetcher,timing}),/expected deployment commit/i);
+});
+
+test("deployment smoke fails after a finite exact-client propagation window", async () => {
+  const expectedCommit = "b".repeat(40), observedCommit = "a".repeat(40);
+  const privateOrigin = "https://private.example", origin = "https://public.example";
+  let now = 0, clientReads = 0;
+  const waits = [];
+  const timing = {
+    now: () => now,
+    wait: async delay => {
+      waits.push(delay);
+      now += delay;
+    },
+    within: operation => operation,
+  };
   const fetcher = async url => {
     if (url.pathname === "/api/health" && url.origin === origin) return Response.json({ok:true,bindings:{db:true,gameRooms:true}});
     if (url.pathname === "/api/health" && url.origin === privateOrigin) return new Response(null,{status:404,headers:{server:"cloudflare"}});
-    if (url.pathname === "/main.js") return new Response(`globalThis.__righeltClientBuild = "${sha}"; // RIGHELT_CLIENT_BUILD`);
+    if (url.pathname === "/main.js") {
+      clientReads += 1;
+      return new Response(`globalThis.__righeltClientBuild = "${observedCommit}"; // RIGHELT_CLIENT_BUILD`);
+    }
     throw Error(`unexpected ${url}`);
   };
-  await assert.doesNotReject(boundarySmoke({origin,privateOrigin,expectedCommit:sha,fetcher}));
-  await assert.rejects(boundarySmoke({origin,privateOrigin,expectedCommit:"c".repeat(40),fetcher}),/loaded client commit/i);
-  await assert.rejects(boundarySmoke({origin,privateOrigin,expectedCommit:"main",fetcher}),/expected deployment commit/i);
+  await assert.rejects(
+    boundarySmoke({origin,privateOrigin,expectedCommit,fetcher,timing}),
+    /propagation deadline/i,
+  );
+  assert.equal(now, 30_000);
+  assert.ok(clientReads > 2);
+  assert.equal(waits.at(-1), 500);
+});
+
+test("deployment smoke never retries malformed or failed client reads", async () => {
+  const expectedCommit = "b".repeat(40), oldCommit = "a".repeat(40);
+  const privateOrigin = "https://private.example", origin = "https://public.example";
+  let now = 0, clientReads = 0;
+  const waits = [];
+  const timing = {
+    now: () => now,
+    wait: async delay => {
+      waits.push(delay);
+      now += delay;
+    },
+    within: operation => operation,
+  };
+  const fetcher = async url => {
+    if (url.pathname === "/api/health" && url.origin === origin) return Response.json({ok:true,bindings:{db:true,gameRooms:true}});
+    if (url.pathname === "/api/health" && url.origin === privateOrigin) return new Response(null,{status:404,headers:{server:"cloudflare"}});
+    if (url.pathname === "/main.js") {
+      clientReads += 1;
+      if (clientReads === 1)
+        return new Response(`globalThis.__righeltClientBuild = "${oldCommit}"; // RIGHELT_CLIENT_BUILD`);
+      return new Response("export {};");
+    }
+    throw Error(`unexpected ${url}`);
+  };
+  await assert.rejects(
+    boundarySmoke({origin,privateOrigin,expectedCommit,fetcher,timing}),
+    /missing or malformed/i,
+  );
+  assert.equal(clientReads, 2);
+  assert.deepEqual(waits, [500]);
+});
+
+test("deployment smoke aborts a client read at its bounded deadline", async () => {
+  const expectedCommit = "b".repeat(40);
+  const privateOrigin = "https://private.example", origin = "https://public.example";
+  let now = 0, aborted = false;
+  const timing = {
+    now: () => now,
+    wait: async delay => { now += delay; },
+    within: async (operation, timeout, onTimeout) => {
+      void operation.catch(() => {});
+      now += timeout;
+      onTimeout();
+      throw Error("Client artifact verification timed out");
+    },
+  };
+  const fetcher = async (url, options) => {
+    if (url.pathname === "/api/health" && url.origin === origin) return Response.json({ok:true,bindings:{db:true,gameRooms:true}});
+    if (url.pathname === "/api/health" && url.origin === privateOrigin) return new Response(null,{status:404,headers:{server:"cloudflare"}});
+    if (url.pathname === "/main.js") {
+      options.signal.addEventListener("abort", () => { aborted = true; });
+      return new Promise((_, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason)));
+    }
+    throw Error(`unexpected ${url}`);
+  };
+  await assert.rejects(
+    boundarySmoke({origin,privateOrigin,expectedCommit,fetcher,timing}),
+    /timed out/i,
+  );
+  assert.equal(now, 15_000);
+  assert.equal(aborted, true);
+});
+
+test("deployment smoke rejects an exact client that arrives after the deadline", async () => {
+  const expectedCommit = "b".repeat(40);
+  const privateOrigin = "https://private.example", origin = "https://public.example";
+  let now = 0;
+  const timing = {
+    now: () => now,
+    wait: async delay => { now += delay; },
+    within: async operation => {
+      const result = await operation;
+      now = 30_001;
+      return result;
+    },
+  };
+  const fetcher = async url => {
+    if (url.pathname === "/api/health" && url.origin === origin) return Response.json({ok:true,bindings:{db:true,gameRooms:true}});
+    if (url.pathname === "/api/health" && url.origin === privateOrigin) return new Response(null,{status:404,headers:{server:"cloudflare"}});
+    if (url.pathname === "/main.js")
+      return new Response(`globalThis.__righeltClientBuild = "${expectedCommit}"; // RIGHELT_CLIENT_BUILD`);
+    throw Error(`unexpected ${url}`);
+  };
+  await assert.rejects(
+    boundarySmoke({origin,privateOrigin,expectedCommit,fetcher,timing}),
+    /propagation deadline/i,
+  );
 });

@@ -1,12 +1,92 @@
 import { requireDeploymentOrigin } from "./deployment-origin.mjs";
 import { fileURLToPath } from "node:url";
 import { readEmbeddedClientBuild } from "./client-build-identity.mjs";
+
+const CLIENT_PROPAGATION_DEADLINE_MS = 30_000;
+const CLIENT_READ_TIMEOUT_MS = 15_000;
+const CLIENT_RETRY_DELAYS_MS = [500, 1_000, 2_000];
+
+const clientTiming = {
+  now: () => performance.now(),
+  wait: (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+  async within(operation, timeoutMs, onTimeout) {
+    let timeout;
+    const deadline = new Promise((_, reject) => {
+      timeout = setTimeout(() => {
+        onTimeout();
+        reject(Error("Client artifact verification timed out"));
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([operation, deadline]);
+    } finally {
+      clearTimeout(timeout);
+    }
+  },
+};
+
+function clientPropagationExpired() {
+  return Error(
+    "Loaded client commit did not reach the expected deployment commit before the propagation deadline",
+  );
+}
+
+async function verifyExactClientBuild({
+  origin,
+  expectedCommit,
+  fetcher,
+  timing,
+}) {
+  const startedAt = timing.now();
+  let retryIndex = 0;
+  while (true) {
+    const elapsed = timing.now() - startedAt;
+    if (elapsed >= CLIENT_PROPAGATION_DEADLINE_MS)
+      throw clientPropagationExpired();
+
+    const controller = new AbortController();
+    const readTimeout = Math.min(
+      CLIENT_READ_TIMEOUT_MS,
+      CLIENT_PROPAGATION_DEADLINE_MS - elapsed,
+    );
+    const read = (async () => {
+      const response = await fetcher(new URL("/main.js", origin), {
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      if (!response.ok) throw Error("Loaded client artifact request failed");
+      return readEmbeddedClientBuild(await response.text());
+    })();
+    const observedCommit = await timing.within(
+      read,
+      readTimeout,
+      () => controller.abort(),
+    );
+    if (timing.now() - startedAt >= CLIENT_PROPAGATION_DEADLINE_MS)
+      throw clientPropagationExpired();
+    if (observedCommit === expectedCommit) return;
+
+    const remaining =
+      CLIENT_PROPAGATION_DEADLINE_MS - (timing.now() - startedAt);
+    if (remaining <= 0) throw clientPropagationExpired();
+    const delay = Math.min(
+      CLIENT_RETRY_DELAYS_MS[
+        Math.min(retryIndex, CLIENT_RETRY_DELAYS_MS.length - 1)
+      ],
+      remaining,
+    );
+    retryIndex += 1;
+    await timing.wait(delay);
+  }
+}
+
 export async function boundarySmoke({
   origin,
   privateOrigin,
   expectedCommit,
   preparation = false,
   fetcher = fetch,
+  timing = clientTiming,
 }) {
   requireDeploymentOrigin(origin, "RIGHELT_SITE_ORIGIN");
   requireDeploymentOrigin(privateOrigin, "CLOUDFLARE_API_BASE_URL");
@@ -38,11 +118,7 @@ export async function boundarySmoke({
     throw Error(
       "Direct API did not return an expected Cloudflare route rejection",
     );
-  const client = await fetcher(new URL("/main.js", origin), {
-    signal: AbortSignal.timeout(15000), cache: "no-store",
-  });
-  if (!client.ok || readEmbeddedClientBuild(await client.text()) !== expectedCommit)
-    throw Error("Loaded client commit does not match the expected deployment commit");
+  await verifyExactClientBuild({ origin, expectedCommit, fetcher, timing });
   if (preparation) {
     const r = await fetcher(new URL("/api/shell/bootstrap", origin), {
         signal: AbortSignal.timeout(15000),
