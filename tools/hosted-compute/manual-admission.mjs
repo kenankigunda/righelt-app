@@ -45,11 +45,15 @@ export async function manualAuthority(core,db,c,intent){
     assert(ready.run.usageReviewRequired===true&&oldResult.state==='terminal'&&oldResult.usageReviewRequired===true&&newResult.usageReviewRequired===false,'cleanup failure is not solely the retained old usage warning');
   }
   const funding=await readOperatorReceipt(control.store,intent.fundingReservation),oldFunding=funding.oldAttempt,next=funding.newIntent,total=funding.aggregate;
+  // Every earlier prepared manual allocation remains committed after cleanup,
+  // cancellation or completion. The original unknown owner stays the prior.
+  const retainedManualCents=Object.values(db.campaigns).filter(other=>other!==c&&other.manual?.intent.priorCampaignId===prior.manifest.id).reduce((sum,other)=>sum+other.manifest.maxCents,0);
+  const encumberedCents=prior.manifest.maxCents+intent.priorRiskReserveCents+retainedManualCents+c.manifest.maxCents;
   assert(funding.schema===1&&funding.kind==='operator-additive-funding-freeze'&&oldFunding?.id===prior.manifest.id&&oldFunding.manifestSha256===prior.manifestSha256&&Date.parse(oldFunding.startedAt)===old.startedAt,'operator funding prior binding differs');
   assert(oldFunding.originalAllocationCents===prior.manifest.maxCents&&oldFunding.supplementalRiskHoldCents===intent.priorRiskReserveCents&&oldFunding.protectedShutdownReserveCents===reserveCents(prior.manifest.maxCents)&&oldFunding.hourlyCeilingCents===old.hourlyCents,'operator prior allocation differs');
   assert(next?.computeAllocationCents===c.manifest.maxCents&&next.protectedShutdownReserveCents===reserveCents(c.manifest.maxCents)&&next.allInHourlyCeilingCents===host.hourlyCents&&next.host===host.gpu&&next.dataCenterId===host.dataCenterId&&next.diskGb===host.diskGb&&next.gpuCount===1,'operator new funding/placement differs');
   assert(now<=Date.parse(next.latestAdmission)&&intent.expiresAt<=Date.parse(next.latestAdmission)&&intent.expiresAt-intent.createdAt<=next.maximumIntentMs&&next.maximumIntentMs===900000&&authority.cutoff<=Date.parse(next.latestWorkCutoff)&&intent.liabilityUntil<=Date.parse(next.responseUntil)&&intent.liabilityUntil>=authority.cutoff+7200000,'finite operator funding window exceeded');
-  assert(total?.runpodEncumberedCents===prior.manifest.maxCents+intent.priorRiskReserveCents+c.manifest.maxCents&&total.runpodEncumberedCents<=total.runpodCeilingCents&&total.runpodCeilingCents<=10000&&total.repairEncumberedCents<=intent.repairMaxCents&&total.repairCeilingCents===intent.repairMaxCents&&total.cloudflareEncumberedCents<=total.cloudflareCeilingCents&&total.cloudflareCeilingCents<=2000&&total.githubPaidOverageAuthorized===false,'operator aggregate funding exceeded');
+  assert(total?.runpodEncumberedCents===encumberedCents&&total.repairEncumberedCents===encumberedCents&&total.runpodEncumberedCents<=total.runpodCeilingCents&&total.runpodCeilingCents<=10000&&total.repairEncumberedCents<=intent.repairMaxCents&&total.repairCeilingCents===intent.repairMaxCents&&total.cloudflareEncumberedCents<=total.cloudflareCeilingCents&&total.cloudflareCeilingCents<=2000&&total.githubPaidOverageAuthorized===false,'operator aggregate funding exceeded');
   cloudflareCoverage(c.manifest.cash,{now,deadline:c.manifest.deadline,forecastUntil:authority.forecastUntil});
   return {prior,old,authority,registry};
 }
