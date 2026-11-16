@@ -51,26 +51,27 @@ test('cold and live headings share reserved turn captions and one accessible hea
 });
 
 test('computer cue keeps one operation across search/save revisions and retires on nonworking views',()=>{
- const host={dataset:{loadingState:'idle'},hasAttribute(name){return name==='data-loading-key'&&this.dataset.loadingKey!==undefined;},removeAttribute(){delete this.dataset.loadingKey;}};
+ const host={dataset:{loadingState:'idle'},hasAttribute(name){return name==='data-loading-key'&&this.dataset.loadingKey!==undefined;},removeAttribute(name){if(name==='data-loading-key')delete this.dataset.loadingKey;if(name==='data-loading-edge')delete this.dataset.loadingEdge;}};
  const game={id:'g',computer:{paused:false},computerTurn:'horus'};
  updateComputerBoardLoading(host,game,{phase:'preparing'},{scope:'owner1'});const key=host.dataset.loadingKey;
  for(const phase of ['checking','looking-ahead','saving']){updateComputerBoardLoading(host,{...game,gameplayRevision:7,pendingComputerSaveStartedAt:0},{phase},{scope:'owner1'});assert.equal(host.dataset.loadingKey,key);}
  updateComputerBoardLoading(host,game,{phase:'checking'},{scope:'owner1',inspecting:true});assert.equal(host.dataset.loadingKey,key);assert.equal(host.dataset.loadingSuppressed,'true');
  updateComputerBoardLoading(host,game,{phase:'checking'},{scope:'owner1'});assert.equal(host.dataset.loadingKey,key);assert.equal(host.dataset.loadingSuppressed,'false');
- updateComputerBoardLoading(host,game,{phase:'checking'},{scope:'owner1',loadingKey:'history:g:turn:2',suppressLoadingCue:true});assert.equal(host.dataset.loadingState,'pending');assert.equal(host.dataset.loadingSuppressed,'true');assert.equal(host.dataset.loadingKey,'history:g:turn:2');
+ assert.equal(host.dataset.loadingEdge,undefined,'routine computer work keeps the existing inline cue without a perimeter');
+ updateComputerBoardLoading(host,game,{phase:'checking'},{scope:'owner1',loadingKey:'history:g:turn:2',suppressLoadingCue:true});assert.equal(host.dataset.loadingState,'pending');assert.equal(host.dataset.loadingSuppressed,'true');assert.equal(host.dataset.loadingKey,'history:g:turn:2');assert.equal(host.dataset.loadingEdge,'panel');
  for(const options of [{game:{...game,board:{state:{outcome:{status:'p1_win'}}}}},{game:{...game,liveCurrentSnapshot:{outcome:{status:'draw'}}}},{game:{...game,computerTurn:null}},{game:{...game,inHistoryMode:true}},{game:{...game,computer:{paused:true}}},{status:{phase:'recovery'}},{status:{phase:'other-device'}},{replaying:true}]){
   updateComputerBoardLoading(host,options.game??game,options.status??{}, {scope:'owner1',replaying:options.replaying});
-  assert.equal(host.dataset.loadingState,'idle');assert.equal(host.dataset.loadingKey,undefined);
+  assert.equal(host.dataset.loadingState,'idle');assert.equal(host.dataset.loadingKey,undefined);assert.equal(host.dataset.loadingEdge,undefined);
   updateComputerBoardLoading(host,game,{}, {scope:'owner1'});assert.notEqual(host.dataset.loadingKey,key);
  }
  const previous=host.dataset.loadingKey;updateComputerBoardLoading(host,game,{}, {scope:'owner2'});assert.notEqual(host.dataset.loadingKey,previous);
 });
 
 test('replay and History hydration reuse the quiet Board activity cue without an actor or restarted key',()=>{
- const host={dataset:{loadingState:'idle',activitySide:'P1'},hasAttribute(name){return name==='data-loading-key'&&this.dataset.loadingKey!==undefined;},removeAttribute(name){if(name==='data-loading-key')delete this.dataset.loadingKey;}};
+ const host={dataset:{loadingState:'idle',activitySide:'P1'},hasAttribute(name){return name==='data-loading-key'&&this.dataset.loadingKey!==undefined;},removeAttribute(name){if(name==='data-loading-key')delete this.dataset.loadingKey;if(name==='data-loading-edge')delete this.dataset.loadingEdge;}};
  const game={id:'g'};
  updateComputerBoardLoading(host,game,{}, {scope:'owner',loadingKey:'replay:g:recorded'});
- assert.equal(host.dataset.loadingState,'pending');assert.equal(host.dataset.loadingKey,'replay:g:recorded');assert.equal(host.dataset.activitySide,undefined);
+ assert.equal(host.dataset.loadingState,'pending');assert.equal(host.dataset.loadingKey,'replay:g:recorded');assert.equal(host.dataset.activitySide,undefined);assert.equal(host.dataset.loadingEdge,undefined,'ordinary replay hydration does not broaden the History perimeter contract');
  updateComputerBoardLoading(host,{...game,gameplayRevision:4},{phase:'unrelated'}, {scope:'owner',loadingKey:'replay:g:recorded'});
  assert.equal(host.dataset.loadingKey,'replay:g:recorded','rerenders retain the existing 200 ms loading episode');
  updateComputerBoardLoading(host,game,{}, {scope:'owner'});
@@ -80,8 +81,8 @@ test('replay and History hydration reuse the quiet Board activity cue without an
 
 test('cold loading activity occupies the reserved message sibling and retires on hydration without a footer host',()=>{
  const loading=renderBoardMessageSlot({loading:true,loadingKey:'game:a"<'}),live=renderBoardMessageSlot();
- assert.match(loading,/class="board-message-activity" aria-hidden="true" data-loading-state="pending" data-loading-context="external" data-loading-key="game:a&quot;&lt;"/);
- assert.equal((loading.match(/data-loading-key=/g)||[]).length,1);assert.doesNotMatch(live,/data-loading-key=/);
+ assert.match(loading,/class="board-message-activity" aria-hidden="true" data-loading-edge="panel" data-loading-state="pending" data-loading-context="external" data-loading-key="game:a&quot;&lt;"/);
+ assert.equal((loading.match(/data-loading-key=/g)||[]).length,1);assert.doesNotMatch(live,/data-loading-key=|data-loading-edge=/);
  assert.equal(loading.slice(loading.indexOf('<p class="board-preview-label board-message-sizing"')),live.slice(live.indexOf('<p class="board-preview-label board-message-sizing"')));
  const app=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');const preview=app.slice(app.indexOf('const renderBoardLoadingPreview'),app.indexOf('const renderGameViewSkeleton'));
  assert.match(preview,/<div class="board-loading-preview" aria-busy="true">/);assert.doesNotMatch(preview,/loadingAttributes|class="loading-region"/);

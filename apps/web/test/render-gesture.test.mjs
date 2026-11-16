@@ -42,6 +42,27 @@ test("background renders keep a pressed control until activation, cancellation o
   gate.destroy();
 });
 
+test('flush acknowledgement follows the coalesced committed render and retires on disposal',async()=>{
+  const jobs=[],renders=[];
+  const gate=createRenderGestureGate({render:options=>renders.push(options),schedule:callback=>{jobs.push(callback);return callback;},cancel:callback=>{const index=jobs.indexOf(callback);if(index>=0)jobs.splice(index,1);}});
+  gate.begin();gate.defer({includeBoard:true});
+  const committed=gate.waitForFlush();gate.end();
+  jobs.shift()();
+  assert.equal(await committed,true);assert.deepEqual(renders,[{includeBoard:true}]);
+  gate.begin();const retired=gate.waitForFlush();gate.destroy();
+  assert.equal(await retired,false,'disposal cannot strand a History presentation waiter');
+});
+
+test('a failed deferred render rejects its acknowledgement instead of stranding the owner',async()=>{
+  const jobs=[],failure=new Error('render failed');
+  const gate=createRenderGestureGate({render:()=>{throw failure;},schedule:callback=>{jobs.push(callback);return callback;},cancel(){}});
+  gate.begin();gate.defer({includeBoard:true});
+  const committed=gate.waitForFlush();gate.end();
+  assert.throws(()=>jobs.shift()(),/render failed/);
+  await assert.rejects(committed,/render failed/);
+  gate.destroy();
+});
+
 
 test("board renders preserve the keyboard coordinate without overriding new focus or navigation", () => {
   for (const mode of ["replace", "connected", "dialog", "other-game", "disabled"]) {

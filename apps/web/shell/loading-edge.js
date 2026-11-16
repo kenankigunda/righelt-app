@@ -59,7 +59,7 @@ export function mountLoadingEdges(document) {
   const transition=document.querySelector('.shell-route-transition-layer[data-active="true"]');
   const candidates=[...document.querySelectorAll('.shell-main-content section.panel')].filter(panel=>
    !panel.closest('[hidden],[inert],dialog:not([open])')&&panel.getClientRects().length&&
-   (transition||panel.matches(`.loading-region[data-loading-state="pending"]${VISIBLE_PHASE}`)||panel.querySelector(`.board-loading-preview .board-message-activity[data-loading-state="pending"]${VISIBLE_PHASE},.board-wrap[data-reconnecting="true"][data-loading-state="pending"]${VISIBLE_PHASE}`)));
+   (transition||panel.matches(`.loading-region[data-loading-state="pending"]${VISIBLE_PHASE}`)||panel.querySelector(`.board-message-activity[data-loading-edge="panel"][data-loading-state="pending"]${VISIBLE_PHASE},.board-wrap[data-reconnecting="true"][data-loading-state="pending"]${VISIBLE_PHASE}`)));
   const active=new Set(candidates);
   let moving=false;
   for(const [panel,frame] of frames)if(!active.has(panel)){resize.unobserve(panel);frame.svg.remove();frames.delete(panel);}
