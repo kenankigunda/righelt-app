@@ -144,6 +144,16 @@ class PublicTimingTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):timing.retain_failure(ValueError('another failure'),diagnostic)
         self.assertEqual(path.read_bytes(),first);self.assertEqual((directory/'latest.json').read_bytes(),b'original prefix');self.assertEqual((directory/'result.json').read_bytes(),b'original result')
 
+    def test_failure_diagnostic_allowlists_execution_identity_not_context_extensions(self):
+        import contextlib,io
+        execution={**self.execution,'credential':'secret-extension','publicTiming':{'token':'secret-nested'},'campaign':{'token':'secret-campaign'}}
+        diagnostic={'stage':'execute','directory':self.root,'execution':execution,'phaseDeadline':1120000}
+        stderr=io.StringIO()
+        with contextlib.redirect_stderr(stderr):timing.retain_failure(ValueError('secret-error'),diagnostic)
+        record=json.loads((self.root/'public-timing-failure-1.json').read_bytes())
+        self.assertEqual(record['execution'],{'manifestSha256':'b'*64,'sourceRevision':'a'*40,'generation':1,'phase':'public-timing'})
+        self.assertNotIn('secret',stderr.getvalue());self.assertNotIn('secret',json.dumps(record))
+
     def test_public_all_profile_seat_accounting_and_raw_before_verification(self):
         result=self.run_timing();self.assertTrue(result['accountingComplete']);self.assertTrue(result['scopeCoverageComplete'])
         self.assertEqual(result['completedWorkIds'],self.ids);self.assertEqual(self.calls,6)

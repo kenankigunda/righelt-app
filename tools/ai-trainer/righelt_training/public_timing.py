@@ -425,14 +425,20 @@ def retain_failure(error,diagnostic):
         record['causeType']=type(cause).__name__
         if isinstance(cause,subprocess.CalledProcessError):record['subprocessExitCode']=cause.returncode
     if 'execution' in diagnostic:
-        record['execution']=diagnostic['execution'];record['originalPhaseDeadline']=diagnostic['phaseDeadline']
+        execution=diagnostic['execution'];identity={}
+        for key,length in [('manifestSha256',64),('sourceRevision',40)]:
+            value=execution.get(key)
+            if isinstance(value,str) and re.fullmatch('[a-f0-9]{'+str(length)+'}',value):identity[key]=value
+        if type(execution.get('generation')) is int and execution['generation']>0:identity['generation']=execution['generation']
+        if execution.get('phase')=='public-timing':identity['phase']='public-timing'
+        record['execution']=identity;record['originalPhaseDeadline']=diagnostic['phaseDeadline']
     directory=diagnostic.get('directory')
     if directory is not None:
         record['retainedAccounting']={'resultPresent':(directory/'result.json').is_file(),
             'prefixPointerPresent':(directory/'latest.json').is_file()}
         try:
             from .prospective_durability import durable_json
-            generation=diagnostic.get('execution',{}).get('generation','startup')
+            generation=record.get('execution',{}).get('generation','startup')
             durable_json(directory/f'public-timing-failure-{generation}.json',record)
         except Exception:
             # Keep the original failure. The bounded stderr record is also
