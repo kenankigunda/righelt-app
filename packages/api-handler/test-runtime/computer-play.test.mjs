@@ -55,6 +55,11 @@ for (const accounts of [true, false]) test(`native ${accounts ? 'account' : 'gue
     assert.deepEqual(JSON.parse(originalRow.payload_json), probeDecision);
     await db.prepare('DELETE FROM live_decision_archive WHERE game_id = ? AND event_seq >= 900').bind(game.id).run();
     const route = endpoint => `games/${game.id}/${endpoint}`;
+    const gameBytes = async () => ({
+      projection: await db.prepare('SELECT * FROM live_games WHERE game_id=?').bind(game.id).first(),
+      payload: await db.prepare('SELECT * FROM game_payloads WHERE game_id=?').bind(game.id).first(),
+      receipts: (await db.prepare('SELECT * FROM live_command_receipts WHERE game_id=? ORDER BY client_command_id').bind(game.id).all()).results,
+    });
     const acquired = await call(route('computer-control'),a,{action:'acquire',deviceId:'device-a',generation:0});
     assert.equal(acquired.status,200,JSON.stringify(acquired.body)); game=acquired.body.game;
     if (accounts) assert.equal(game.computer.lease.authContextId,undefined); assert.equal(game.canRecordMove,false);
@@ -74,7 +79,9 @@ for (const accounts of [true, false]) test(`native ${accounts ? 'account' : 'gue
     assert.equal(late.body.commandOutcomes[0].reason,'computer_control_changed');
     const p = proof(game,'device-b','accepted-attempt');
     const attempt = { proof:p,gameplayRevision:game.gameplayRevision,fingerprint:deterministicStateHash(game.board.state),outcome:'ready',result:{action} };
+    const beforeAttempt = await gameBytes();
     assert.equal((await call(route('decision-attempt'),a2,{operation:'write',kind:'computer',attemptId:p.attemptId,attempt})).status,200);
+    assert.deepEqual(await gameBytes(), beforeAttempt, 'Evidence writes must preserve game, payload and gameplay receipts');
     assert.equal((await call(route('decision-attempt'),a2,{operation:'write',kind:'computer',attemptId:p.attemptId,attempt:{...attempt,outcome:'changed'}})).status,409);
     const sent = await command(a2,game,'v2:accepted',p);
     const changedModelCommand = await command(a2,game,'v2:accepted',{...p,modelId:'test-unpublished-model'});
@@ -87,7 +94,9 @@ for (const accounts of [true, false]) test(`native ${accounts ? 'account' : 'gue
     const decision = history.body.items.find(entry=>entry.move);
     assert.deepEqual(decision.move.computerProof,p);
     if (accounts) {
+    const beforeNote = await gameBytes();
     assert.equal((await call(route('decision-notes'),a,{operation:'write',decisionId:decision.id,note:{text:'Private observation',flagged:true}})).status,200);
+    assert.deepEqual(await gameBytes(), beforeNote, 'Note writes must preserve game, payload and gameplay receipts');
     assert.deepEqual((await call(route('decision-notes'),b,{})).body.notes,[]);
     assert.equal((await call(route('decision-attempt'),a,{operation:'write',kind:'analysis',attemptId:'private-analysis',attempt:{private:'only owner'}})).status,200);
     for (const kind of ['analysis','computer']) assert.equal((await call(route('decision-attempt'),b,{kind,attemptId:'private-analysis'})).body.attempt,null);
