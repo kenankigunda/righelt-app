@@ -100,10 +100,10 @@ export async function openPreparation(assignment,{custody,primitives,now=Date.no
       requireValue(['began','settled'].includes(e.type),'invalid-journal-event');
       if(e.type==='began'){requireValue(shape(e.payload,['index','startedAt'])&&Number.isSafeInteger(e.payload.startedAt)&&e.payload.startedAt>=0&&e.payload.startedAt<a.deadline&&e.payload.index===result.length&&result.length<a.attemptLimit&&!result.some(x=>!x.settled),'attempt-order-mismatch');result.push({...e.payload,settled:null});}
       else{
-        const attempt=result.at(-1),p=e.payload,reasons={eligible:['construction-only'],quarantined:['source-exposure-unresolved','source-family-unresolved'],missing:['construction-or-capture-incomplete'],rejected:['construction-or-guard-rejected']};
+        const attempt=result.at(-1),p=e.payload,reasons={eligible:['construction-only'],quarantined:['source-exposure-unresolved','source-family-unresolved'],missing:['construction-or-capture-incomplete'],rejected:['construction-or-guard-rejected','original-deadline-before-dispatch']};
         const fields=['index','status','reason','captureCommitment','endedAt','elapsedMs',...(p.status==='eligible'?['stateHash','fingerprint','constructionSha256','guards']:[])];
         requireValue(attempt&&!attempt.settled&&p.index===attempt.index&&shape(p,fields)&&reasons[p.status]?.includes(p.reason)&&Number.isSafeInteger(p.endedAt)&&p.endedAt>=attempt.startedAt&&p.elapsedMs===p.endedAt-attempt.startedAt,'attempt-order-mismatch');
-        requireValue(p.captureCommitment===null?['quarantined','missing'].includes(p.status):shape(p.captureCommitment,['domain','digest'])&&p.captureCommitment.domain===SCHEMA.domains.capture&&hex(p.captureCommitment.digest),'invalid-capture-commitment');
+        requireValue(p.captureCommitment===null?['quarantined','missing'].includes(p.status)||p.status==='rejected'&&p.reason==='original-deadline-before-dispatch':shape(p.captureCommitment,['domain','digest'])&&p.captureCommitment.domain===SCHEMA.domains.capture&&hex(p.captureCommitment.digest),'invalid-capture-commitment');
         if(p.status==='eligible'){requireValue(hex(p.stateHash)&&hex(p.constructionSha256)&&typeof p.fingerprint==='string'&&p.fingerprint.length>0&&Array.isArray(p.guards),'invalid-private-proof');p.guards.forEach(validateGuard);}
         attempt.settled=p;
       }
@@ -134,18 +134,20 @@ export async function openPreparation(assignment,{custody,primitives,now=Date.no
   function metadata(){
     const {records,duplicates,selected}=dispositions();
     return {schema:1,kind:SCHEMA.id,context:Object.fromEntries(SCHEMA.publicContextFields.map(k=>[k,structuredClone(context[k])])),reservations:reserved.map(r=>structuredClone(r.commitment)),
-      attempts:records.map(x=>({reservationCommitment:structuredClone(reserved[x.index].commitment),status:duplicates.has(x.index)?'quarantined':x.settled?.status??'interrupted',reason:duplicates.has(x.index)?'duplicate-developed-source':x.settled?.reason??'unsettled-private-attempt',captureCommitment:x.settled?.captureCommitment??null})),selected:structuredClone(selected),claims:structuredClone(SCHEMA.claims)};
+      attempts:records.map(x=>({reservationCommitment:structuredClone(reserved[x.index].commitment),status:duplicates.has(x.index)?'quarantined':x.settled?.status??'interrupted',reason:duplicates.has(x.index)?'duplicate-developed-source':x.settled?.reason??'unsettled-private-attempt',captureCommitment:structuredClone(x.settled?.captureCommitment??null)})),selected:structuredClone(selected),claims:structuredClone(SCHEMA.claims)};
   }
   async function next(){
     const records=attempts();requireValue(!records.some(x=>!x.settled),'interrupted-attempt-needs-review');
-    requireValue(records.length<a.attemptLimit&&now()<a.deadline,'original-bound-exhausted');
-    const index=records.length,startedAt=now(),{reservation:r,nonce,commitment:binding}=reserved[index];validateReservation(r);
+    const startedAt=now();requireValue(records.length<a.attemptLimit&&Number.isSafeInteger(startedAt)&&startedAt>=0&&startedAt<a.deadline,'original-bound-exhausted');
+    const index=records.length,{reservation:r,nonce,commitment:binding}=reserved[index];validateReservation(r);
     await append('began',{index,startedAt});
     const settle=(status,reason,extra)=>{const endedAt=now();requireValue(Number.isSafeInteger(endedAt)&&endedAt>=startedAt,'invalid-attempt-clock');return append('settled',{index,status,reason,endedAt,elapsedMs:endedAt-startedAt,...extra});};
+    if(now()>=a.deadline){await settle('rejected','original-deadline-before-dispatch',{captureCommitment:null});return metadata();}
     const family=a.registry.find(f=>f.id===r.sourceFamily);
     if(!family||component(family.id).some(id=>registry.get(id).exposure!=='unexposed')){await settle('quarantined',family?'source-exposure-unresolved':'source-family-unresolved',{captureCommitment:null});return metadata();}
     let raw,capture;
     try{
+      requireValue(now()<a.deadline,'original-bound-exhausted');
       raw=await primitives.construct({command:r.startKind==='normal'?'canonical-normal':'generate-opening',seed:r.seed,deadline:a.deadline});
       // Retain original response BEFORE parsing, postflight checks or verification.
       requireValue(raw instanceof Uint8Array,'invalid-private-response');

@@ -34,7 +34,7 @@ test('synthetic preparation privately retains both original responses and export
  for(const hidden of ['SYNTHETIC_RAW_STATE',f.assignment.reservations[0].id,f.assignment.reservations[0].sourceFamily,hex(10001),f.assignment.context.registrySha256,f.assignment.context.exposureSha256])assert(!printed.includes(hidden));
  assert.equal((await fs.readdir(path.join(f.root,'raw'))).length,2);
  for(const name of await fs.readdir(path.join(f.root,'raw')))assert.equal((await fs.stat(path.join(f.root,'raw',name))).mode&0o777,0o600);
- const expected=structuredClone(output);output.reservations[0].digest=hex(111);output.selected[0].digest=hex(112);assert.deepEqual(preparation.metadata(),expected);
+ const expected=structuredClone(output);output.reservations[0].digest=hex(111);output.selected[0].digest=hex(112);output.attempts[0].captureCommitment.digest=hex(113);assert.deepEqual(preparation.metadata(),expected);
  const resumed=await f.open();assert.deepEqual(resumed.metadata(),expected);await assert.rejects(resumed.next(),/bound-exhausted/);assert.equal(f.calls.length,2);
  assert.throws(()=>resumed.openPostLock(0,{candidateSha256:hex(999),nonce:hex(10001)}),/interface-unavailable/);
 });
@@ -106,4 +106,10 @@ test('two preparation handles cannot dispatch the same reserved attempt concurre
  const f=await fixture(t),first=await f.open(),second=await f.open();
  const results=await Promise.allSettled([first.next(),second.next()]);assert.equal(results.filter(x=>x.status==='fulfilled').length,1);assert.equal(f.calls.filter(x=>x.command==='generate-opening').length,1);
  const recovered=await f.open();assert.equal(recovered.metadata().attempts.length,1);await assert.rejects(recovered.next(),/bound-exhausted/);
+});
+
+test('expiry during durable begin consumes the attempt without dispatching construction',async t=>{
+ const f=await fixture(t),append=f.custody.append;f.custody.append=async(...args)=>{const result=await append(...args);if(args[1].type==='began')f.advance(1001);return result;};
+ const p=await f.open(),out=await p.next();assert.equal(out.attempts[0].status,'rejected');assert.equal(out.attempts[0].reason,'original-deadline-before-dispatch');assert.equal(out.attempts[0].captureCommitment,null);assert.equal(f.calls.length,0);await assert.rejects(p.next(),/bound-exhausted/);
+ const resumed=await f.open();assert.equal(resumed.metadata().attempts.length,1);assert.equal(f.calls.length,0);
 });
