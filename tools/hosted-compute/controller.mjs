@@ -288,8 +288,18 @@ export class Controller {
   async reconcile() {
     const db = await this.load();
     for (const c of Object.values(db.campaigns)) {
-      if (TERMINAL.has(c.status) || c.status === 'staged') continue;
-      try { await this.step(db, c); }
+      if (c.status === 'staged') continue;
+      try {
+        if(TERMINAL.has(c.status)){
+          if(!refusalFor(db,c))continue;
+          const a=c.attempts.at(-1),matches=await this.providers.find(a.provider,a.name);
+          if(!latchRefusalContradiction(this,db,c,{source:'resolved-owner-inventory',evidenceSha256:null,resourceIds:matches.map(r=>r.id)}))continue;
+          // A resolved label cannot suppress fresh contradictory ownership.
+          // Persist the hold before the normal stopping path may remove it.
+          await this.save(db);
+        }
+        await this.step(db, c);
+      }
       catch(error) { this.event(c, 'provider-unavailable',{diagnostic:providerFailureDiagnostic(error)}); await this.save(db); }
     }
   }

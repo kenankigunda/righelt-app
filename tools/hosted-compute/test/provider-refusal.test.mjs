@@ -32,11 +32,11 @@ test('original and B6 status-only ownership cannot adopt the singleton evidence'
  const f=await refusalFixture(),ref=await f.receipt(f.r);for(const id of ['pilot','public-timing-b6'])await assert.rejects(f.core.resolveProviderRefusal(id,ref));
  const db=await f.core.load(),c=db.campaigns[f.m.id];c.manifest.id='public-timing-b6';assert.equal(needsOwnershipWatch(db,c,c.attempts[0],0),true);
 });
-test('fresh positive exact-name inventory latches cleanup hold before removal and survives absence, restart and same receipt',async()=>{
+test('ordinary reconciliation detects a late resource for a cancelled resolution before deletion and keeps the hold after absence',async()=>{
  const f=await refusalFixture(),ref=await f.receipt(f.r);await f.core.resolveProviderRefusal(f.m.id,ref);
  f.providers.resources.set('late-pod',{id:'late-pod',name:historical.name,host:f.m.phases[0].host});
- await f.core.reconcileUncertain(f.m.id);let db=await f.core.load();assert.equal(db.campaigns[f.m.id].attempts[0].uncertain,true);assert.equal(db.campaigns[f.m.id].status,'cleanup-uncertain');assert.equal(db.providerRefusalContradictions.length,1);
  f.providers.remove=async()=>{assert.equal((await f.core.load()).providerRefusalContradictions.length,1);f.providers.resources.clear();};
- await f.core.reconcile();await f.core.reconcile();const core=f.controller();assert.equal((await core.resolveProviderRefusal(f.m.id,ref)).held,true);
- db=await core.load();assert.equal(effectiveRefusal(db,db.campaigns[f.m.id]),false);assert.equal(needsOwnershipWatch(db,db.campaigns[f.m.id],db.campaigns[f.m.id].attempts[0],0),true);assert.equal(db.providerRefusalContradictions.length,1);
+ await f.core.reconcile();let db=await f.core.load();assert.equal(db.campaigns[f.m.id].attempts[0].uncertain,true);assert.equal(db.campaigns[f.m.id].cleanupVerified,false);assert.equal(db.providerRefusalContradictions.length,1);assert.equal(f.providers.resources.size,0);
+ await f.core.reconcile();const core=f.controller();assert.equal((await core.resolveProviderRefusal(f.m.id,ref)).held,true);
+ db=await core.load();assert.equal(db.campaigns[f.m.id].status,'cleanup-uncertain');assert.equal(effectiveRefusal(db,db.campaigns[f.m.id]),false);assert.equal(needsOwnershipWatch(db,db.campaigns[f.m.id],db.campaigns[f.m.id].attempts[0],0),true);assert.equal(db.providerRefusalContradictions.length,1);
 });
