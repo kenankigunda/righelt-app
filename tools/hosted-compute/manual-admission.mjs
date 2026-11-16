@@ -2,6 +2,7 @@ import {assert,canonical,encode,sha256,reserveCents,TERMINAL} from './policy.mjs
 import {cashPlan,cloudflareCoverage} from './cash.mjs';
 import {readCleanupRegistry,readOperatorReceipt,sameReference,validateManualIntent,validateRepairAllowance,operatorAttemptBinding} from './manual-authority.mjs';
 import {validateRuntimeUpgrade} from './runtime-upgrade.mjs';
+import {actualEnvelope} from './actual-spend.mjs';
 
 const hash=value=>sha256(encode(canonical(value)));
 export async function manualAuthority(core,db,c,intent){
@@ -9,6 +10,11 @@ export async function manualAuthority(core,db,c,intent){
   validateManualIntent(intent);
   validateRepairAllowance(intent,core.config.authorizedCents);
   const now=core.now(),prior=core.campaign(db,intent.priorCampaignId),old=prior.attempts.at(-1);
+  const actual=Boolean(db.actualSpendBasis);
+  if(actual){
+    assert(now<db.actualSpendBasis.validUntil&&intent.expiresAt<=db.actualSpendBasis.validUntil,'fresh actual-spend reconciliation required');
+    assert(Object.keys(db.actualSpendBasis.admissions).every(id=>id===c.manifest.id),'reconcile actual balance after the previous manual attempt');
+  }else assert(intent.actualSpendBasisSha256===undefined,'actual-spend reconciliation missing');
   assert(c.manifest.id===intent.campaignId&&c.manifestSha256===intent.manifestSha256&&prior!==c&&prior.manifestSha256===intent.priorManifestSha256,'manual campaign binding differs');
   assert(c.manifest.sourceRevision===intent.sourceRevision,'manual source differs from intent');
   if(intent.runtimeUpgrade)await validateRuntimeUpgrade(core,prior,c,intent);
@@ -48,9 +54,11 @@ export async function manualAuthority(core,db,c,intent){
   // Every earlier prepared manual allocation remains committed after cleanup,
   // cancellation or completion. The original unknown owner stays the prior.
   const retainedManualCents=Object.values(db.campaigns).filter(other=>other!==c&&other.manual?.intent.priorCampaignId===prior.manifest.id).reduce((sum,other)=>sum+other.manifest.maxCents,0);
-  const encumberedCents=prior.manifest.maxCents+intent.priorRiskReserveCents+retainedManualCents+c.manifest.maxCents;
-  assert(funding.schema===1&&funding.kind==='operator-additive-funding-freeze'&&oldFunding?.id===prior.manifest.id&&oldFunding.manifestSha256===prior.manifestSha256&&Date.parse(oldFunding.startedAt)===old.startedAt,'operator funding prior binding differs');
-  assert(oldFunding.originalAllocationCents===prior.manifest.maxCents&&oldFunding.supplementalRiskHoldCents===intent.priorRiskReserveCents&&oldFunding.protectedShutdownReserveCents===reserveCents(prior.manifest.maxCents)&&oldFunding.hourlyCeilingCents===old.hourlyCents,'operator prior allocation differs');
+  const envelope=actual?actualEnvelope(core,db,c,intent):null;
+  const encumberedCents=envelope?.requiredCents??prior.manifest.maxCents+intent.priorRiskReserveCents+retainedManualCents+c.manifest.maxCents;
+  assert(funding.schema===1&&funding.kind===(actual?'operator-actual-funding-freeze':'operator-additive-funding-freeze')&&(!actual||funding.basisSha256===db.actualSpendBasis.receiptSha256)&&oldFunding?.id===prior.manifest.id&&oldFunding.manifestSha256===prior.manifestSha256&&Date.parse(oldFunding.startedAt)===old.startedAt,'operator funding prior binding differs');
+  const oldReserve=actual?(db.actualSpendBasis.activeResources.some(r=>r.campaignId===prior.manifest.id)?reserveCents(prior.manifest.maxCents):0):reserveCents(prior.manifest.maxCents);
+  assert(oldFunding.originalAllocationCents===prior.manifest.maxCents&&oldFunding.supplementalRiskHoldCents===intent.priorRiskReserveCents&&oldFunding.protectedShutdownReserveCents===oldReserve&&oldFunding.hourlyCeilingCents===old.hourlyCents,'operator prior allocation differs');
   assert(next?.computeAllocationCents===c.manifest.maxCents&&next.protectedShutdownReserveCents===reserveCents(c.manifest.maxCents)&&next.allInHourlyCeilingCents===host.hourlyCents&&next.host===host.gpu&&next.dataCenterId===host.dataCenterId&&next.diskGb===host.diskGb&&next.gpuCount===1,'operator new funding/placement differs');
   assert(now<=Date.parse(next.latestAdmission)&&intent.expiresAt<=Date.parse(next.latestAdmission)&&intent.expiresAt-intent.createdAt<=next.maximumIntentMs&&next.maximumIntentMs===900000&&authority.cutoff<=Date.parse(next.latestWorkCutoff)&&intent.liabilityUntil<=Date.parse(next.responseUntil)&&intent.liabilityUntil>=authority.cutoff+7200000,'finite operator funding window exceeded');
   assert(total?.runpodEncumberedCents===encumberedCents&&total.repairEncumberedCents===encumberedCents&&total.runpodEncumberedCents<=total.runpodCeilingCents&&total.runpodCeilingCents<=10000&&total.repairEncumberedCents<=intent.repairMaxCents&&total.repairCeilingCents===intent.repairMaxCents&&total.cloudflareEncumberedCents<=total.cloudflareCeilingCents&&total.cloudflareCeilingCents<=2000&&total.githubPaidOverageAuthorized===false,'operator aggregate funding exceeded');
@@ -65,6 +73,7 @@ function repairCost(core,db,prior){
   return total;
 }
 function requireHeadroom(core,db,prior,c,cutoff){
+  if(db.actualSpendBasis){actualEnvelope(core,db,c,c.manual.intent);return;}
   cutoff=c.manual.intent.liabilityUntil;
   const now=core.now(),host=c.manifest.phases[0].host;
   const repair=repairCost(core,db,prior);
@@ -96,16 +105,20 @@ export async function prepareManual(core,id,intent){
   assert(db.cashFunding&&canonical(db.cashFunding)===canonical(funding),'manual cumulative funding differs');
   const oldHold=db.manualRiskHolds?.[prior.manifest.id]??0;assert(intent.priorRiskReserveCents>=oldHold,'prior risk reservation cannot shrink');
   const additionalRisk=intent.priorRiskReserveCents-oldHold;
-  assert((db.creditAllocatedCents??0)+c.manifest.maxCents+additionalRisk<=cash.fundedCreditCents&&(db.pilotReservedCents??0)+c.manifest.maxCents+additionalRisk<=core.config.authorizedCents,'manual cumulative credit/authorization exhausted');
+  const actual=Boolean(db.actualSpendBasis),envelope=actual?actualEnvelope(core,db,c,intent):null;
+  assert(actual?envelope.requiredCents<=cash.fundedCreditCents:(db.creditAllocatedCents??0)+c.manifest.maxCents+additionalRisk<=cash.fundedCreditCents&&(db.pilotReservedCents??0)+c.manifest.maxCents+additionalRisk<=core.config.authorizedCents,'manual cumulative credit/authorization exhausted');
   assert((db.cloudflareAllocatedCents??0)+cloudflareUsageCapCents<=cash.cloudflareReservedCents,'manual cumulative Cloudflare reserve exhausted');
   c.manual={intent:structuredClone(intent),intentSha256};
+  if(actual)c.manual.actualSpendBasisSha256=db.actualSpendBasis.receiptSha256;
   c.attempts.push({manual:true,provider:'runpod',name:authority.name,quote:structuredClone(host),hourlyCents:host.hourlyCents,startedAt:intent.createdAt,cutoff:authority.cutoff,prearmSha256:authority.prearmSha256,uncertain:true});
   requireHeadroom(core,db,prior,c,authority.cutoff);
   c.generation=1;c.status='manual-pending';c.cleanupVerified=false;
   db.manualRiskHolds??={};db.manualRiskHolds[prior.manifest.id]=intent.priorRiskReserveCents;
   db.manualFundingReservations??={};db.manualFundingReservations[intent.fundingReservation.sha256]={campaignId:id,intentSha256};
-  db.creditAllocatedCents+=c.manifest.maxCents+additionalRisk;db.pilotReservedCents+=c.manifest.maxCents+additionalRisk;db.cloudflareAllocatedCents+=cloudflareUsageCapCents;
-  c.manual.requiredAuthorizationCents=db.pilotReservedCents;
+  if(actual)db.actualSpendBasis.admissions[id]={intentSha256,manifestSha256:c.manifestSha256,forecastCents:envelope.forecastCents};
+  else{db.creditAllocatedCents+=c.manifest.maxCents+additionalRisk;db.pilotReservedCents+=c.manifest.maxCents+additionalRisk;}
+  db.cloudflareAllocatedCents+=cloudflareUsageCapCents;
+  c.manual.requiredAuthorizationCents=actual?envelope.requiredCents:db.pilotReservedCents;
   core.event(c,'manual-prepared',{intentSha256});await core.save(db);
   return {intentSha256,generation:1,workerToken:await core.token(id,1)};
 }
@@ -139,6 +152,10 @@ export function checkManualLiability(core,db,c){
   validateRepairAllowance(c.manual.intent,core.config.authorizedCents);
   assert(core.config.enabled===true&&db.pilotReservedCents<=core.config.authorizedCents,'manual compute authorization revoked');
   const prior=core.campaign(db,c.manual.intent.priorCampaignId);
+  if(db.actualSpendBasis&&c.manual.actualSpendBasisSha256){
+    actualEnvelope(core,db,c,c.manual.intent);
+    assert(c.attempts.at(-1)?.workStartedAt||core.now()<c.manual.intent.repairDeadline,'manual repair allowance exhausted');return;
+  }
   assert(core.cost(prior)<=prior.manifest.maxCents+c.manual.intent.priorRiskReserveCents-reserveCents(prior.manifest.maxCents),'prior risk reserve exhausted');
   if(!c.attempts.at(-1)?.workStartedAt){
     assert(core.now()<c.manual.intent.repairDeadline&&repairCost(core,db,prior)<c.manual.intent.repairMaxCents,'manual repair allowance exhausted');

@@ -41,6 +41,7 @@ export function registryAuthorizes(authority,reference,runtimeRevision){
 export function validateManualIntent(intent){
   const keys=['accountId','campaignId','cleanupReady','createdAt','expiresAt','fundingReservation','fundingSha256','id','kind','liabilityUntil','manifestSha256','name','priorAttempt','priorCampaignId','priorManifestSha256','priorRiskReserveCents','registry','repairDeadline','repairMaxCents','repairStartedAt','runtimeWindowMs','schema','sourceRevision'];
   if(Object.hasOwn(intent??{},'runtimeUpgrade'))keys.push('runtimeUpgrade');
+  if(Object.hasOwn(intent??{},'actualSpendBasisSha256'))keys.push('actualSpendBasisSha256');
   assert(intent&&Object.keys(intent).sort().join(',')===keys.sort().join(',')&&intent.schema===1&&intent.kind==='manual-ui-admission'&&/^[a-f0-9]{32}$/.test(intent.id),'typed manual intent required');
   assert(digest.test(intent.manifestSha256)&&digest.test(intent.priorManifestSha256)&&digest.test(intent.fundingSha256)&&revision.test(intent.sourceRevision),'manual source and funding identities required');
   assert(typeof intent.accountId==='string'&&intent.accountId.length>=3&&typeof intent.name==='string'&&intent.name.length>0,'manual account and name required');

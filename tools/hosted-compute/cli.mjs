@@ -95,6 +95,10 @@ export async function main(argv = process.argv.slice(2), env = process.env, serv
   let client;
   try{client = new Client({ id, url: env.COMPUTE_URL, token: env.COMPUTE_ADMIN_TOKEN??adminBytes.toString(),...(services.fetcher?{fetcher:services.fetcher}:{}) });}
   finally{adminBytes?.fill(0);}
+  if(command==='actual-spend-reconcile'){
+    assert(options['--receipt'],'private --receipt reference required');
+    return client.json('actual-spend-reconcile',await privateJson(path.resolve(options['--receipt'])));
+  }
   if(command==='manual-prepare'){
     assert(options['--intent']&&options['--bootstrap'],'private --intent and exclusive --bootstrap required');
     const intent=await privateJson(path.resolve(options['--intent']));
@@ -128,6 +132,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, serv
   }
   if (command === 'status') return client.json('status');
   if (command === 'attempt-binding') return client.json('attempt-binding');
+  if (command === 'actual-spend-binding') return client.json('actual-spend-binding');
   if (command === 'cancel') return client.json('cancel', {});
   if (command === 'collect') { assert(options['--out'], '--out new directory required'); return collect(client, path.resolve(options['--out'])); }
   if (command === 'clear') { assert(options['--collection']&&options['--backup-attestation'], '--collection and --backup-attestation required'); const receipt=await verifyCollection(path.resolve(options['--collection']));receipt.backup=JSON.parse(await fs.readFile(options['--backup-attestation']));return client.json('clear',receipt); }

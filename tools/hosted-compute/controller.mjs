@@ -7,6 +7,7 @@ import { verifyResult } from './result.mjs';
 import { providerFailureDiagnostic } from './providers.mjs';
 import {prepareManual,attachManual,checkManualLiability} from './manual-admission.mjs';
 import {operatorAttemptBinding} from './manual-authority.mjs';
+import {spendBinding,reconcileActualSpend,knownManualCost} from './actual-spend.mjs';
 import { POLICY, TERMINAL, assert, artifact, canonical, encode, safeName, sha256, validateManifest, reserveCents } from './policy.mjs';
 
 const stopping = new Set(['stopping', 'cleanup-uncertain']);
@@ -18,6 +19,8 @@ export class Controller {
   async save(db) { await this.storage.put('ledger', db); }
   manualPrepare(id,intent){return prepareManual(this,id,intent);}
   manualAttach(id,body){return attachManual(this,id,body);}
+  async actualSpendBinding(){return spendBinding(await this.load());}
+  reconcileActualSpend(id,reference){return reconcileActualSpend(this,id,reference);}
   async attemptBinding(id){const db=await this.load();return operatorAttemptBinding(this.campaign(db,id));}
   async manualReady(id,generation){
     const db=await this.load(),c=this.campaign(db,id);
@@ -43,6 +46,7 @@ export class Controller {
       ...(c.manual?{manual:{intentSha256:c.manual.intentSha256,campaignDeadline:c.manual.campaignDeadline??null,acceptedAt:c.manual.attached?.acceptedAt??null,priorCampaignId:c.manual.intent.priorCampaignId}}:{}) };
   }
   cost(c) {
+    if(c.manual?.actualSpendBasisSha256)return knownManualCost(c,this.now());
     return Math.ceil(c.attempts.reduce((sum, a) => sum + Math.max(0, (a.endedAt ?? this.now()) - a.startedAt) * a.hourlyCents / 3600000, 0));
   }
   async stage(manifest) {
@@ -56,6 +60,7 @@ export class Controller {
   async start(id) {
     const db = await this.load(), c = this.campaign(db, id), now = this.now();
     if (c.status !== 'staged') return this.status(c);
+    assert(!db.actualSpendBasis,'actual-spend mode requires explicit manual funding');
     if(db.manualProgram){assert(c.manifest.deadline<=db.manualProgram.deadline&&now<db.manualProgram.deadline,'overall actual program deadline exceeded');c.programAnchor=structuredClone(db.manualProgram);}
     assert(this.config.enabled === true && this.config.authorizedCents >= c.manifest.maxCents, 'paid compute is not activated or authorized');
     assert(c.manifest.deadline > now && c.manifest.deadline - now <= POLICY.campaignMs, 'pilot deadline must be within 24 hours');
