@@ -127,6 +127,7 @@ export async function main(argv = process.argv.slice(2), env = process.env, serv
     return { ...status, logTail: status.latestLog ? new TextDecoder().decode(await client.download(status.latestLog)) : '' };
   }
   if (command === 'status') return client.json('status');
+  if (command === 'attempt-binding') return client.json('attempt-binding');
   if (command === 'cancel') return client.json('cancel', {});
   if (command === 'collect') { assert(options['--out'], '--out new directory required'); return collect(client, path.resolve(options['--out'])); }
   if (command === 'clear') { assert(options['--collection']&&options['--backup-attestation'], '--collection and --backup-attestation required'); const receipt=await verifyCollection(path.resolve(options['--collection']));receipt.backup=JSON.parse(await fs.readFile(options['--backup-attestation']));return client.json('clear',receipt); }

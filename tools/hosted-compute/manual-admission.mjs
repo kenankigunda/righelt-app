@@ -1,6 +1,6 @@
 import {assert,canonical,encode,sha256,reserveCents,TERMINAL} from './policy.mjs';
 import {cashPlan,cloudflareCoverage} from './cash.mjs';
-import {readCleanupRegistry,readOperatorReceipt,sameReference,validateManualIntent} from './manual-authority.mjs';
+import {readCleanupRegistry,readOperatorReceipt,sameReference,validateManualIntent,operatorAttemptBinding} from './manual-authority.mjs';
 
 const hash=value=>sha256(encode(canonical(value)));
 export async function manualAuthority(core,db,c,intent){
@@ -12,7 +12,9 @@ export async function manualAuthority(core,db,c,intent){
   for(const key of ['dependencySha256','checkpointSha256','corpusSha256','recipeSha256','executionRecipeSha256','seed','inputs'])assert(canonical(c.manifest[key])===canonical(prior.manifest[key]),'manual frozen public inputs differ');
   assert(c.manifest.mode==='supervised-qualification'&&c.manifest.purpose!=='scientific-comparison'&&c.manifest.phases.length===1,'manual public qualification only');
   assert(prior.attempts.length===1&&old?.uncertain===true&&['stopping','cleanup-uncertain'].includes(prior.status),'original uncertain owner required');
-  assert(canonical(intent.priorAttempt)===canonical({generation:prior.generation,name:old.name,prearmSha256:old.prearmSha256,startedAt:old.startedAt})&&old.startedAt===intent.repairStartedAt,'original repair/attempt clock differs');
+  assert(canonical(intent.priorAttempt)===canonical({generation:prior.generation,name:old.name,prearmSha256:old.prearmSha256,startedAt:old.startedAt}),'original attempt binding differs');
+  const repairStartedAt=operatorAttemptBinding(prior).repairStartedAt;
+  assert(Number.isSafeInteger(repairStartedAt)&&repairStartedAt>=old.startedAt&&intent.repairStartedAt===repairStartedAt,'original repair clock differs');
   assert(now>=intent.createdAt&&now<intent.expiresAt&&now<intent.repairDeadline,'manual admission window expired');
   assert(c.manifest.phases[0].host.image===prior.manifest.phases[prior.phase].host.image,'manual frozen image differs');
   const host=c.manifest.phases[0].host;assert(host.quoteObservedAt<=now&&host.quoteExpires>now,'manual host quote expired');

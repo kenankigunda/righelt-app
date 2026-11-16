@@ -71,3 +71,12 @@ test('actual failed cleanup run qualifies only for the old usage warning with co
  bad.intent.cleanupReady=await bad.receipt(bad.ready,'5');await assert.rejects(bad.core.manualPrepare('ui',bad.intent),/incomplete/);
  const timed=await setup();timed.ready.run.conclusion='cancelled';timed.intent.cleanupReady=await timed.receipt(timed.ready,'5');await assert.rejects(timed.core.manualPrepare('ui',timed.intent),/runner proof/);
 });
+
+test('operator binding preserves distinct cached billing and launch-event repair clocks without mutating old truth',async()=>{
+ const f=await setup({authorityDelay:700}),before=await f.core.load();
+ const binding=await f.core.attemptBinding('pilot');
+ assert.deepEqual(binding.attempt,{...f.intent.priorAttempt,hourlyCents:100});assert.equal(binding.manifestSha256,f.intent.priorManifestSha256);assert.equal(binding.repairStartedAt,binding.attempt.startedAt+700);assert.deepEqual(await f.core.load(),before);
+ assert.deepEqual(Object.keys(binding).sort(),['attempt','campaignId','generation','manifestSha256','repairStartedAt','status']);
+ await f.core.manualPrepare('ui',f.intent);f.addPod();await f.attach();assert.deepEqual((await f.core.load()).campaigns.pilot.attempts[0],f.old);
+ const bad=await setup({authorityDelay:700});bad.intent.repairStartedAt=bad.old.startedAt;await assert.rejects(bad.core.manualPrepare('ui',bad.intent),/repair clock differs/);
+});

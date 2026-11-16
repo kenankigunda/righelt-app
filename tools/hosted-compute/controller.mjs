@@ -6,6 +6,7 @@ import { validateScientificAdmission } from './experiment.mjs';
 import { verifyResult } from './result.mjs';
 import { providerFailureDiagnostic } from './providers.mjs';
 import {prepareManual,attachManual,checkManualLiability} from './manual-admission.mjs';
+import {operatorAttemptBinding} from './manual-authority.mjs';
 import { POLICY, TERMINAL, assert, artifact, canonical, encode, safeName, sha256, validateManifest, reserveCents } from './policy.mjs';
 
 const stopping = new Set(['stopping', 'cleanup-uncertain']);
@@ -17,6 +18,7 @@ export class Controller {
   async save(db) { await this.storage.put('ledger', db); }
   manualPrepare(id,intent){return prepareManual(this,id,intent);}
   manualAttach(id,body){return attachManual(this,id,body);}
+  async attemptBinding(id){const db=await this.load();return operatorAttemptBinding(this.campaign(db,id));}
   async manualReady(id,generation){
     const db=await this.load(),c=this.campaign(db,id);
     assert(c.manual&&c.generation===generation,'manual bootstrap owner differs');
