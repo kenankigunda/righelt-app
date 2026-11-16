@@ -10,6 +10,12 @@ export async function readOperatorReceipt(store,reference){
   assert(value&&await sha256(encode(canonical(value)))===reference.sha256,'operator receipt bytes differ');return value;
 }
 export function sameReference(a,b){return canonical(a)===canonical(b);}
+export function operatorAttemptBinding(c){
+  const a=c.attempts.at(-1),launch=c.events.find(e=>e.type==='launch-requested'&&e.generation===c.generation);
+  return {campaignId:c.manifest.id,manifestSha256:c.manifestSha256,generation:c.generation,status:c.status,
+    attempt:a?{generation:c.generation,name:a.name,prearmSha256:a.prearmSha256,startedAt:a.startedAt,hourlyCents:a.hourlyCents}:null,
+    repairStartedAt:launch?.at??null};
+}
 export async function readCleanupRegistry(store,reference){
   assert(reference&&revision.test(reference.commit)&&digest.test(reference.sha256)&&/^control\/prearms\/[a-f0-9]{32}\.json$/.test(reference.path),'pinned cleanup registry required');
   assert(reference.repository===store.repository,'cleanup registry repository differs');

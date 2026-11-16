@@ -32,6 +32,9 @@ test('real admin routes privately bootstrap a fenced worker, attach one UI Pod, 
  }});t.after(()=>mf.dispose());
  await mf.dispatchFetch('https://compute.example/fixture-seed',{method:'POST',body:JSON.stringify(await f.core.load())});
  const fetcher=(...args)=>mf.dispatchFetch(...args),admin=new Client({url:'https://compute.example',id:'ui',token:'private-admin',fetcher});
+ const originalAdmin=new Client({url:'https://compute.example',id:'pilot',token:'private-admin',fetcher});
+ const originalBinding=await originalAdmin.json('attempt-binding');assert.equal(originalBinding.attempt.startedAt,f.old.startedAt);assert.equal(originalBinding.manifestSha256,f.intent.priorManifestSha256);
+ const stagedBinding=await admin.json('attempt-binding');assert.equal(stagedBinding.generation,0);assert.equal(stagedBinding.attempt,null);
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'manual-bootstrap-'));await fs.chmod(directory,0o700);t.after(()=>fs.rm(directory,{recursive:true,force:true}));
  const intentFile=path.join(directory,'intent.json'),bootstrap=path.join(directory,'bootstrap.json');await fs.writeFile(intentFile,JSON.stringify(f.intent),{mode:0o600});
  const printed=await main(['manual-prepare','ui','--intent',intentFile,'--bootstrap',bootstrap],{COMPUTE_URL:'https://compute.example',COMPUTE_ADMIN_TOKEN:'private-admin'},{fetcher});
@@ -42,4 +45,5 @@ test('real admin routes privately bootstrap a fenced worker, attach one UI Pod, 
  assert.equal((await worker.json('manual-ready')).ready,true);assert.equal((await worker.json('work')).manifestSha256,f.intent.manifestSha256);assert.equal(posts,0);
  const ledger=await(await mf.dispatchFetch('https://compute.example/fixture-ledger')).json();assert.deepEqual(ledger.campaigns.pilot.attempts[0],f.old);assert.equal(ledger.creditAllocatedCents,2000);assert.equal(ledger.manualProgram.deadline,f.intent.createdAt+86400000);
  await assert.rejects(worker.json('manual-attach',body),/rejected \(409\)/);
+ await assert.rejects(worker.json('attempt-binding'),/rejected \(409\)/);
 });
