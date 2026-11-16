@@ -36,6 +36,7 @@
 !tools/ai-trainer/righelt_training/**/*.py
 !tools/ai-trainer/righelt_training/local-teaching-v2.json
 !tools/ai-trainer/righelt_training/followup-teaching-v1.json
+!tools/ai-trainer/righelt_training/arithmetic-policy-v1.json
 !tools/ai-benchmark/
 !tools/ai-benchmark/search-proof.mjs
 !tools/hosted-compute/
