@@ -3,6 +3,7 @@ import { STORAGE_GENERATION_HEADER,STORAGE_GENERATION_QUERY } from "../packages/
 import {execFileSync} from "node:child_process";
 import {readFileSync,writeFileSync,mkdirSync} from "node:fs";
 import path from "node:path";
+import {isDeepStrictEqual} from "node:util";
 import {pathToFileURL} from "node:url";
 
 export const INVESTIGATION_WRANGLER="wrangler@4.149.0";
@@ -39,6 +40,17 @@ export async function recoverySocketSnapshot({origin,gameId,identityId,generatio
       if(frame.game){clearTimeout(timer);resolve(frame);}
     }catch(error){clearTimeout(timer);reject(error);}});
   });}finally{socket.close();}
+}
+// History browsing is local to a tab. Recovery verifies durable replay with
+// read endpoints instead of persisting a server-side viewing preference.
+export async function verifyRecoveryHistory({request,gameId,identityId,loaded,initialState}){
+  const route=`/api/shell/games/${gameId}`;
+  const history=await request(route+"/decision-history",{identityId,protocolVersion:2});
+  const initial=history.items?.find(entry=>entry.kind==="initial");
+  const decision=history.items?.find(entry=>entry.kind==="decision"&&entry.id===loaded.game.moves[0]?.moveId);
+  if(!isDeepStrictEqual(initial?.state,initialState)||!decision?.move?.snapshot||decision.move.clientCommandId!==loaded.game.moves[0]?.clientCommandId||!isDeepStrictEqual(decision.move.snapshot,loaded.game.board.state))throw Error("Recovery canary durable history changed");
+  const live=await request(`${route}?identityId=${encodeURIComponent(identityId)}`);
+  if(live.eventSeq!==loaded.eventSeq||live.game.gameplayRevision!==loaded.game.gameplayRevision||!isDeepStrictEqual(live.game.board.state,loaded.game.board.state))throw Error("Recovery canary history read changed live gameplay");
 }
 export async function runStorageReset(options,{run,fetcher=fetch,socketFactory,read=readFileSync,write=writeFileSync}={}){
   run??=(args)=>execFileSync("pnpm",["dlx",INVESTIGATION_WRANGLER,...args],{cwd:root,encoding:"utf8",env:{...process.env,CI:"true"},stdio:["ignore","pipe","pipe"]});
@@ -113,9 +125,7 @@ export async function runStorageReset(options,{run,fetcher=fetch,socketFactory,r
     if(!accepted.accepted||!duplicate.duplicate||duplicate.game.moves.length!==1||duplicate.game.gameplayRevision!==1)throw Error("Recovery canary did not preserve exactly-once play");
     const loaded=await request(`/api/shell/games/${gameId}?identityId=${identityId}`);
     if(loaded.game.moves.length!==1)throw Error("Recovery canary reload lost history");
-    const history=await request(`/api/shell/games/${gameId}/history`,{identityId,moveIndex:0});
-    const live=await request(`/api/shell/games/${gameId}/live`,{identityId});
-    if(!history.game.inHistoryMode||live.game.inHistoryMode)throw Error("Recovery canary history transition failed");
+    await verifyRecoveryHistory({request,gameId,identityId,loaded,initialState:created.game.board.state});
     const invite=await request(`/api/shell/invites/${created.game.inviteTokens.viewer}`);
     if(invite.gameId!==gameId)throw Error("Recovery canary invitation changed");
     const initial=await recoverySocketSnapshot({origin:options.origin,gameId,identityId,generation:receipt.generation,socketFactory});
