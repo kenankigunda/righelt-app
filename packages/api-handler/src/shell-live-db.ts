@@ -1295,7 +1295,7 @@ export const persistGameState = async (
   const previous = options.preservePayload ? await env.DB.prepare("SELECT state_json, event_seq FROM live_games WHERE game_id = ?1").bind(game.id).first<{state_json:string;event_seq:number}>() : null;
   if(options.preservePayload && (!previous || previous.event_seq !== base))throw new Error("stale_commit_revision");
   const retained = options.metadataOnly && compact && storageWriterEnabled(env, env.STORAGE_METADATA_WRITES_ENABLED, game.id)
-    ? await env.DB.prepare("SELECT format_version,state_blob,state_sha256 FROM game_payloads WHERE game_id=?1").bind(game.id).first<{format_version:number;state_blob:unknown;state_sha256:string}>() : null;
+    ? await env.DB.prepare("SELECT format_version FROM game_payloads WHERE game_id=?1").bind(game.id).first<{format_version:number}>() : null;
   const stored = !options.preservePayload && !retained && compact ? await encodeStorage(game,stateWriteLimits(env,game.id)) : null;
   const card = previous?.state_json ?? (compact ? JSON.stringify({...game,moves:[],turns:game.turns.slice(-1),moveCount:game.moves.length}) : JSON.stringify(game));
   if(!options.preservePayload && new TextEncoder().encode(card).byteLength>STORAGE_POLICY.maximumStoredStateBytes)throw new StorageWriteLimitError();

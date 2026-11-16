@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {createRequire} from "node:module";
-import {mkdtemp,readFile,readdir,rm} from "node:fs/promises";
+import {mkdtemp,readFile,readdir,rm,writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import path from "node:path";
 import {fixture} from "./fixture.mjs";
@@ -13,12 +13,15 @@ import {reserveArchiveOperation,reserveRestore} from "../src/storage-budget.ts";
 const require=createRequire(import.meta.url),wranglerRequire=createRequire(require.resolve("wrangler/package.json"));
 const {Miniflare}=wranglerRequire("miniflare"),{build}=wranglerRequire("esbuild");
 const root=path.resolve(import.meta.dirname,"../../..");
+async function applyRuntimeMigrations(db,migrationLimit=Infinity){
+  for(const name of (await readdir(path.join(root,"db/migrations"))).filter(n=>n.endsWith(".sql")&&Number(n.slice(0,4))<=migrationLimit).sort())await db.exec((await readFile(path.join(root,"db/migrations",name),"utf8")).replace(/--[^\n]*/g,"").replace(/\s+/g," "));
+}
 async function harness(bindings={},migrationLimit=Infinity){
   const directory=await mkdtemp(path.join(tmpdir(),"righelt-storage-lifecycle-"));
   const bundle=await build({stdin:{contents:fixture,resolveDir:root,sourcefile:"storage-runtime.ts"},bundle:true,format:"esm",platform:"browser",write:false});
   const options={modules:true,script:bundle.outputFiles[0].text,compatibilityDate:"2026-03-12",bindings:{STORAGE_COMPRESSION:"true",STORAGE_ARCHIVES_ENABLED:"true",...bindings},d1Databases:["DB"],r2Buckets:["ARCHIVES"],durableObjects:{GAME_ROOMS:{className:"GameRoomDO",useSQLite:true}},d1Persist:path.join(directory,"d1"),r2Persist:path.join(directory,"r2"),durableObjectsPersist:path.join(directory,"do")};
   let runtime=new Miniflare(options),db=await runtime.getD1Database("DB");
-  for(const name of (await readdir(path.join(root,"db/migrations"))).filter(n=>n.endsWith(".sql")&&Number(n.slice(0,4))<=migrationLimit).sort())await db.exec((await readFile(path.join(root,"db/migrations",name),"utf8")).replace(/--[^\n]*/g,"").replace(/\s+/g," "));
+  await applyRuntimeMigrations(db,migrationLimit);
   if(migrationLimit>=16)await db.prepare("UPDATE storage_budget SET healthy=1,observed_at=datetime('now') WHERE singleton=1").run();
   const call=async(route,body={},headers={})=>{
     const response=await runtime.dispatchFetch(`https://test/${route}`,{method:"POST",headers:{"content-type":"application/json","x-game-id":"g",...(options.bindings.STORAGE_GENERATION?{"X-Righelt-Storage-Generation":options.bindings.STORAGE_GENERATION}:{}),...headers},body:JSON.stringify({identityId:"actor",protocolVersion:2,...body})});
@@ -533,4 +536,78 @@ test("hibernating sockets complete a clean peer close on the pinned compatibilit
   assert.equal(event.code,1000);assert.equal(event.wasClean,true);
   const after=await h.current();assert.deepEqual(after.game.board,before.game.board);assert.deepEqual(after.game.moves,before.game.moves);
  }finally{socket?.close();await h.close();}
+});
+
+const metadataLookupWorker=`
+import {persistGameState,loadGameProjection} from './packages/api-handler/src/shell-live-db.ts';
+import {createInitialGame,applyServerAction} from './packages/api-handler/src/shell-live-core.ts';
+export default {async fetch(request,bindings){
+ const input=await request.json();let observing=false,lookup=null,batches=[];
+ const env={...bindings,STORAGE_COMPRESSION:input.compression??'true',STORAGE_METADATA_WRITES_ENABLED:input.metadata??'true',DB:{
+  prepare(sql){const statement=bindings.DB.prepare(sql);
+   if(!observing||!sql.startsWith('SELECT format_version')||!sql.includes('FROM game_payloads'))return statement;
+   const wrap=s=>({bind(...values){return wrap(s.bind(...values));},async first(){const row=await s.first();lookup=row?{keys:Object.keys(row).sort(),encodedResultBytes:new TextEncoder().encode(JSON.stringify(row)).byteLength}:null;return row;}});
+   return wrap(statement);
+  },
+  async batch(statements){
+   if(input.fault==='maintenance')await bindings.DB.prepare('UPDATE account_cutover SET maintenance=1 WHERE singleton=1').run();
+   if(input.fault==='activation')await bindings.DB.prepare('UPDATE account_cutover SET activated_at=1,canary_account_id=?1 WHERE singleton=1').bind('fixture-canary').run();
+   const result=await bindings.DB.batch(statements);batches.push({statements:statements.length,rowsWritten:result.reduce((n,r)=>n+(r.meta?.rows_written??0),0)});return result;
+  }
+ }};
+ try{
+  let game,eventSeq;
+  if(input.seed){game=createInitialGame({gameId:input.id,identityId:'actor',selfPlayMode:true});for(let i=0;i<(input.moves??1);i++)if(!applyServerAction(game,{type:'pass'}).ok)throw Error('fixture_pass_rejected');eventSeq=1;}
+  else{const loaded=await loadGameProjection(env,input.id);if(loaded?.kind!=='ok')throw Error('fixture_missing');game=input.residentGame??loaded.game;eventSeq=loaded.eventSeq+1;game.notifications.push(input.note);}
+  observing=!input.seed;
+  await persistGameState(env,game,eventSeq,null,input.seed?{}:{metadataOnly:true,invitesChanged:false,activityChanged:false,baseEventSeq:input.staleBase??eventSeq-1});
+  observing=false;
+  const loaded=await loadGameProjection(env,input.id);
+  const reference=await bindings.DB.prepare('SELECT format_version FROM game_payloads WHERE game_id=?1').bind(input.id).first();
+  return Response.json({game:loaded.game,eventSeq:loaded.eventSeq,lookup,batches,referenceBytes:reference?new TextEncoder().encode(JSON.stringify(reference)).byteLength:0});
+ }catch(error){return Response.json({error:String(error),lookup,batches},{status:500});}
+}};`;
+
+test('metadata commits return only format metadata from native D1 and preserve payload authority', {timeout:30000}, async()=>{
+ const bundle=await build({stdin:{contents:metadataLookupWorker,resolveDir:root},bundle:true,format:'esm',platform:'browser',write:false});
+ const runtime=new Miniflare({modules:true,script:bundle.outputFiles[0].text,compatibilityDate:'2026-03-12',d1Databases:['DB']});
+ try{
+  const db=await runtime.getD1Database('DB');
+  await applyRuntimeMigrations(db);
+  await db.prepare("INSERT INTO accounts(account_id,username,username_canonical,display_name,created_at,password_hash) VALUES('fixture-canary','canary','canary','Canary',0,'synthetic')").run();
+  const call=async(input,status=200)=>{const response=await runtime.dispatchFetch('https://fixture',{method:'POST',body:JSON.stringify(input)});const value=await response.json();assert.equal(response.status,status,JSON.stringify(value));return value;};
+  const payload=id=>db.prepare('SELECT * FROM game_payloads WHERE game_id=?1').bind(id).first();
+  const projection=id=>db.prepare('SELECT * FROM live_games WHERE game_id=?1').bind(id).first();
+  await call({seed:true,id:'retained',moves:60});
+  const original=await payload('retained');assert.equal(original.format_version,1);
+  const first=await call({id:'retained',note:'First metadata'}),transitioned=await payload('retained');
+  assert.equal(transitioned.format_version,2);assert.deepEqual(transitioned.state_blob,original.state_blob);assert.equal(transitioned.state_sha256,original.state_sha256);
+  const repeated=await call({id:'retained',note:'Repeated metadata'});
+  assert.deepEqual(await payload('retained'),transitioned);assert.equal(repeated.game.moves.length,60);assert.equal(repeated.game.notifications.at(-1),'Repeated metadata');assert.equal(repeated.eventSeq,3);
+  const beforeStale={projection:await projection('retained'),payload:await payload('retained')};
+  const stale=await call({id:'retained',note:'Stale metadata',staleBase:1},500);
+  assert.match(stale.error,/stale_game_revision/);assert.deepEqual({projection:await projection('retained'),payload:await payload('retained')},beforeStale);
+  const fallbacks=[];
+  for(const mode of ['missing','metadata-disabled','compression-disabled']){
+   await call({seed:true,id:mode});const resident=await call({id:mode,note:'Transition'});
+   if(mode==='missing')await db.prepare('DELETE FROM game_payloads WHERE game_id=?1').bind(mode).run();
+   const saved=await call({id:mode,note:'Fallback survives',...(mode==='missing'?{residentGame:resident.game}:{}),...(mode==='metadata-disabled'?{metadata:'false'}:{}),...(mode==='compression-disabled'?{compression:'false'}:{})});
+   assert.equal(saved.game.moves.length,1);assert.equal(saved.game.notifications.at(-1),'Fallback survives');
+   const row=await payload(mode);if(mode==='compression-disabled')assert.equal(row,null);else assert.equal(row.format_version,1);
+   fallbacks.push({mode,lookup:saved.lookup});
+  }
+  for(const fault of ['maintenance','activation']){
+   await call({seed:true,id:fault});await call({id:fault,note:'Transition'});
+   const before={projection:await projection(fault),payload:await payload(fault)};
+   const rejected=await call({id:fault,note:'Denied metadata',fault},500);
+   assert.match(rejected.error,/account_cutover_write_denied/);assert.deepEqual({projection:await projection(fault),payload:await payload(fault)},before);
+   if(fault==='maintenance')await db.prepare('UPDATE account_cutover SET maintenance=0 WHERE singleton=1').run();
+  }
+  const report={recordedAt:new Date().toISOString(),first:{lookup:first.lookup,batch:first.batches[0],referenceBytes:first.referenceBytes},repeated:{lookup:repeated.lookup,batch:repeated.batches[0],referenceBytes:repeated.referenceBytes},retainedBlobBytes:original.state_blob.length,fallbacks,checks:{formatTransition:true,exactPayload:true,reloadedHistory:true,staleCASRollback:true,missingAndDisabledFallback:true,maintenanceAndActivationRollback:true},scope:'Actual local Workers/D1 result objects. encodedResultBytes is JSON encoding of the returned binding value, not network bytes, CPU, provider rows or billing. Sixty synthetic pass moves, no production data.'};
+  if(process.env.METADATA_LOOKUP_EVIDENCE)await writeFile(process.env.METADATA_LOOKUP_EVIDENCE,JSON.stringify(report,null,2)+'\n');
+  console.info(JSON.stringify({metadataLookup:report}));
+  assert.deepEqual(first.lookup.keys,['format_version'],'Metadata existence lookup must not retrieve history blob/checksum');
+  assert.deepEqual(repeated.lookup.keys,['format_version']);
+  assert.equal(first.lookup.encodedResultBytes,first.referenceBytes);assert.equal(repeated.lookup.encodedResultBytes,repeated.referenceBytes);
+ }finally{await runtime.dispose();}
 });
