@@ -204,20 +204,24 @@ After resolution, an ordinary public short requires the existing public transiti
     "refusalReceiptSha256": "RESOLUTION_RECEIPT_CANONICAL_SHA256",
     "actualSpendBasisSha256": "FRESH_ACTUAL_BASIS_RECEIPT_SHA256",
     "capacity": {
-      "observedAt": 0,
+      "schema": 2,
+      "kind": "fresh-filtered-runpod-capacity",
       "validUntil": 0,
-      "gpu": "SAME_APPROVED_GPU",
-      "dataCenterId": "SAME_APPROVED_DATACENTER",
-      "priorAvailability": "LOW",
-      "availability": "MEDIUM",
-      "evidenceSha256": "ACTUAL_CATALOG_EVIDENCE_SHA256"
+      "observationSha256": "CANONICAL_OBSERVATION_SHA256",
+      "observation": {}
     }
   }
 }
 ```
 
-This is the additional object, not a complete receipt. The actual balance/inventory observation must occur strictly after resolution adoption. Capacity evidence must be fresh for at most fifteen minutes, cover intent expiry and show MEDIUM or HIGH availability in the same approved GPU/datacenter. Catalog availability is evidence of improvement, not reserved capacity or a successful launch. The frozen model, profiles, schedule, seeds, phase duration, accounting reserve, cohort requirements and campaign cap remain bounded by the refused short. New private output paths may differ.
+This shows the additional receipt fields. Replace the empty observation with a complete fresh `runpod-filtered-gpu-type-observation`: schema1, native UTC `requestStartedAt` and `observedAt`, one exact `query` and its whole `response`, `notReservation:true` and `noProviderCreate:true`. The [retained public catalog example](test/fixtures/filtered-capacity.json) documents the shape, but its historical timestamps cannot admit new work. `observationSha256` hashes canonical UTF-8 JSON for that entire observation, including filters, response and times. The immutable transition receipt binds the observation and hash together. Do not combine availability, CUDA, datacenter or pricing from unrelated queries.
+
+The query must select the approved NVIDIA RTX PRO6000 Blackwell Server Edition, SECURE cloud, count1, countryCodes[US], product[POD], include[AVAILABILITY] and a numeric minCudaVersion of at least13.0. The same response must identify that GPU, show non-NONE overall and US-NC-2 availability, compatible available CUDA, at least188GB RAM and16vCPU, and Secure pricing within the fresh all-in hourly quote. LOW is eligible. The old MEDIUM/HIGH stock-improvement heuristic and its unscoped receipt shape are superseded. Fresh availability is not a claim that stock improved.
+
+The observation must be at most fifteen minutes old from query start, with `validUntil` covering intent expiry and no later than fifteen minutes from that start. Its native UTC timestamps use `YYYY-MM-DD HH:MM:SS UTC`. The all-in quote must be observed after query start, cover intent expiry, include at least the observed Secure base price and stay at or below272cents/hour. The unchanged create constraints remain the same GPU and US-NC-2,188GB RAM,16vCPU,80GB disk and CUDA13.0. Filtered catalog minima and CUDA availability do not guarantee one free machine satisfying every create constraint, particularly disk. Actual creation/attachment must still qualify those requirements.
+
+The actual balance/inventory observation must occur strictly after resolution adoption. The frozen model, profiles, schedule, seeds, phase duration, accounting reserve, cohort requirements and campaign cap remain bounded by the refused short. New private output paths may differ.
 
 All existing qualification, image, funding, startup, cleanup readiness, registry and absolute-clock gates still apply. The registry remains capped at three: original unresolved owner, B6 unresolved owner and the new candidate. Effective refusal excludes only 1c3 from current coverage and compute conflict. A positive contradiction restores its hold rather than evicting a watch.
 
-Preparation persists one global `capacityRecoveryShort` marker with the campaign, intent, transition, resolution and original program anchor before returning any bootstrap token. Exact pending-intent replay is idempotent. Cancellation, failure, uncertain dispatch, restart or another campaign cannot refund the allowance. Omitting the recovery variant cannot bypass it. The independently qualified diagnostic-once and productive-work routes retain their existing whole-game timing, cost, growth, cleanup and science requirements. This adds no provider retry, image rebuild, service, account or spending authority.
+Preparation persists one global `capacityRecoveryShort` marker with the campaign, intent, transition, resolution and original program anchor before returning any bootstrap token. Exact pending-intent replay is idempotent. Cancellation, failure, uncertain dispatch, restart or another campaign cannot refund the allowance. Omitting the recovery variant cannot bypass it. The independently qualified diagnostic-once and productive-work routes retain their existing whole-game timing, cost, growth, cleanup and science requirements. A new refusal or unknown result consumes this single short allowance and stops further allocations. This adds no LOW retry loop, automatic resolution for a new refusal, image rebuild, service, account or spending authority.
