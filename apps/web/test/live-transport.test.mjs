@@ -3072,15 +3072,33 @@ test('completed Home previews are fetched once per game revision and stale cache
  const fetcher=async(url,init={})=>{
   if(String(url).includes('/review-previews')){
    previewReads++;const [{gameId,gameplayRevision}]=JSON.parse(init.body).items;
-   return Response.json({ok:true,items:[{ok:true,gameId,gameplayRevision,turnIndex:gameplayRevision-1,outcomeStatus:'p1_win',preview:{snapshot:{...snapshot,turnIndex:gameplayRevision},selection:null,overlay:{mode:'recorded-turn',presentationContext:'history',endpointRoles:[],recordedActions:[],destroyedPieces:[]},legalActions:[],selectedPieceId:null,selectedPieceMoves:[],selectedPieceMovePreviews:[],currentActionType:'pass',selectedPieceOverlayPhase:'actionPreviews'}}]});
+   return Response.json({ok:true,items:[{ok:true,gameId,gameplayRevision,completedActionCount:gameplayRevision+20,turnIndex:gameplayRevision-1,outcomeStatus:'p1_win',preview:{snapshot:{...snapshot,turnIndex:gameplayRevision},selection:null,overlay:{mode:'recorded-turn',presentationContext:'history',endpointRoles:[],recordedActions:[],destroyedPieces:[]},legalActions:[],selectedPieceId:null,selectedPieceMoves:[],selectedPieceMovePreviews:[],currentActionType:'pass',selectedPieceOverlayPhase:'actionPreviews'}}]});
   }
   return Response.json({ok:true,section:'completed',page:0,pageSize:6,totalGames:1,totalPages:1,games:[{id:'completed-cache',eventSeq,gameplayRevision:revision,confirmedOutcomeStatus:'p1_win',moveCount:4,previewSnapshot:{...snapshot,turnIndex:revision}}]});
  };
  const store=createLiveTransportStore({storage,fetcher});t.after(()=>store.retire());
  await store.loadGamesPage({section:'completed'});await store.loadGamesPage({section:'completed'});
- assert.equal(previewReads,1);assert.equal(store.getHomeGameCard('completed-cache').reviewPreview.gameplayRevision,3);
+ assert.equal(previewReads,1);assert.equal(store.getHomeGameCard('completed-cache').reviewPreview.gameplayRevision,3);assert.equal(store.getHomeGameCard('completed-cache').completedActionCount,23);
  revision=4;eventSeq=9;await store.loadGamesPage({section:'completed'});
- assert.equal(previewReads,2);assert.equal(store.getHomeGameCard('completed-cache').reviewPreview.gameplayRevision,4);
+ assert.equal(previewReads,2);assert.equal(store.getHomeGameCard('completed-cache').reviewPreview.gameplayRevision,4);assert.equal(store.getHomeGameCard('completed-cache').completedActionCount,24);
+});
+
+test('completed Home caches count-only responses and old APIs omit the count safely',async t=>{
+ const storage=createMemoryStorage();storage.setItem(IDENTITY_KEY,'id-a');let withCount=true,previewReads=0;
+ const fetcher=async(url,init={})=>{
+  if(String(url).includes('/review-previews')){
+   previewReads++;const [{gameId,gameplayRevision}]=JSON.parse(init.body).items;
+   return Response.json({ok:true,items:[{ok:true,gameId,gameplayRevision,...(withCount?{completedActionCount:0}:{})}]});
+  }
+  return Response.json({ok:true,section:'completed',page:0,pageSize:6,totalGames:1,totalPages:1,games:[{id:'count-only',eventSeq:8,gameplayRevision:3,confirmedOutcomeStatus:'p1_win',moveCount:1,previewSnapshot:{outcome:{status:'p1_win'}}}]});
+ };
+ const store=createLiveTransportStore({storage,fetcher});t.after(()=>store.retire());
+ await store.loadGamesPage({section:'completed'});
+ assert.equal(store.getHomeGameCard('count-only').completedActionCount,0);assert.equal(store.getHomeGameCard('count-only').reviewPreview,null);
+ store.retire();
+ const oldStore=createLiveTransportStore({storage,fetcher:async(url,init={})=>{withCount=false;return fetcher(url,init);}});t.after(()=>oldStore.retire());
+ await oldStore.loadGamesPage({section:'completed'});
+ assert.equal(oldStore.getHomeGameCard('count-only').completedActionCount,null);assert.equal(previewReads,2);
 });
 
 test('completed Home preview requests never exceed one visible four-card page',async t=>{

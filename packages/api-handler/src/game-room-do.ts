@@ -90,6 +90,10 @@ const samePosition=(left:{row:number;col:number}|undefined,right:{row:number;col
 const recordedStartPiece=(move:MoveEntry)=>move.selectionSnapshot.pieces.find(piece=>piece.id===move.action.actorId)
   ??move.selectionSnapshot.pieces.find(piece=>samePosition(piece.position,move.action.from));
 const presentationAction=(action:MoveEntry['action'])=>({type:action.type,...(action.actorId?{actorId:action.actorId}:{}),...(action.from?{from:clone(action.from)}:{}),...(action.to?{to:clone(action.to)}:{}),...(action.targetId?{targetId:action.targetId}:{})});
+const completedActionCount=(game:LiveGame)=>isTerminalOutcome(game.board.state.outcome.status)
+  &&game.terminalOutcome?.activeActionCountComplete===true
+  &&Number.isSafeInteger(game.terminalOutcome.activeActionCount)&&game.terminalOutcome.activeActionCount>=0
+  ?game.terminalOutcome.activeActionCount:null;
 const completedReviewPreview=(game:LiveGame)=>{
   if(!isTerminalOutcome(game.board.state.outcome.status))return null;
   const active=game.moves.filter(move=>move.undone!==true),last=active.at(-1);
@@ -544,9 +548,11 @@ export class GameRoomDO {
     }
 
     if(request.method==='POST'&&path==='/review-preview'){
+      if(getRolesForIdentity(game,identityId).length===0)throw new AuthProblem('invalid_input',403);
       if(body.gameplayRevision!==game.gameplayRevision)return json({ok:false,error:'history_changed',gameplayRevision:game.gameplayRevision},409);
-      const preview=completedReviewPreview(game);
-      return preview?json({ok:true,...preview}):json({ok:false,error:'completed_review_unavailable'},409);
+      const preview=completedReviewPreview(game),count=completedActionCount(game);
+      if(!preview&&count===null)return json({ok:false,error:'completed_review_unavailable'},409);
+      return json({ok:true,...(preview??{gameId:game.id,gameplayRevision:game.gameplayRevision}),...(count===null?{}:{completedActionCount:count})});
     }
 
     if (request.method === "POST" && path === "/prepare-branch") {

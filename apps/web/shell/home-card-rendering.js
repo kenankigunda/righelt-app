@@ -100,7 +100,9 @@ const renderHomeGameCard = (game) => {
   const result = homeCardResult(game, {identityId:getTransport().getIdentityId()});
   const completed = result.kind === 'completed';
   const statusText = result.kind === 'ongoing' ? snapshot ? formatSideToMoveLabel(snapshot) : "Snapshot unavailable" : result.label;
-  const moveLabel = completed ? `${game.moveCount} ${game.moveCount === 1 ? 'move' : 'moves'}` : `Move ${game.moveCount + 1}`;
+  const count=completed&&Number.isSafeInteger(game.completedActionCount)&&game.completedActionCount>=0?game.completedActionCount:null;
+  const moveLabel = completed ? count===null?null:`${count} ${count === 1 ? 'move' : 'moves'}` : `Move ${game.moveCount + 1}`;
+  const moveMeta=moveLabel===null?'':`<div class="mini-board-card-meta mini-board-card-meta-primary"><span class="small">${escapeHtml(moveLabel)}</span></div>`;
   const turnNumber=Number.isSafeInteger(game.reviewPreview?.turnIndex)?game.reviewPreview.turnIndex+1:null;
   const resultHtml = completed ? `<div class="home-card-result"><span class="home-card-result-line"><strong${result.winnerSide ? ` class="player-tone-${result.winnerSide.toLowerCase()}"` : ''}><bdi>${escapeHtml(result.label)}</bdi></strong>${turnNumber?`<span> on Turn ${turnNumber}</span>`:''}</span></div>` : '';
   const recoveryChip =
@@ -115,9 +117,7 @@ const renderHomeGameCard = (game) => {
         <p class="small mini-board-card-subtitle">Last move on ${escapeHtml(formatClientDateTime(game.lastMoveAt || game.createdAt))}</p>
       </div>
       ${recoveryChip}`,
-    meta: `<div class="mini-board-card-meta mini-board-card-meta-primary">
-        <span class="small">${escapeHtml(moveLabel)}</span>
-      </div>${resultHtml}`,
+    meta: `${moveMeta}${resultHtml}`,
     statusText: completed ? result.action : result.kind === 'pending' ? `${statusText} · ${result.action}` : statusText,
     winnerSide: completed ? result.winnerSide : null,
     statusMarkup: result.kind === 'ongoing' && snapshot?.outcome?.status === 'ongoing' ? renderHomeCardTurn(game, snapshot, {identityId:getTransport().getIdentityId()}) : null,

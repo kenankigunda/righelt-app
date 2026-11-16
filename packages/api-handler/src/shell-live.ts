@@ -273,7 +273,11 @@ export const handleLiveGameRequest = async (
         if (!response.ok) {
           return { gameId: item.gameId, gameplayRevision: item.gameplayRevision, ok: false, status: response.status, error: typeof result.error === "string" ? result.error : "preview_unavailable" };
         }
-        return { ok: true, gameId: item.gameId, gameplayRevision: item.gameplayRevision, turnIndex: result.turnIndex, outcomeStatus: result.outcomeStatus, actorSide: result.actorSide, preview: result.preview };
+        const completedActionCount=Number.isSafeInteger(result.completedActionCount)&&Number(result.completedActionCount)>=0
+          ?Number(result.completedActionCount):null;
+        return { ok: true, gameId: item.gameId, gameplayRevision: item.gameplayRevision,
+          ...(completedActionCount===null?{}:{completedActionCount}),turnIndex: result.turnIndex,
+          outcomeStatus: result.outcomeStatus, actorSide: result.actorSide, preview: result.preview };
       } catch {
         return { gameId: item.gameId, gameplayRevision: item.gameplayRevision, ok: false, status: 503, error: "preview_unavailable" };
       }

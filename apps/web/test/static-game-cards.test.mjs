@@ -122,11 +122,25 @@ test('conflicting result metadata and miniature state cannot establish a confirm
 });
 
 test('completed review preview survives only its exact game and gameplay revision fence',()=>{
- const preview={gameId:'g',gameplayRevision:4,turnIndex:2,outcomeStatus:'draw',preview:{snapshot:{outcome:{status:'draw'}},overlay:{mode:'recorded-turn',presentationContext:'history'}}};
+ const preview={gameId:'g',gameplayRevision:4,turnIndex:2,outcomeStatus:'draw',completedActionCount:3,preview:{snapshot:{outcome:{status:'draw'}},overlay:{mode:'recorded-turn',presentationContext:'history'}}};
  const accepted=normalizeStaticGameCard({id:'g',gameplayRevision:4,reviewPreview:preview});
- assert.deepEqual(accepted.reviewPreview,preview);assert.notEqual(accepted.reviewPreview,preview);
- for(const patch of [{id:'other'},{gameplayRevision:5},{reviewPreview:{...preview,outcomeStatus:'p1_win'}}]){
+ assert.deepEqual(accepted.reviewPreview,preview);assert.notEqual(accepted.reviewPreview,preview);assert.equal(accepted.completedActionCount,3);
+ for(const patch of [{id:'other'},{gameplayRevision:5}]){
   const input={id:'g',gameplayRevision:4,reviewPreview:preview,...patch};
-  assert.equal(normalizeStaticGameCard(input).reviewPreview,null);
+  const rejected=normalizeStaticGameCard(input);assert.equal(rejected.reviewPreview,null);assert.equal(rejected.completedActionCount,null);
+ }
+ const visualRejected=normalizeStaticGameCard({id:'g',gameplayRevision:4,reviewPreview:{...preview,outcomeStatus:'p1_win'}});
+ assert.equal(visualRejected.reviewPreview,null);assert.equal(visualRejected.completedActionCount,3);
+});
+
+test('completed count accepts zero without requiring a visual preview and rejects unproven values',()=>{
+ const base={id:'g',gameplayRevision:4};
+ assert.equal(normalizeStaticGameCard({...base,reviewPreview:{gameId:'g',gameplayRevision:4,completedActionCount:0}}).completedActionCount,0);
+ for(const value of [-1,1.5,'2',null,undefined]){
+  assert.equal(normalizeStaticGameCard({...base,reviewPreview:{gameId:'g',gameplayRevision:4,completedActionCount:value}}).completedActionCount,null);
+ }
+ assert.equal(normalizeStaticGameCard({...base,reviewPreview:{gameId:'g',gameplayRevision:3,completedActionCount:2}}).completedActionCount,null);
+ for(const invalidRevision of [undefined,null,-1,1.5,'4']){
+  assert.equal(normalizeStaticGameCard({id:'g',gameplayRevision:invalidRevision,reviewPreview:{gameId:'g',gameplayRevision:invalidRevision,completedActionCount:2}}).completedActionCount,null);
  }
 });
