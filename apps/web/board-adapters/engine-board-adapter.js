@@ -287,6 +287,17 @@ function buildPieceToken(piece, ghost = false) {
   return token;
 }
 
+const accessibleDescendantLabels = (element) => {
+  const labels = [];
+  for (const child of element?.children ?? []) {
+    if (child.getAttribute?.("aria-hidden") === "true") continue;
+    const label = child.getAttribute?.("aria-label");
+    if (label) labels.push(label);
+    else labels.push(...accessibleDescendantLabels(child));
+  }
+  return labels;
+};
+
 const findRenderablePieceToken = (cell) => {
   if (!cell?.querySelectorAll) {
     return null;
@@ -1472,10 +1483,17 @@ export function createEngineBoardAdapter() {
             cell.appendChild(rowAxis);
           }
 
-          // Empty native buttons have no named content. Keep piece, supply and
-          // removal names from their tokens; later rush guidance owns its labels.
-          if (effectiveInteractionMode === "interactive" && !cellPiece && !isSupplyPoint(row, col) && namedRemovals.length === 0) {
-            cell.setAttribute("aria-label", `Square (${row}, ${col})`);
+          // Native cell names own coordinates so axis text cannot leak into them.
+          // Preserve rendered piece/status meaning, while later rush guidance may
+          // replace this base name with its more specific coordinate-bearing copy.
+          if (effectiveInteractionMode === "interactive") {
+            const contents = accessibleDescendantLabels(cell);
+            cell.setAttribute(
+              "aria-label",
+              contents.length > 0
+                ? `${contents.join(", ")} at (${row}, ${col})`
+                : `Square (${row}, ${col})`,
+            );
           }
           if (!existingCell) boardEl.appendChild(cell);
           cellByCoordinateKey.set(key, cell);
