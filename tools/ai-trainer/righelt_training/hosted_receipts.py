@@ -9,6 +9,12 @@ import time
 import re
 
 
+class HostedContractError(ValueError):
+    """Safe response metadata, without URL, credentials or remote bodies."""
+    def __init__(self,status):
+        super().__init__('hosted controller contract rejected');self.http_status=status
+
+
 class HostedInfrastructureError(RuntimeError):
     pass
 
@@ -47,14 +53,16 @@ def request(action, payload=None, *, raw=None, method=None, record_failure=True)
         method=method or ('GET' if payload is None and raw is None else 'POST'),
         headers={'Authorization': 'Bearer ' + os.environ['COMPUTE_WORKER_TOKEN'],
                  'X-Compute-Generation': os.environ['COMPUTE_GENERATION'],
-                 'Content-Type': 'application/json',**({'X-Compute-Startup-Session':session} if session is not None else {})})
+                 'Content-Type': 'application/json',
+                 'Accept': 'application/json',
+                 'User-Agent': 'Righelt-Hosted-Compute/1',**({'X-Compute-Startup-Session':session} if session is not None else {})})
     try:
         with urllib.request.urlopen(req, timeout=10) as response:
             return response.read() if method == 'GET' else json.load(response)
     except Exception as error:
         if isinstance(error,(ValueError,TypeError)):raise ValueError('hosted controller response malformed') from None
         if isinstance(error, urllib.error.HTTPError) and error.code != 429 and error.code < 500:
-            raise ValueError('hosted controller contract rejected') from None
+            raise HostedContractError(error.code) from None
         # Do not leak headers or response bodies containing credentials.
         marker = os.environ.get('RIGHELT_HOSTED_FAILURE_FILE') if record_failure else None
         if marker:

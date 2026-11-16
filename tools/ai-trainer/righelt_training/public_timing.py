@@ -13,6 +13,8 @@ import re
 import time
 import tempfile
 import subprocess
+import sys
+import traceback
 
 ROOT=Path(__file__).resolve().parents[3]
 POLICY=json.loads((ROOT/'tools/hosted-compute/policy.json').read_bytes())
@@ -352,7 +354,16 @@ def main():
         require(args.image_identity and args.output and not args.plan and not args.run_dir and args.seconds is None,'separate source-only preparation required')
         receipt=prepare_package(json.loads(Path(args.prepare_template).read_bytes()),json.loads(Path(args.image_identity).read_bytes()),args.output)
         print(json.dumps({'kind':'public-timing-preparation','directory':str(Path(args.output).resolve()),'receiptCanonicalSha256':record_digest(receipt),'receiptFileSha256':digest((Path(args.output)/'preparation.json').read_bytes()),'launchAuthorized':False}));return
+    diagnostic={'stage':'launch-validation'}
+    try:run_hosted(args,diagnostic)
+    except Exception as error:
+        retain_failure(error,diagnostic)
+        raise
+
+
+def run_hosted(args,diagnostic):
     require(os.environ.get('RIGHELT_HOSTED')=='1' and args.plan and args.run_dir and args.seconds and args.seconds>0,'reviewed hosted public timing launch required')
+    diagnostic['stage']='imports'
     from .portable import resolve_reference
     from .source_image import source_image
     from .prospective_durability import durable_json
@@ -362,13 +373,21 @@ def main():
     from .arena import play_game
     from .export_runtime import ExportedModel
     from . import hosted_receipts
+    diagnostic['stage']='run-directory'
+    directory=resolve_reference(args.run_dir);directory.mkdir(parents=True,exist_ok=True)
+    diagnostic['directory']=directory
+    diagnostic['stage']='source-image'
     image=source_image();require(image is not None,'audited source image required')
+    diagnostic['stage']='bound-inputs'
     plan_raw=resolve_reference(args.plan,expected_sha256=os.environ['RIGHELT_EXPECTED_RECIPE_SHA256']).read_bytes()
     recipe_raw=resolve_reference(os.environ['RIGHELT_EXECUTION_RECIPE_PATH'],expected_sha256=os.environ['RIGHELT_EXECUTION_RECIPE_SHA256']).read_bytes()
     context=json.loads(resolve_reference(os.environ['RIGHELT_EXECUTION_CONTEXT']).read_bytes())
+    diagnostic['stage']='execution-binding'
     execution=measured_context(plan_raw,recipe_raw,context,image)
     require(args.seconds==context['phaseSeconds'],'public timing phase duration differs')
-    directory=resolve_reference(args.run_dir);directory.mkdir(parents=True,exist_ok=True)
+    diagnostic['execution']=execution
+    diagnostic['phaseDeadline']=context['phaseDeadline']
+    diagnostic['stage']='input-artifacts'
     for name,raw_data in [('plan.json',plan_raw),('execution-recipe.json',recipe_raw)]:
         target=directory/name
         if target.exists():require(target.read_bytes()==raw_data,'public timing input copy differs')
@@ -376,15 +395,53 @@ def main():
             with target.open('xb') as stream:stream.write(raw_data);stream.flush();os.fsync(stream.fileno())
     context['inputArtifacts']=[artifact(directory/'plan.json','plan'),artifact(directory/'execution-recipe.json','execution-recipe')]
     context['runtimeArtifact']=artifact(directory/f"runtime-{execution['generation']}.json",'runtime')
+    diagnostic['stage']='authoritative-profiles'
+    profiles=authoritative_profiles(seconds=max(.001,min(10,context['phaseDeadline']/1000-time.time())))
+    diagnostic['stage']='execute'
     result=execute(json.loads(plan_raw),directory,execution,context['completedWorkIds'],context=context,seconds=args.seconds,
-        barrier=hosted_receipts,profiles=authoritative_profiles(seconds=max(.001,min(10,context['phaseDeadline']/1000-time.time()))),start_expected=expected_evaluation_starts,
+        barrier=hosted_receipts,profiles=profiles,start_expected=expected_evaluation_starts,
         start_verify=verify_evaluation_game_start,verify=verify_game,model_factory=ExportedModel,player=play_game,writer=durable_json,progress_publisher=hosted_receipts.publish_progress)
     print(json.dumps({'kind':TIMING['resultKind'],'accountingComplete':result['accountingComplete'],
         'scopeCoverageComplete':result['scopeCoverageComplete'],'strengthEstablished':False}))
 
 
+def retain_failure(error,diagnostic):
+    """Private categorical evidence. Never retain exception text, locals or HTTP bodies.
+
+    A startup error cannot establish that work was unconsumed. Preserve existing
+    prefixes/results and leave accounting incomplete for the operator to reconcile.
+    """
+    record={'schema':1,'kind':'public-timing-failure','stage':diagnostic['stage'],
+        'exceptionType':type(error).__name__,'accountingComplete':False,
+        'observedAt':time.time(),'strengthEstablished':False,'scientificAdmission':False,
+        'frames':[{'file':Path(frame.filename).name,'function':frame.name,'line':frame.lineno}
+                  for frame in traceback.extract_tb(error.__traceback__)[-12:]]}
+    from .hosted_receipts import HostedContractError
+    if isinstance(error,HostedContractError):record['httpStatus']=error.http_status
+    if isinstance(error,subprocess.CalledProcessError):record['subprocessExitCode']=error.returncode
+    if isinstance(error,subprocess.TimeoutExpired):record['subprocessTimedOut']=True
+    cause=error.__cause__
+    if cause is not None:
+        record['causeType']=type(cause).__name__
+        if isinstance(cause,subprocess.CalledProcessError):record['subprocessExitCode']=cause.returncode
+    if 'execution' in diagnostic:
+        record['execution']=diagnostic['execution'];record['originalPhaseDeadline']=diagnostic['phaseDeadline']
+    directory=diagnostic.get('directory')
+    if directory is not None:
+        record['retainedAccounting']={'resultPresent':(directory/'result.json').is_file(),
+            'prefixPointerPresent':(directory/'latest.json').is_file()}
+        try:
+            from .prospective_durability import durable_json
+            generation=diagnostic.get('execution',{}).get('generation','startup')
+            durable_json(directory/f'public-timing-failure-{generation}.json',record)
+        except Exception:
+            # Keep the original failure. The bounded stderr record is also
+            # collected by the worker if immutable publication is unavailable.
+            record['failureArtifactUnavailable']=True
+    print(json.dumps(record,sort_keys=True,allow_nan=False),file=sys.stderr)
+
+
 if __name__=='__main__':
     try:main()
     except Exception:
-        print('Public timing stopped; inspect retained accounting evidence.',file=__import__('sys').stderr)
         raise SystemExit(1)
