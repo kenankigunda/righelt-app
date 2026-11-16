@@ -7,9 +7,9 @@ import {fixture} from './helpers.mjs';
 import {validateManifest,canonical,encode,sha256} from '../policy.mjs';
 import {executionIdentity,verifyResult} from '../result.mjs';
 const exec=promisify(execFile);
-export async function publicTimingFixture(t,{sourceRevision='a'.repeat(40)}={}){
+export async function publicTimingFixture(t,{sourceRevision='a'.repeat(40),unavailable=false}={}){
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'public-timing-contract-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
- const script='tools/ai-trainer/tests/test_public_timing.py',environment={...process.env,PYTHONPATH:'tools/ai-trainer',SYNTHETIC_TIMING_SOURCE_REVISION:sourceRevision};
+ const script='tools/ai-trainer/tests/test_public_timing.py',environment={...process.env,PYTHONPATH:'tools/ai-trainer',SYNTHETIC_TIMING_SOURCE_REVISION:sourceRevision,...(unavailable?{SYNTHETIC_TIMING_UNAVAILABLE:String(unavailable)}:{})};
  const prepared=JSON.parse((await exec('python3',[script,'--fixture-root',root],{env:environment})).stdout);
  const f=await fixture(),m=structuredClone(f.manifest);m.purpose='public-performance-timing';m.id='public-cost';
  delete m.checkpointSha256;delete m.corpusSha256;delete m.externalControl;

@@ -44,3 +44,25 @@ test('actual controller completes, retains and cleans a bound public timing acco
  await core.finish(m.id,1,{kind:'complete',outputs:{timing:output},files});await core.reconcile();await core.reconcile();
  const final=(await core.load()).campaigns[m.id];assert.equal(final.status,'complete');assert.equal(final.cleanupVerified,true);assert.equal(f.f.providers.resources.size,0);assert.equal(final.outputs['public-timing/timing'].sha256,output.sha256);
 });
+
+test('unavailable model preserves honest unstarted accounting but never inferred work',async t=>{
+ const f=await synthetic(t,{unavailable:true});await f.verify(f.result);
+ assert.deepEqual(f.result.completedWorkIds,[]);assert.equal(f.result.scopeCoverageComplete,false);
+ const attempt=f.result.artifacts.find(a=>a.role==='attempt'),original=JSON.parse(await f.read(attempt));
+ for(const change of [a=>a.status='failed',a=>a.inferenceMs=1,a=>a.inferenceCalls={P1:1,P2:0},a=>a.timingComplete=true]){
+  const value=structuredClone(original);change(value);const raw=encode(JSON.stringify(value)),hash=await sha256(raw),result=structuredClone(f.result);
+  const descriptor=result.artifacts.find(a=>a.sha256===attempt.sha256);descriptor.sha256=hash;descriptor.name=hash;descriptor.bytes=raw.length;
+  const proofDescriptor=result.artifacts.find(a=>a.role==='proof'),proof=JSON.parse(await f.read(proofDescriptor));proof.workReceipts.find(r=>r.evidenceSha256===attempt.sha256).evidenceSha256=hash;
+  if(value.status!=='unstarted')proof.workReceipts.find(r=>r.evidenceSha256===hash).status=value.status;
+  const proofRaw=encode(JSON.stringify(proof));proofDescriptor.sha256=await sha256(proofRaw);proofDescriptor.name=proofDescriptor.sha256;proofDescriptor.bytes=proofRaw.length;
+  await assert.rejects(verifyResult(result,{manifest:f.manifest,manifestSha256:f.manifestSha256,phase:f.phase,generation:1,phaseDeadline:f.phaseDeadline,read:a=>a.path===attempt.path?raw:a.role==='proof'?proofRaw:f.read(a)}),/unavailable runtime/);
+ }
+});
+
+test('expired original work budget crosses producer and verifier without loading or playing',async t=>{
+ const f=await synthetic(t,{unavailable:'expired'});await f.verify(f.result);
+ assert.deepEqual(f.result.completedWorkIds,[]);assert.equal(f.result.scopeCoverageComplete,false);
+ const report=JSON.parse(await f.read(f.result.artifacts.find(a=>a.role==='report')));
+ assert.deepEqual(report.inferenceCalls,{P1:0,P2:0});assert.equal(report.timingCoverageComplete,false);
+ assert.equal(report.scopeCells.reduce((n,c)=>n+c.unstarted,0),6);
+});

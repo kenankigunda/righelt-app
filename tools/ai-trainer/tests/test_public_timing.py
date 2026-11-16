@@ -191,7 +191,12 @@ def export_synthetic_fixture(root,context_path=None):
             case.context['inputArtifacts']=[timing.artifact(directory/'plan.json','plan'),timing.artifact(directory/'execution-recipe.json','execution-recipe')]
             case.context['runtimeArtifact']=timing.artifact(directory/'runtime-1.json','runtime')
             class FixtureModel(Model):runtime={**Model.runtime,'artifactSha256':case.plan['model']['sha256']}
-            result=case.run_timing(model_factory=lambda _:FixtureModel(),wall=lambda:case.context['phaseDeadline']/1000-case.context['phaseSeconds']+case.now)
+            def factory(_):
+                if __import__('os').environ.get('SYNTHETIC_TIMING_UNAVAILABLE')=='expired':raise AssertionError('expired work must not load model')
+                if __import__('os').environ.get('SYNTHETIC_TIMING_UNAVAILABLE')=='true':raise RuntimeError('synthetic model unavailable')
+                return FixtureModel()
+            if __import__('os').environ.get('SYNTHETIC_TIMING_UNAVAILABLE')=='expired':case.now=111.
+            result=case.run_timing(model_factory=factory,wall=lambda:case.context['phaseDeadline']/1000-case.context['phaseSeconds']+case.now)
             output={'result':result}
         else:output={'inputs':descriptors,'publicTiming':binding,'image':image,'workIds':case.ids}
     case.doCleanups()
