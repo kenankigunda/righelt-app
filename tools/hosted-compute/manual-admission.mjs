@@ -1,6 +1,6 @@
 import {assert,canonical,encode,sha256,reserveCents,TERMINAL} from './policy.mjs';
 import {cashPlan,cloudflareCoverage} from './cash.mjs';
-import {readCleanupRegistry,readOperatorReceipt,sameReference,validateManualIntent,validateRepairAllowance,operatorAttemptBinding} from './manual-authority.mjs';
+import {readCleanupRegistry,readOperatorReceipt,sameReference,validateManualIntent,validateRepairAllowance,operatorAttemptBinding,MANUAL_STARTUP_MS} from './manual-authority.mjs';
 import {validateRuntimeUpgrade} from './runtime-upgrade.mjs';
 import {actualEnvelope} from './actual-spend.mjs';
 
@@ -39,6 +39,7 @@ export async function manualAuthority(core,db,c,intent){
   const fence=await control.store.readFence(oldRecord.nonce,prior.manifest.externalControl);
   assert(fence?.kind==='terminal'&&fence.prearmSha256===prior.manifest.externalControl.sha256,'original terminal fence missing');
   const authority=await control.authorizeLaunch(c.manifest,{phaseIndex:0,generation:1});
+  if(intent.startup)assert(intent.startup.deadline<=Math.min(c.manifest.deadline,authority.cutoff,intent.repairDeadline,db.manualProgram?.deadline??Infinity),'startup authority exceeds immutable bounds');
   assert(authority.name===intent.name&&authority.name!==old.name,'manual exact name differs');
   assert(intent.liabilityUntil>=authority.cutoff,'cleanup and response liability horizon missing');
   const ready=await readOperatorReceipt(control.store,intent.cleanupReady);
@@ -51,6 +52,7 @@ export async function manualAuthority(core,db,c,intent){
     assert(ready.run.usageReviewRequired===true&&oldResult.state==='terminal'&&oldResult.usageReviewRequired===true&&newResult.usageReviewRequired===false,'cleanup failure is not solely the retained old usage warning');
   }
   const funding=await readOperatorReceipt(control.store,intent.fundingReservation),oldFunding=funding.oldAttempt,next=funding.newIntent,total=funding.aggregate;
+  if(intent.startup)assert(next?.startupDeadline===intent.startup.deadline,'startup funding binding differs');
   // Every earlier prepared manual allocation remains committed after cleanup,
   // cancellation or completion. The original unknown owner stays the prior.
   const retainedManualCents=Object.values(db.campaigns).filter(other=>other!==c&&other.manual?.intent.priorCampaignId===prior.manifest.id).reduce((sum,other)=>sum+other.manifest.maxCents,0);
@@ -140,8 +142,9 @@ export async function attachManual(core,id,body){
   if(db.manualProgram)assert(body.acceptedAt>=db.manualProgram.acceptedAt,'overall actual start cannot move backward');
   else db.manualProgram={acceptedAt:body.acceptedAt,deadline:body.acceptedAt+c.manual.intent.runtimeWindowMs,intentSha256:body.intentSha256,campaignId:id};
   c.programAnchor=structuredClone(db.manualProgram);
-  c.manual.campaignDeadline=Math.min(db.manualProgram.deadline,c.manifest.deadline,body.acceptedAt+900000);
+  c.manual.campaignDeadline=Math.min(db.manualProgram.deadline,c.manifest.deadline,body.acceptedAt+MANUAL_STARTUP_MS);
   assert(core.now()<c.manual.campaignDeadline,'manual actual run window expired');
+  if(c.manual.intent.startup){c.manual.startupDeadline=Math.min(c.manual.intent.startup.deadline,body.acceptedAt+c.manual.intent.startup.maximumMs,c.manual.campaignDeadline,authority.cutoff,c.manual.intent.repairDeadline);assert(core.now()<c.manual.startupDeadline,'manual startup already expired');}
   a.resourceId=body.podId;a.placement=placement;a.uncertain=false;
   c.status='provisioning';core.event(c,'manual-attached',{intentSha256:body.intentSha256});await core.save(db);
   return core.status(c);

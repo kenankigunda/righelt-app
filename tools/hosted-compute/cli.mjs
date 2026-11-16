@@ -6,7 +6,7 @@ import { validateScientificAdmission } from './experiment.mjs';
 import { backupCollection,restoreBackup,collectAccepted } from './backup-client.mjs';
 import { operatorVault,operatorEncryption,operatorSecret } from './operator-credentials.mjs';
 import { Client } from './client.mjs';
-import {manualStartupArgv} from './manual-start.mjs';
+import {manualStartupArgv,manualStartupSettings} from './manual-start.mjs';
 import { containedFile } from './worker.mjs';
 import { POLICY, assert, canonical, encode, safeName, sha256, validateManifest } from './policy.mjs';
 
@@ -106,7 +106,8 @@ export async function main(argv = process.argv.slice(2), env = process.env, serv
     const parent=await fs.lstat(path.dirname(out));assert(parent.isDirectory()&&!parent.isSymbolicLink()&&(parent.mode&0o077)===0,'private bootstrap directory required');
     const result=await client.json('manual-prepare',intent);
     assert(typeof result.workerToken==='string'&&/^[a-f0-9]{64}$/.test(result.workerToken),'manual bootstrap response invalid');
-    await durableWrite(out,encode(canonical({intentSha256:result.intentSha256,workdir:'/workspace/righelt',argv:manualStartupArgv(),env:{COMPUTE_URL:env.COMPUTE_URL,COMPUTE_ID:id,COMPUTE_GENERATION:String(result.generation),COMPUTE_WORKER_TOKEN:result.workerToken,COMPUTE_MANUAL_READY_UNTIL:String(Math.min(intent.createdAt+300000,intent.expiresAt))}})+'\n'));
+    const startup=manualStartupSettings(intent);
+    await durableWrite(out,encode(canonical({intentSha256:result.intentSha256,workdir:'/workspace/righelt',argv:manualStartupArgv(),env:{COMPUTE_URL:env.COMPUTE_URL,COMPUTE_ID:id,COMPUTE_GENERATION:String(result.generation),COMPUTE_WORKER_TOKEN:result.workerToken,COMPUTE_MANUAL_READY_UNTIL:String(startup.until),...(startup.protocol?{COMPUTE_MANUAL_READY_PROTOCOL:startup.protocol,COMPUTE_MANUAL_INTENT_SHA256:result.intentSha256}:{})}})+'\n'));
     await syncDirectory(path.dirname(out));
     return {intentSha256:result.intentSha256,generation:result.generation,bootstrapFile:out};
   }

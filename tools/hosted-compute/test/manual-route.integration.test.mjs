@@ -11,9 +11,11 @@ import {Client} from '../client.mjs';
 import {main} from '../cli.mjs';
 const require=createRequire(import.meta.url);
 const {Miniflare}=require(require.resolve('miniflare',{paths:[require.resolve('wrangler/package.json')]}));
-test('real admin routes privately bootstrap a fenced worker, attach one UI Pod, and keep both campaigns through DO storage',async t=>{
- const f=await setup(),oldRecord=await f.core.externalControl(f.manifest).store.readPrearm(f.manifest.externalControl);
- const bundle=await build({stdin:{contents:`import app,{ComputeController} from './apps/compute-controller/index.mjs';export class SeedableControl extends ComputeController{constructor(ctx,env){super(ctx,env);this.core.now=()=>Number(env.FIXTURE_NOW);const external=this.core.externalControl;this.core.externalControl=m=>{const control=external(m);control.clock=this.core.now;return control;};}async fetch(request){const p=new URL(request.url).pathname;if(p==='/fixture-seed')return this.serialize(async()=>{await this.core.save(await request.json());return Response.json({ok:true});});if(p==='/fixture-ledger')return Response.json(await this.core.load());return super.fetch(request);}}export default app;`,resolveDir:process.cwd(),sourcefile:'manual-test-fixture.mjs'},bundle:true,write:false,format:'esm',platform:'browser'});
+for(const cold of [false,true])test(`real admin routes privately bootstrap and attach a ${cold?'cold-start':'legacy'} Pod through DO storage`,async t=>{
+ const f=await setup();
+ if(cold){f.intent.startup={schema:1,kind:'confirmed-pod-startup',maximumMs:900000,deadline:f.now()+900000};f.funding.newIntent.startupDeadline=f.intent.startup.deadline;f.intent.fundingReservation=await f.receipt(f.funding,'6');}
+ const oldRecord=await f.core.externalControl(f.manifest).store.readPrearm(f.manifest.externalControl);
+ const bundle=await build({stdin:{contents:`import app,{ComputeController} from './apps/compute-controller/index.mjs';export class SeedableControl extends ComputeController{constructor(ctx,env){super(ctx,env);this.fixtureNow=Number(env.FIXTURE_NOW);this.core.now=()=>this.fixtureNow;const external=this.core.externalControl;this.core.externalControl=m=>{const control=external(m);control.clock=this.core.now;return control;};}async fetch(request){const p=new URL(request.url).pathname;if(p==='/fixture-seed')return this.serialize(async()=>{await this.core.save(await request.json());return Response.json({ok:true});});if(p==='/fixture-time'){this.fixtureNow=Number(await request.text());return Response.json({ok:true});}if(p==='/fixture-ledger')return Response.json(await this.core.load());return super.fetch(request);}}export default app;`,resolveDir:process.cwd(),sourcefile:'manual-test-fixture.mjs'},bundle:true,write:false,format:'esm',platform:'browser'});
  let posts=0;
  const mf=new Miniflare({modules:true,script:bundle.outputFiles[0].text,compatibilityDate:'2026-11-09',durableObjects:{CONTROL:{className:'SeedableControl',useSQLite:true}},r2Buckets:['ARTIFACTS'],bindings:{FIXTURE_NOW:String(f.now()),ADMIN_TOKEN:'private-admin',WORKER_SIGNING_KEY:'private-signing-'.repeat(4),COMPUTE_ENABLED:'true',AUTHORIZED_PILOT_CENTS:'10000',CONTROLLER_URL:'https://compute.example',COMPUTE_CONTROL_REPOSITORY:'fixture/private-control',COMPUTE_CONTROL_READ_TOKEN:'private-reader',RUNPOD_API_KEY:'private-provider'},outboundService:async req=>{
   const u=new URL(req.url);if(req.method==='POST')posts++;
@@ -39,10 +41,22 @@ test('real admin routes privately bootstrap a fenced worker, attach one UI Pod, 
  const intentFile=path.join(directory,'intent.json'),bootstrap=path.join(directory,'bootstrap.json');await fs.writeFile(intentFile,JSON.stringify(f.intent),{mode:0o600});
  const printed=await main(['manual-prepare','ui','--intent',intentFile,'--bootstrap',bootstrap],{COMPUTE_URL:'https://compute.example',COMPUTE_ADMIN_TOKEN:'private-admin'},{fetcher});
  const secret=JSON.parse(await fs.readFile(bootstrap));assert(!JSON.stringify(printed).includes(secret.env.COMPUTE_WORKER_TOKEN));assert.equal((await fs.stat(bootstrap)).mode&0o777,0o600);
- const worker=new Client({url:secret.env.COMPUTE_URL,id:'ui',generation:1,token:secret.env.COMPUTE_WORKER_TOKEN,fetcher});assert.equal((await worker.json('manual-ready')).ready,false);await assert.rejects(worker.json('work'),/rejected \(409\)/);
+ const worker=new Client({url:secret.env.COMPUTE_URL,id:'ui',generation:1,token:secret.env.COMPUTE_WORKER_TOKEN,fetcher});
+ const session='7'.repeat(32),claim=cold?{podId:'manual',intentSha256:printed.intentSha256,sessionId:session}:undefined;
+ assert.equal((await worker.json('manual-ready',claim)).ready,false);await assert.rejects(worker.json('work'),/rejected \(409\)/);
+ if(cold){assert.equal(secret.env.COMPUTE_MANUAL_READY_PROTOCOL,'confirmed-pod-startup');assert.equal(secret.env.COMPUTE_MANUAL_INTENT_SHA256,printed.intentSha256);assert.equal(Number(secret.env.COMPUTE_MANUAL_READY_UNTIL),f.intent.startup.deadline);}
  f.addPod();const body={intentSha256:printed.intentSha256,podId:'manual',acceptedAt:f.intent.createdAt,accountId:f.intent.accountId};
  await admin.json('manual-attach',body);const first=await admin.json('status');await admin.json('manual-attach',body);assert.deepEqual((await admin.json('status')).programAnchor,first.programAnchor);
- assert.equal((await worker.json('manual-ready')).ready,true);assert.equal((await worker.json('work')).manifestSha256,f.intent.manifestSha256);assert.equal(posts,0);
+ if(cold){f.advance(360000);await mf.dispatchFetch('https://compute.example/fixture-time',{method:'POST',body:String(f.now())});await assert.rejects(worker.json('manual-ready',{...claim,podId:'other'}),/rejected/);}
+ assert.equal((await worker.json('manual-ready',claim)).ready,true);
+ assert.equal((await worker.json('manual-ready',claim)).ready,true);
+ if(cold){
+  await assert.rejects(worker.json('manual-ready',{...claim,sessionId:'8'.repeat(32)}),/rejected/);
+  for(const action of ['work','objects/'+f.inputs[0].sha256,'heartbeat'])await assert.rejects(worker.json(action,action==='heartbeat'?{}:undefined),/rejected/);
+  worker.fetcher=(url,options)=>fetcher(url,{...options,headers:{...options.headers,'x-compute-startup-session':session}});
+ }
+ assert.equal((await worker.json('work')).manifestSha256,f.intent.manifestSha256);assert.equal(posts,0);
+ if(cold){await worker.json('heartbeat',{});const cancelled=await(await mf.dispatchFetch('https://compute.example/fixture-ledger')).json();cancelled.campaigns.ui.status='cancelled';await mf.dispatchFetch('https://compute.example/fixture-seed',{method:'POST',body:JSON.stringify(cancelled)});assert.equal((await worker.json('manual-ready',claim)).ready,false);await assert.rejects(worker.json('work'),/rejected/);assert(!JSON.stringify(await admin.json('status')).includes(session));}
  const ledger=await(await mf.dispatchFetch('https://compute.example/fixture-ledger')).json();assert.deepEqual(ledger.campaigns.pilot.attempts[0],f.old);assert.equal(ledger.creditAllocatedCents,2000);assert.equal(ledger.manualProgram.deadline,f.intent.createdAt+86400000);
  await assert.rejects(worker.json('manual-attach',body),/rejected \(409\)/);
  await assert.rejects(worker.json('attempt-binding'),/rejected \(409\)/);
