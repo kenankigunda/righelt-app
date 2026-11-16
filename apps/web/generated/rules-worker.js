@@ -2759,6 +2759,13 @@ var finalizeResolvedTurn = ({ state, activeTurn, endedAt, resolveToStability: re
   return { nextState, nextTurn };
 };
 
+// apps/web/generated/packages/shared-types/src/history.js
+var getNextDisplayMoveNumber = (moves) => {
+  const activeMoves = moves.filter((move) => move.undone !== true);
+  const latestActiveMove = activeMoves.at(-1);
+  return typeof latestActiveMove?.displayMoveNumber === "number" && Number.isFinite(latestActiveMove.displayMoveNumber) ? latestActiveMove.displayMoveNumber + 1 : activeMoves.length + 1;
+};
+
 // apps/web/shell/optimistic-live.js
 var clone = (value) => structuredClone(value);
 var getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
@@ -2831,9 +2838,10 @@ var completeTurn = (game, queuedAt, pendingMoves, operationId) => {
   game.updatedAt = endedAt;
   return { ok: true, nextTurn, events, destroyedPieces: lastMove?.destroyedPieces ?? [] };
 };
-var buildPendingMoveEntry = ({ command, selectionSnapshot, snapshot, activeTurn, index }) => ({
+var buildPendingMoveEntry = ({ command, selectionSnapshot, snapshot, activeTurn, index, displayMoveNumber }) => ({
   moveId: command.clientCommandId,
   index,
+  displayMoveNumber,
   turnIndex: activeTurn.index,
   turnMoveIndex: activeTurn.moveIndexes.length - 1,
   actorSide: selectionSnapshot.sideToMove,
@@ -2878,6 +2886,7 @@ var projectOptimisticGame = ({ authoritativeGame, identityId, queue }) => {
   };
   const pendingMoves = [];
   const commandResults = /* @__PURE__ */ new Map();
+  let nextDisplayMoveNumber = getNextDisplayMoveNumber(workingGame.moves);
   let liveLegalActions;
   for (const command of queue) {
     if (command.kind === "apply" && command.action?.type !== "end_turn") {
@@ -2934,7 +2943,8 @@ var projectOptimisticGame = ({ authoritativeGame, identityId, queue }) => {
         selectionSnapshot: stable,
         snapshot: settledState,
         activeTurn,
-        index: workingGame.moves.length + pendingMoves.length
+        index: workingGame.moves.length + pendingMoves.length,
+        displayMoveNumber: nextDisplayMoveNumber++
       });
       pendingMove.inspectionSnapshot = inspectionSnapshot(inspectionFrame, settledState);
       pendingMoves.push(pendingMove);

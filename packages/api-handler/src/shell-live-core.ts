@@ -15,7 +15,7 @@ import { deterministicStateHash } from "../../game-engine/src/hash";
 import { listLegalActions as enumerateLegalActions, validateAction as validateEngineAction } from "../../game-engine/src/legal";
 import { resolveToStability } from "../../game-engine/src/resolve";
 import { createInitialState } from "../../game-engine/src/state";
-import { MAX_HISTORY } from "../../shared-types/src/history";
+import { getNextDisplayMoveNumber, MAX_HISTORY } from "../../shared-types/src/history";
 import { finalizeResolvedTurn, getTurnOwnerSideForState } from "../../shared-types/src/shell-live-turn.js";
 import { isUuidV4 } from "../../shared-types/src/validation";
 import type { Action, GameState } from "../../game-engine/src/types";
@@ -311,12 +311,6 @@ export const getSideToMoveSeat = (game: LiveGame): "Player 1" | "Player 2" =>
 export const getActiveTurn = (game: LiveGame): TurnEntry | null => game.turns[game.turns.length - 1] ?? null;
 const isMoveUndone = (move: MoveEntry | null | undefined) => move?.undone === true;
 const getActiveMoves = (game: LiveGame) => game.moves.filter((move) => !isMoveUndone(move));
-const getNextDisplayMoveNumber = (game: LiveGame) => {
-  const latestActiveMove = [...game.moves].reverse().find((move) => !isMoveUndone(move));
-  return typeof latestActiveMove?.displayMoveNumber === "number" && Number.isFinite(latestActiveMove.displayMoveNumber)
-    ? latestActiveMove.displayMoveNumber + 1
-    : getActiveMoves(game).length + 1;
-};
 
 export const asIdentity = (value: unknown) => (typeof value === "string" && value.trim().length > 0 ? value.trim() : null);
 export const asGameState = (value: unknown): GameState | null =>
@@ -1729,7 +1723,7 @@ const applyServerActionInternal = (
     index: game.moves.length,
     turnIndex: activeTurn.index,
     turnMoveIndex: activeTurn.moveIndexes.length,
-    displayMoveNumber: getNextDisplayMoveNumber(game),
+    displayMoveNumber: getNextDisplayMoveNumber(game.moves),
     actorSide: stable.sideToMove,
     at: now(),
     notation: notation || defaultNotationForAction(action),
