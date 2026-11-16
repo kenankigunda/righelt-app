@@ -1,0 +1,59 @@
+{
+  "id": "righelt-prospective-source-preparation",
+  "version": 1,
+  "serialization": "canonical-json-utf8-v1",
+  "domains": {
+    "reservation": "righelt/source-reservation/nonce-hiding/v1",
+    "capture": "righelt/source-capture/nonce-hiding/v1",
+    "file": "sha256-file-bytes",
+    "encoded": "sha256-encoded-float32-le",
+    "geometry": "commander-geometry-alias",
+    "verification": "righelt/source-verification-capture/v1"
+  },
+  "selection": "first-eligible-per-registered-lineage-component-in-reservation-order-v1",
+  "publicFields": [
+    "schema",
+    "kind",
+    "context",
+    "reservations",
+    "attempts",
+    "selected",
+    "claims"
+  ],
+  "publicAttemptFields": [
+    "reservationCommitment",
+    "status",
+    "reason",
+    "captureCommitment"
+  ],
+  "claims": {
+    "scientificAdmission": false,
+    "nativeInventoryProduced": false,
+    "guardQualification": false,
+    "strengthEstablished": false,
+    "privateFinalConsumptionReady": false,
+    "operatorExecutionReady": false
+  },
+  "primitiveRevision": "017ee810c4417d7bfe703016ad231f6148092bb9",
+  "primitiveFiles": {
+    "tools/ai-trainer/engine-worker.mjs": "af32fc8a4f3bfabe89dee65a26679f98d96f4c4ee75bc6fe6657e07c3e35c875",
+    "tools/ai-trainer/evaluation-start.mjs": "8d8cbefddee38a5bba0c8cd19ff1b2ab6bc5f4c9592af7080c60797cd1a65c5c",
+    "tools/ai-trainer/evaluation-protection.mjs": "7252476b3483385462bc9abab4b244c05b874712eba3b234fa1a52b3c0aec6f9",
+    "packages/game-engine/src/state.ts": "2b2f39121ce62a1e3ec103b9a796a9a79f6147464c1ba6214a5c9df5f2eab59b"
+  },
+  "publicContextFields": [
+    "producer",
+    "schema",
+    "primitives",
+    "selection",
+    "continuationMaximum",
+    "executionMode"
+  ],
+  "executionModes": [
+    "synthetic"
+  ],
+  "guardValueFormats": {
+    "sha256-encoded-float32-le": "lowercase-hex-sha256",
+    "commander-geometry-alias": "simple:lowercase-hex-sha256"
+  }
+}
