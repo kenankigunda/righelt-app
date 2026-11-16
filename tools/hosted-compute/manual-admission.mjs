@@ -1,12 +1,13 @@
 import {assert,canonical,encode,sha256,reserveCents,TERMINAL} from './policy.mjs';
 import {cashPlan,cloudflareCoverage} from './cash.mjs';
-import {readCleanupRegistry,readOperatorReceipt,sameReference,validateManualIntent,operatorAttemptBinding} from './manual-authority.mjs';
+import {readCleanupRegistry,readOperatorReceipt,sameReference,validateManualIntent,validateRepairAllowance,operatorAttemptBinding} from './manual-authority.mjs';
 import {validateRuntimeUpgrade} from './runtime-upgrade.mjs';
 
 const hash=value=>sha256(encode(canonical(value)));
 export async function manualAuthority(core,db,c,intent){
   assert(core.config.enabled===true&&(db.pilotReservedCents??0)<=core.config.authorizedCents,'manual compute disabled or authorization reduced');
   validateManualIntent(intent);
+  validateRepairAllowance(intent,core.config.authorizedCents);
   const now=core.now(),prior=core.campaign(db,intent.priorCampaignId),old=prior.attempts.at(-1);
   assert(c.manifest.id===intent.campaignId&&c.manifestSha256===intent.manifestSha256&&prior!==c&&prior.manifestSha256===intent.priorManifestSha256,'manual campaign binding differs');
   assert(c.manifest.sourceRevision===intent.sourceRevision,'manual source differs from intent');
@@ -131,6 +132,7 @@ export async function attachManual(core,id,body){
 
 export function checkManualLiability(core,db,c){
   if(!c.manual)return;
+  validateRepairAllowance(c.manual.intent,core.config.authorizedCents);
   assert(core.config.enabled===true&&db.pilotReservedCents<=core.config.authorizedCents,'manual compute authorization revoked');
   const prior=core.campaign(db,c.manual.intent.priorCampaignId);
   assert(core.cost(prior)<=prior.manifest.maxCents+c.manual.intent.priorRiskReserveCents-reserveCents(prior.manifest.maxCents),'prior risk reserve exhausted');

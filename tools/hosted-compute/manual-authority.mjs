@@ -1,4 +1,4 @@
-import {assert,canonical,encode,sha256} from './policy.mjs';
+import {assert,canonical,encode,sha256,POLICY} from './policy.mjs';
 import {validateReference} from './external-control.mjs';
 
 const registries=new WeakSet();
@@ -48,8 +48,12 @@ export function validateManualIntent(intent){
   assert(intent.expiresAt>intent.createdAt&&intent.expiresAt-intent.createdAt<=300000&&intent.runtimeWindowMs===86400000,'bounded admission and run window required');
   // Explicitly scoped authorization for this repair. It does not alter worker
   // policy or extend any old manifest, prearm, lease or campaign deadline.
-  assert(intent.repairDeadline>intent.repairStartedAt&&intent.repairDeadline<=Date.UTC(2026,10,16,18)&&Number.isSafeInteger(intent.repairMaxCents)&&intent.repairMaxCents>0&&intent.repairMaxCents<=2000&&Number.isSafeInteger(intent.priorRiskReserveCents)&&intent.priorRiskReserveCents>=0,'manual repair authorization exceeded');
+  assert(intent.repairDeadline>intent.repairStartedAt&&intent.repairDeadline<=Date.UTC(2026,10,16,18)&&Number.isSafeInteger(intent.repairMaxCents)&&intent.repairMaxCents>0&&intent.repairMaxCents<=POLICY.pilotCents&&Number.isSafeInteger(intent.priorRiskReserveCents)&&intent.priorRiskReserveCents>=0,'manual repair authorization exceeded');
   const a=intent.priorAttempt;
   assert(a&&Object.keys(a).sort().join(',')==='generation,name,prearmSha256,startedAt'&&Number.isSafeInteger(a.generation)&&Number.isSafeInteger(a.startedAt)&&typeof a.name==='string'&&digest.test(a.prearmSha256),'exact prior attempt binding required');
   return intent;
+}
+
+export function validateRepairAllowance(intent,authorizedCents){
+  assert(Number.isSafeInteger(authorizedCents)&&intent.repairMaxCents<=Math.min(authorizedCents,POLICY.pilotCents),'manual repair allowance exceeds deployed authorization');
 }
