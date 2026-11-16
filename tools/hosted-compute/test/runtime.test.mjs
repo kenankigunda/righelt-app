@@ -8,7 +8,8 @@ import {runWorker} from '../worker.mjs';
 import {fixture} from './helpers.mjs';
 import {canonical,encode,sha256} from '../policy.mjs';
 const config={pythonVersion:'3.14',torchVersion:'2.14.1',cudaVersion:'13.0'};
-const record={schema:1,kind:'cuda-runtime-probe',pythonVersion:'3.14.1',machine:'x86_64',torchVersion:'2.14.1',cudaVersion:'13.0',driverVersion:'580.1',gpuCount:1,gpuName:'test GPU',computeCapability:[9,0],gpuMemoryBytes:24000000000,kernelPassed:true};
+const arithmetic={policyApplied:true,policy:{id:'hosted-ieee-fp32-v1',parameterDtype:'float32',cudaMatmul:'ieee',cudnnConvolution:'ieee',autocast:false},precision:{global:'ieee',cudaMatmul:'ieee',cudnn:'ieee',cudnnConvolution:'ieee'},autocast:{cpu:false,cuda:false},cudnnEnabled:true};
+const record={schema:1,kind:'cuda-runtime-probe',pythonVersion:'3.14.1',machine:'x86_64',torchVersion:'2.14.1',cudaVersion:'13.0',driverVersion:'580.1',gpuCount:1,gpuName:'test GPU',computeCapability:[9,0],gpuMemoryBytes:24000000000,kernelPassed:true,arithmetic};
 
 test('CUDA qualification binds real kernel, driver, software and device identity',async()=>{
  const manifest={mode:'supervised-qualification'},identity={buildConfig:config};
@@ -16,6 +17,7 @@ test('CUDA qualification binds real kernel, driver, software and device identity
  await verifyRuntime(record,identity,{mode:'unattended',runtimeSha256:proof.runtimeSha256});
  for(const changed of [{kernelPassed:false},{gpuCount:0},{cudaVersion:'12.8'},{driverVersion:''},{machine:'arm64'}])await assert.rejects(verifyRuntime({...record,...changed},identity,manifest));
  await assert.rejects(verifyRuntime({...record,driverVersion:'581.1'},identity,{mode:'unattended',runtimeSha256:proof.runtimeSha256}),/runtime changed/);
+ for(const math of [undefined,{...arithmetic,policy:{...arithmetic.policy,id:'old'}},{...arithmetic,precision:{...arithmetic.precision,cudnnConvolution:'tf32'}},{...arithmetic,precision:{...arithmetic.precision,cudaMatmul:'tf32'}},{...arithmetic,autocast:{cpu:false,cuda:true}},{...arithmetic,cudnnEnabled:false}])await assert.rejects(verifyRuntime({...record,arithmetic:math},identity,manifest),/IEEE/);
 });
 test('unqualified CUDA stops the actual worker before downloading any private input',async t=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'righelt-runtime-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));

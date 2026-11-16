@@ -557,7 +557,8 @@ def training(plan,directory,execution,work_ids,*,seconds,resume=False):
     positions=list(buffer.positions)[:32]
     if not positions:raise ValueError('numeric parity needs actual recovered replay states')
     states=np.asarray([p['encoded'] for p in positions],dtype=np.float32).reshape(-1,CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize'])
-    parity=numeric_parity(restored,model_path,states,reference_device=str(runner.device))
+    parity=numeric_parity(restored,model_path,states,reference_device=str(runner.device),
+                          report_path=directory/'numeric-parity.json')
     model_record=artifact(model_path,'model');cp_record=artifact(saved,'checkpoint')
     report_path=directory/'runner-result.json'
     report=json.loads(report_path.read_bytes())
@@ -575,6 +576,10 @@ def training(plan,directory,execution,work_ids,*,seconds,resume=False):
         additional_artifacts=[model_record,cp_record],result_fields={'updates':updates,'parameterDelta':delta})
 
 
+from .arithmetic import hosted_arithmetic
+
+
+@hosted_arithmetic
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command',choices=['evaluation','teacher','training'])

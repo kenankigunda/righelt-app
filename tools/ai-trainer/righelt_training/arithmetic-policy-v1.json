@@ -1,0 +1,1 @@
+{"id":"hosted-ieee-fp32-v1","parameterDtype":"float32","cudaMatmul":"ieee","cudnnConvolution":"ieee","autocast":false}
