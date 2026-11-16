@@ -29,11 +29,27 @@ export function createHistorySelectionActions({ transition, playSound = () => {}
       trigger.setAttribute?.('data-history-selection-pending-owner', pendingOwner);
     }
     let committed = false;
+    let transitionVersion;
+    let didAccept = false;
+    const isCurrent = () => actionGeneration === generation && transition.version() === transitionVersion;
     const pending = transition.run(scope, () => {
       committed = true;
       return select();
+    }, async value => {
+      if (!committed || !isCurrent()) return;
+      didAccept = accepted(value) === true && isCurrent();
+      if (!didAccept) return;
+      if (active?.generation === actionGeneration) acceptedPresentation = publicEpisode(active);
+      const readyPresentation = publicEpisode(acceptedPresentation);
+      if (!readyPresentation || !isCurrent()) return;
+      try {
+        await onPresentationReady(readyPresentation);
+      } catch (error) {
+        if (acceptedPresentation?.key === readyPresentation.key) acceptedPresentation = null;
+        throw error;
+      }
     });
-    const transitionVersion = transition.version();
+    transitionVersion = transition.version();
     let value;
     try {
       value = await pending;
@@ -47,36 +63,16 @@ export function createHistorySelectionActions({ transition, playSound = () => {}
         trigger.removeAttribute?.('data-history-selection-pending-owner');
       }
     }
-    const isCurrent = () => actionGeneration === generation && transition.version() === transitionVersion;
     if (!committed || !isCurrent()) {
       clearPending(actionGeneration);
       return { accepted: false, value };
-    }
-    let didAccept;
-    try {
-      didAccept = accepted(value) === true && isCurrent();
-    } catch (error) {
-      clearPending(actionGeneration);
-      throw error;
     }
     if (!didAccept) {
       clearPending(actionGeneration);
       if (isCurrent()) after({ accepted: false, value });
       return { accepted: false, value };
     }
-    if (active?.generation === actionGeneration) {
-      acceptedPresentation = publicEpisode(active);
-    }
     clearPending(actionGeneration);
-    const readyPresentation = publicEpisode(acceptedPresentation);
-    if (readyPresentation && isCurrent()) {
-      try {
-        onPresentationReady(readyPresentation);
-      } catch (error) {
-        if (acceptedPresentation?.key === readyPresentation.key) acceptedPresentation = null;
-        throw error;
-      }
-    }
     if (sound && isCurrent()) playSound(sound);
     if (!isCurrent()) return { accepted: false, value };
     after({ accepted: true, value });

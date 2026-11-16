@@ -110,10 +110,11 @@ export function createHistorySelectionTransition({
     return motion.settled;
   };
 
-  const run = async (scope, select) => {
+  const run = async (scope, select, beforeSettled = null) => {
     const token = begin(scope);
     try {
       const value = await select();
+      await beforeSettled?.(value, token);
       await waitForSettled(token);
       return value;
     } finally {
