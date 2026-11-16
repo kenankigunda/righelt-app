@@ -7,14 +7,26 @@ export const createRenderGestureGate = ({
   const defaultOwner = Symbol("render-gesture"), owners = new Set();
   let held = false,
     pending = null,
-    releaseTimer = null;
+    releaseTimer = null,
+    flushWaiters = [];
+  const settleFlush = (value, error = null) => {
+    const waiters = flushWaiters;
+    flushWaiters = [];
+    for (const waiter of waiters) error ? waiter.reject(error) : waiter.resolve(value);
+  };
   const flush = () => {
     releaseTimer = null;
     if (owners.size) return;
     held = false;
     const options = pending;
     pending = null;
-    if (options) render(options);
+    try {
+      if (options) render(options);
+      settleFlush(Boolean(options));
+    } catch (error) {
+      settleFlush(false,error);
+      throw error;
+    }
   };
   const release = () => {
     if (!owners.size && releaseTimer === null) releaseTimer = schedule(flush, 0);
@@ -39,6 +51,10 @@ export const createRenderGestureGate = ({
       // The final matching release keeps activation ahead of the next task.
       release();
     },
+    waitForFlush() {
+      if (!held && !pending) return Promise.resolve(false);
+      return new Promise((resolve,reject) => flushWaiters.push({resolve,reject}));
+    },
     cancelAll() {
       owners.clear();
       release();
@@ -49,6 +65,7 @@ export const createRenderGestureGate = ({
       owners.clear();
       held = false;
       pending = null;
+      settleFlush(false);
     },
   };
 };

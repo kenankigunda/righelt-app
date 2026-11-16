@@ -2,18 +2,20 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { captureHistorySelectionFocus, createHistorySelectionActions } from '../shell/history-selection-actions.js';
 import { createHistorySelectionTransition } from '../shell/history-selection-transition.js';
+import { createRenderGestureGate } from '../shell/render-gesture.js';
 
 const fixture = () => {
   const events = [];
   const sounds = [];
   let version = 0;
   const transition = {
-    run(scope, select) {
+    run(scope, select, beforeSettled) {
       version += 1;
       events.push(`begin:${scope}`);
       const value = select();
       events.push(`selected:${scope}`);
-      return Promise.resolve(value).then(result => {
+      return Promise.resolve(value).then(async result => {
+        await beforeSettled?.(result);
         events.push(`settled:${scope}`);
         return result;
       });
@@ -172,11 +174,12 @@ test('one explicit loading episode starts before selection and survives until tr
   let version = 0;
   const transition = {
     version: () => version,
-    async run(scope, select) {
+    async run(scope, select, beforeSettled) {
       version += 1;
       events.push(`transition:${scope}`);
       const value = select();
       events.push(`selected:${scope}`);
+      await beforeSettled?.(await value);
       await settled.promise;
       return value;
     },
@@ -217,4 +220,36 @@ test('rejected acceptance and explicit lifecycle retirement leave no claimable p
   assert.equal(view.actions.presentation().scope,'game:turn:4');
   view.actions.retire();
   assert.equal(view.actions.presentation(),null);
+});
+
+test('gesture-deferred cached selection keeps one transition owner through the committed render',async()=>{
+  const jobs=[];
+  let height=100,animation=null,gate;
+  const panel={
+    isConnected:true,matches:()=>false,closest:()=>null,
+    getBoundingClientRect:()=>({height}),classList:{add(){},remove(){}},
+    animate(){animation={cancel(){},onfinish:null,oncancel:null};return animation;},
+  };
+  const transition=createHistorySelectionTransition({
+    isElement:value=>value===panel,
+    readScroll:()=>({x:0,y:0}),restoreScroll(){},
+  });
+  const commit=()=>{const captured=transition.capture(panel);height=200;transition.present(captured);};
+  const render=()=>{if(gate.defer({includeBoard:true}))return false;commit();return true;};
+  gate=createRenderGestureGate({render:commit,schedule:callback=>{jobs.push(callback);return callback;},cancel:callback=>{const index=jobs.indexOf(callback);if(index>=0)jobs.splice(index,1);}});
+  const actions=createHistorySelectionActions({
+    transition,
+    onPresentationReady:async()=>{render();await gate.waitForFlush();},
+  });
+  gate.begin();gate.end();
+  const selection=actions.run({scope:'game:turn:2',select:()=>2,accepted:value=>value===2});
+  await Promise.resolve();await Promise.resolve();
+  assert.equal(actions.snapshot().scope,'game:turn:2','pending survives until the actual presentation settles');
+  assert.equal(height,100);assert.equal(jobs.length,1);
+  jobs.shift()();
+  assert.equal(height,200);assert.ok(animation,'the gesture-flushed render retains its measured transition owner');
+  animation.onfinish();
+  assert.deepEqual(await selection,{accepted:true,value:2});
+  assert.equal(actions.snapshot(),null);
+  gate.destroy();
 });

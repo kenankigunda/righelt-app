@@ -2,6 +2,10 @@ import {test,expect} from '@playwright/test';
 
 const mountFixture=async(page)=>{
  await page.goto('/shell/history-reveal.js');
+ const boardMessage=await page.evaluate(async()=>{
+  const {renderBoardMessageSlot}=await import('/shell/board-message-layout.js');
+  return renderBoardMessageSlot({id:'shell-board-preview-label'});
+ });
  await page.setContent(`
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/shell/shell.css">
@@ -9,7 +13,7 @@ const mountFixture=async(page)=>{
   <link rel="stylesheet" href="/shell/board-ux.css">
   <link rel="stylesheet" href="/shell/loading.css">
   <main class="shell-main-content">
-   <section class="panel"><div class="board-loading-preview"><div class="board-message-slot"><div class="board-message-live"><p class="board-preview-label">Recorded move</p><span class="board-message-activity" data-loading-state="pending" data-loading-key="history:g:move:m1" data-loading-context="external" data-loading-suppressed="true"></span></div></div></div></section>
+   <section class="panel" data-shell-panel="board">${boardMessage}<div class="board-wrap"><div class="board"></div></div></section>
    <ol class="history-list">
     <li class="history-item history-item-waiting"><div class="history-move-line">Live · Waiting on you to move</div></li>
     <li class="history-return-live"><button class="secondary">Return to live</button></li>
@@ -17,7 +21,13 @@ const mountFixture=async(page)=>{
    </ol>
    <div style="height:720px"></div><div id="reveal-target" style="height:100px">Selected History preview</div><div style="height:500px"></div>
   </main>`);
- await page.evaluate(async()=>{const [{mountLoadingFeedback},{mountLoadingEdges}]=await Promise.all([import('/shell/loading.js'),import('/shell/loading-edge.js')]);window.__disposeLoading=mountLoadingFeedback(document);window.__disposeEdges=mountLoadingEdges(document);});
+ await page.evaluate(async()=>{
+  const [{mountLoadingFeedback},{mountLoadingEdges},{updateComputerBoardLoading}]=await Promise.all([import('/shell/loading.js'),import('/shell/loading-edge.js'),import('/shell/board-message-layout.js')]);
+  const activity=document.querySelector('.board-message-activity');
+  window.__setBoardLoading=({key=null,suppress=true,computer=false}={})=>updateComputerBoardLoading(activity,computer?{id:'g',computer:{paused:false},computerTurn:true,inHistoryMode:false}:{id:'g'},{},{scope:'g',loadingKey:key,suppressLoadingCue:suppress});
+  window.__setBoardLoading({key:'history:g:move:m1'});
+  window.__disposeLoading=mountLoadingFeedback(document,{onContextsChange:()=>{}});window.__disposeEdges=mountLoadingEdges(document);
+ });
 };
 
 const replayHeightReceipt=page=>page.evaluate(async()=>{
@@ -43,6 +53,29 @@ test('native History geometry, quiet loading cue, pending pulse, and minimum rev
  await expect(cue).toHaveAttribute('data-loading-phase','visible',{timeout:400});
  await expect(cue.locator('.loading-pieces')).toBeHidden();
  await expect(page.locator('.loading-edge-frame')).toHaveCount(1);
+ await page.evaluate(()=>window.__setBoardLoading({key:'history:g:turn:2'}));
+ await expect(cue).toHaveAttribute('data-loading-phase','quiet');
+ await expect(page.locator('.loading-edge-frame')).toHaveCount(0);
+ await expect(cue).toHaveAttribute('data-loading-phase','visible',{timeout:400});
+ await expect(page.locator('.loading-edge-frame')).toHaveCount(1);
+ await page.locator('[data-shell-panel="board"]').evaluate(panel=>panel.setAttribute('inert',''));
+ await expect(page.locator('.loading-edge-frame')).toHaveCount(0);
+ await page.locator('[data-shell-panel="board"]').evaluate(panel=>panel.removeAttribute('inert'));
+ await expect(page.locator('.loading-edge-frame')).toHaveCount(1);
+ await page.evaluate(()=>window.__setBoardLoading());
+ await expect(cue).not.toHaveAttribute('data-loading-edge','panel');
+ await expect(page.locator('.loading-edge-frame')).toHaveCount(0);
+ await page.evaluate(()=>window.__setBoardLoading({computer:true}));
+ await expect(cue).toHaveAttribute('data-loading-state','pending');
+ await expect(cue).not.toHaveAttribute('data-loading-edge','panel');
+ await page.waitForTimeout(250);
+ await expect(page.locator('.loading-edge-frame')).toHaveCount(0);
+ await page.evaluate(async()=>{
+  const {renderBoardMessageSlot}=await import('/shell/board-message-layout.js');
+  document.querySelector('[data-shell-panel="board"]').innerHTML=`${renderBoardMessageSlot({loading:true,loadingKey:'game:cold'})}<div class="board-wrap"><div class="board"></div></div>`;
+ });
+ await expect(page.locator('.board-message-activity')).toHaveAttribute('data-loading-phase','visible',{timeout:400});
+ await expect(page.locator('.loading-edge-frame')).toHaveCount(1);
  const heights=await page.locator('.history-item-waiting,.history-return-live').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().height));
  expect(heights[0]).toBeLessThan(48);expect(heights[1]).toBeGreaterThanOrEqual(48);
  expect(await page.locator('.history-turn:has(> .history-selection-pending) .history-turn-heading').evaluate(node=>node.getAnimations().length)).toBeGreaterThan(0);
@@ -63,6 +96,8 @@ test('native History geometry, quiet loading cue, pending pulse, and minimum rev
 
 test('reduced motion keeps the pending target and rail static',async({page})=>{
  await page.emulateMedia({reducedMotion:'reduce'});await page.setViewportSize({width:390,height:500});await mountFixture(page);
+ await expect(page.locator('.loading-edge-frame')).toHaveCount(1,{timeout:400});
+ expect(await page.locator('.loading-edge-frame polygon').evaluateAll(nodes=>nodes.flatMap(node=>node.getAnimations()))).toEqual([]);
  const heading=page.locator('.history-turn:has(> .history-selection-pending) .history-turn-heading'),rail=page.locator('.history-turn:has(> .history-selection-pending) > .history-list-nested');
  expect(await heading.evaluate(node=>node.getAnimations().length)).toBe(0);
  expect(await rail.evaluate(node=>node.getAnimations().length)).toBe(0);
@@ -116,4 +151,53 @@ test('production selection owner keeps replaced Move, Turn and Live controls pen
  expect(receipt.turn.whilePending.key).toBe('history-selection:2:g:turn:2');
  expect(receipt.live.whilePending.key).toBe('history-selection:3:g:live');
  expect(receipt.events).toEqual(['pending','reveal','clear','pending','reveal','clear','pending','reveal','clear']);
+});
+
+test('native pointer and keyboard History activation keep the transition owner through the gesture-deferred commit',async({page})=>{
+ await page.goto('/shell/history-selection-actions.js');
+ await page.setContent('<main id="app"><div data-game-shell-root><section class="panel" data-game-panel="history"></section><section class="panel" data-shell-panel="board" style="height:300px"></section></div></main>');
+ await page.evaluate(async()=>{
+  const [{createRenderGestureGate},{mountRenderGestureOwner},{createHistorySelectionActions},{createHistorySelectionTransition}]=await Promise.all([
+   import('/shell/render-gesture.js'),import('/shell/render-gesture-owner.js'),import('/shell/history-selection-actions.js'),import('/shell/history-selection-transition.js'),
+  ]);
+  const app=document.querySelector('#app'),shell=app.querySelector('[data-game-shell-root]'),history=app.querySelector('[data-game-panel="history"]');
+  const heights={'move:1':100,'move:2':180,'turn:3':120,'move:4':200,'turn:5':140,'turn:6':220,live:160};
+  let selected='move:1',gate,actions;
+  const commits=[];
+  const markup=()=>{
+   history.style.height=`${heights[selected]}px`;
+   history.innerHTML=Object.keys(heights).map(scope=>`<button type="button" data-history-scope="${scope}" aria-current="${scope===selected}">${scope}</button>`).join('');
+  };
+  const transition=createHistorySelectionTransition();
+  const commit=()=>{
+   const captured=transition.capture(shell),pending=actions.snapshot()?.scope??null;
+   markup();
+   const animated=transition.present(captured);
+   commits.push({scope:selected,pending,animated});
+  };
+  const render=()=>{if(gate.defer({includeBoard:true}))return false;commit();return true;};
+  gate=createRenderGestureGate({render:commit});
+  actions=createHistorySelectionActions({transition,onPresentationReady:async()=>{render();await gate.waitForFlush();}});
+  const gestureOwner=mountRenderGestureOwner({appEl:app,window,document,renderGesture:gate});
+  app.addEventListener('click',event=>{
+   const trigger=event.target.closest('[data-history-scope]');if(!trigger)return;
+   const scope=trigger.dataset.historyScope;
+   void actions.run({scope,trigger,select:()=>{selected=scope;return scope;},accepted:value=>value===scope}).then(result=>{
+    app.dataset.settled=result.accepted?scope:'rejected';
+   });
+  });
+  markup();
+  window.__historyGestureReceipt=()=>({selected,commits:[...commits],pending:actions.snapshot(),settled:app.dataset.settled??null});
+  window.__disposeHistoryGesture=()=>{gestureOwner.destroy();gate.destroy();transition.cancel();actions.retire();};
+ });
+ const cases=[['move:2','pointer'],['turn:3','pointer'],['move:4','pointer'],['turn:5','keyboard'],['turn:6','keyboard'],['live','keyboard']];
+ for(const [scope,input] of cases){
+  const control=page.locator(`[data-history-scope="${scope}"]`);
+  if(input==='pointer')await control.click();else{await control.focus();await control.press('Enter');}
+  await expect(page.locator('#app')).toHaveAttribute('data-settled',scope);
+  const receipt=await page.evaluate(()=>window.__historyGestureReceipt());
+  expect(receipt.commits.at(-1)).toEqual({scope,pending:scope,animated:true});
+  expect(receipt.pending).toBeNull();
+ }
+ await page.evaluate(()=>window.__disposeHistoryGesture());
 });

@@ -6,6 +6,12 @@ const escape = value => String(value).replaceAll('&','&amp;').replaceAll('"','&q
 export const loadingAttributes = (key, message = 'Still loading…') => `data-loading-state="pending" data-loading-key="${escape(key)}" data-loading-message="${escape(message)}" aria-busy="true"`;
 export const loadingCue = () => '<span class="loading-pieces" aria-hidden="true"><i></i><i></i><i></i></span>';
 
+const hasVisibleEdgeOwner = element => {
+  if (element.dataset.loadingEdge !== 'panel') return false;
+  const panel = element.closest('section.panel');
+  return Boolean(panel && !panel.closest('[hidden], [inert], dialog:not([open])') && panel.getClientRects().length > 0);
+};
+
 // Tracks continuous operations through synchronous DOM patches without restarting
 // their clocks. A removed operation is retired, not replayed when revisited.
 export function mountLoadingFeedback(document, { now = () => performance.now(), setTimer = setTimeout, clearTimer = clearTimeout, getScope = () => '', onContextsChange = null } = {}) {
@@ -47,7 +53,7 @@ export function mountLoadingFeedback(document, { now = () => performance.now(), 
       }
       const pending = element.dataset.loadingState === 'pending' || element.dataset.pending === 'true';
       const key = element.dataset.loadingKey || element;
-      if (!pending || element.closest('dialog:not([open]), [hidden], [inert]') || (!isButton && typeof onContextsChange==='function' && element.getClientRects().length===0)) {
+      if (!pending || element.closest('dialog:not([open]), [hidden], [inert]') || (!isButton && typeof onContextsChange==='function' && element.getClientRects().length===0 && !hasVisibleEdgeOwner(element))) {
         element.removeAttribute('data-loading-phase');
         cueHost.querySelector(':scope > .loading-pieces')?.remove();
         element.querySelector(':scope > .loading-context')?.remove();

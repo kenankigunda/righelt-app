@@ -10,7 +10,7 @@ const renderMessageSizing=(fallback,boardSize)=>boardPromptSizingModels({boardSi
 
 export function renderBoardMessageSlot({id, loading = false, loadingKey,boardSize=10} = {}) {
   const previousTurnKey = loading ? '' : `<div class="previous-turn-key-host" data-board-message-height-transition data-legend-entry="previousTurn" hidden><button type="button" class="previous-turn-key" data-previous-turn-key><i class="previous-turn-key-swatch" aria-hidden="true"></i><i class="previous-turn-key-replay" aria-hidden="true" hidden>${icon('rematch')}</i><span data-previous-turn-key-label>Changes by opponent</span></button></div>`;
-  return `<div class="board-message-slot"><div class="board-message-live"${id ? ' role="region" aria-label="Board guidance" tabindex="-1"' : ''}><p class="board-preview-label"${id ? ` id="${escape(id)}"` : ''}${loading ? ' aria-hidden="true"' : ''}>${loading ? '' : 'Select a piece'}</p><span class="board-message-activity" aria-hidden="true" data-loading-state="${loading && loadingKey ? 'pending' : 'idle'}" data-loading-context="external"${loading && loadingKey ? ` data-loading-key="${escape(loadingKey)}"` : ''}></span>${loading?'':'<div data-board-context-details></div>'}${previousTurnKey}</div>${renderMessageSizing(false,boardSize)}${renderMessageSizing(true,boardSize)}</div>`;
+  return `<div class="board-message-slot"><div class="board-message-live"${id ? ' role="region" aria-label="Board guidance" tabindex="-1"' : ''}><p class="board-preview-label"${id ? ` id="${escape(id)}"` : ''}${loading ? ' aria-hidden="true"' : ''}>${loading ? '' : 'Select a piece'}</p><span class="board-message-activity" aria-hidden="true"${loading ? ' data-loading-edge="panel"' : ''} data-loading-state="${loading && loadingKey ? 'pending' : 'idle'}" data-loading-context="external"${loading && loadingKey ? ` data-loading-key="${escape(loadingKey)}"` : ''}></span>${loading?'':'<div data-board-context-details></div>'}${previousTurnKey}</div>${renderMessageSizing(false,boardSize)}${renderMessageSizing(true,boardSize)}</div>`;
 }
 
 export function renderBoardHeadingSlot({loading = false} = {}) {
@@ -29,6 +29,8 @@ export function updateComputerBoardLoading(element, game, status = {}, {replayin
   if (!element) return;
   element.dataset.loadingSuppressed = String(inspecting || suppressLoadingCue);
   const operationPending = typeof loadingKey === 'string' && loadingKey.length > 0;
+  if (operationPending && suppressLoadingCue) element.dataset.loadingEdge = 'panel';
+  else element.removeAttribute('data-loading-edge');
   const pending = operationPending || Boolean(game?.computer && (!isCompletedGame(game) || game.pendingComputerSaveStartedAt != null) && !game.inHistoryMode && !replaying && !game.computer.paused
     && !['recovery','other-device','paused'].includes(status.phase)
     && (game.computerTurn || game.pendingComputerSaveStartedAt != null));
