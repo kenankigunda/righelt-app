@@ -78,6 +78,18 @@ export async function manualAuthority(core,db,c,intent){
     const newResult=ready.run.results.find(r=>r.prearmSha256===c.manifest.externalControl.sha256);
     assert(ready.run.usageReviewRequired===true&&warnings.length>0&&warnings.every(r=>r!==newResult&&r.state==='terminal')&&newResult.usageReviewRequired===false,'cleanup failure is not solely a retained old usage warning');
   }
+  const retainedWatchOwnerIds=new Set();
+  if(actual&&cleanupContract.owners===3){
+    for(const owner of Object.values(db.campaigns)){
+      if(owner===c||owner===prior||owner.status!=='cleanup-uncertain'||!owner.attempts.some(a=>a.uncertain===true))continue;
+      // Coverage, attempt identity and terminal fences were checked above.
+      // Independent post-cutoff absence is a watch, never historical resolution.
+      const result=ready.run.results.find(r=>r.prearmSha256===owner.manifest.externalControl.sha256);
+      const confirmedUnclosed=owner.attempts.some(a=>a.resourceId!=null&&(!Number.isSafeInteger(a.endedAt)||owner.cleanupVerified!==true));
+      if(!confirmedUnclosed&&result?.state==='terminal'&&result.failures===0&&result.cleanupObservedAbsent===true&&result.durableReceiptConfirmed===true
+          &&!db.actualSpendBasis.activeResources.some(r=>r.campaignId===owner.manifest.id))retainedWatchOwnerIds.add(owner.manifest.id);
+    }
+  }
   const funding=await readOperatorReceipt(control.store,intent.fundingReservation),oldFunding=funding.oldAttempt,next=funding.newIntent,total=funding.aggregate;
   if(intent.startup)assert(next?.startupDeadline===intent.startup.deadline,'startup funding binding differs');
   // Every earlier prepared manual allocation remains committed after cleanup,
@@ -93,7 +105,7 @@ export async function manualAuthority(core,db,c,intent){
   assert(total?.runpodEncumberedCents===encumberedCents&&total.repairEncumberedCents===encumberedCents&&total.runpodEncumberedCents<=total.runpodCeilingCents&&total.runpodCeilingCents<=10000&&total.repairEncumberedCents<=intent.repairMaxCents&&total.repairCeilingCents===intent.repairMaxCents&&total.cloudflareEncumberedCents<=total.cloudflareCeilingCents&&total.cloudflareCeilingCents<=2000&&total.githubPaidOverageAuthorized===false,'operator aggregate funding exceeded');
   cloudflareCoverage(c.manifest.cash,{now,deadline:c.manifest.deadline,forecastUntil:authority.forecastUntil});
   assert(core.now()<intent.expiresAt&&core.now()<(publicWork?.admissionDeadline??intent.repairDeadline),'manual admission expired during authorization');
-  return {prior,old,authority,registry,publicWork};
+  return {prior,old,authority,registry,publicWork,retainedWatchOwnerIds};
 }
 function repairCost(core,db,prior){
   let total=core.cost(prior);
@@ -127,8 +139,8 @@ export async function prepareManual(core,id,intent){
   assert(c.status==='staged'&&core.config.enabled===true,'manual campaign unavailable');
   assert(!db.manualFundingReservations?.[intent.fundingReservation?.sha256],'funding reservation already assigned');
   assert(!db.manualProgram||core.now()<db.manualProgram.deadline,'overall actual program ended');
-  const {prior,authority,publicWork}=await manualAuthority(core,db,c,intent),now=core.now();
-  for(const other of Object.values(db.campaigns))assert(other===c||other===prior||TERMINAL.has(other.status)||other.status==='staged','another campaign owns compute');
+  const {prior,authority,publicWork,retainedWatchOwnerIds}=await manualAuthority(core,db,c,intent),now=core.now();
+  for(const other of Object.values(db.campaigns))assert(other===c||other===prior||TERMINAL.has(other.status)||other.status==='staged'||retainedWatchOwnerIds.has(other.manifest.id),'another campaign owns compute');
   for(const input of c.manifest.inputs)assert(c.objects[input.sha256]?.bytes===input.bytes,'manual inputs incomplete');
   const host=c.manifest.phases[0].host;assert(host.quoteObservedAt<=now&&host.quoteExpires>now,'manual host quote expired');
   const cash=cashPlan(c.manifest.cash,c.manifest.maxCents),{computeUsageCapCents,cloudflareUsageCapCents,...funding}=c.manifest.cash;

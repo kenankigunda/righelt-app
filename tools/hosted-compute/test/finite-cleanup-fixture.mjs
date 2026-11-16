@@ -1,9 +1,9 @@
 import {canonical,encode,sha256} from '../policy.mjs';
 const hash=value=>sha256(encode(canonical(value)));
 
-export async function includeRetainedOwner(f,{makeUncertain=true}={}){
+export async function includeRetainedOwner(f,{makeUncertain=true,retainedStatus='cleanup-uncertain'}={}){
  const db=await f.core.load(),owner=db.campaigns.ui;
- if(makeUncertain){owner.status='cancelled';owner.cleanupVerified=false;owner.attempts[0].uncertain=true;delete owner.attempts[0].endedAt;delete owner.attempts[0].resourceId;await f.core.save(db);}
+ if(makeUncertain){owner.status=retainedStatus;owner.cleanupVerified=false;owner.attempts[0].uncertain=true;delete owner.attempts[0].endedAt;delete owner.attempts[0].resourceId;await f.core.save(db);}
  const store=f.core.externalControl(f.m).store,record=await store.readPrearm(owner.manifest.externalControl);
  f.control.fences.set(record.nonce,{kind:'terminal',prearmSha256:owner.manifest.externalControl.sha256});
  const registry={schema:1,kind:'runpod-finite-cleanup-registry',runtimeRevision:'c'.repeat(40),references:[f.manifest.externalControl,owner.manifest.externalControl,f.m.externalControl]};
