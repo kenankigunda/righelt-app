@@ -1,0 +1,55 @@
+name: Qualify anonymous repaired IEEE runtime pull
+on:
+  push:
+    branches: [codex/t-132-hosted-compute]
+    paths: [.github/workflows/qualify-public-ieee-runtime-pull.yml]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-anonymous-ieee-public-runtime
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      IMAGE_DIGEST: sha256:9b3945f7fe64a385a023a7893b8b6ddd98085f26e39b6b2d2e50ab230f597bcf
+    steps:
+      - name: Pull exact public image without registry credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          image="ghcr.io/kenankigunda/righelt-compute@$IMAGE_DIGEST"
+          auth_root=$(mktemp -d)
+          trap 'rm -rf "$auth_root"' EXIT
+          export DOCKER_CONFIG="$auth_root"
+          test ! -e "$DOCKER_CONFIG/config.json"
+          docker pull --platform linux/amd64 "$image"
+          docker image inspect "$image" --format '{{.Os}}/{{.Architecture}}' | tee /tmp/runtime-platform.txt
+          test "$(cat /tmp/runtime-platform.txt)" = linux/amd64
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = 9f29dec67607bb5ad28d112e88795bd62c8c5052
+          docker run --rm -i "$image" node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import {createHash} from 'node:crypto';
+          import {hashRecord,isRuntimeSourcePath,validateBuildConfig} from './tools/hosted-compute/image-identity.mjs';
+          const identity=JSON.parse(fs.readFileSync('.compute-source.json','utf8'));
+          const check=(x,message)=>{if(!x)throw new Error(message);};
+          check(identity.schema===2 && identity.sourceRevision==='9f29dec67607bb5ad28d112e88795bd62c8c5052','runtime source differs');
+          check(identity.dependencySha256==='06901c4886e8f21a5e6e4df5290d8eb63169844f858190fcf0087061bcdb939f','dependency identity differs');
+          check(identity.sourceInventorySha256==='09f3b4cb73a239eb7db8144c32a670cd8315ef54b40cf50b4e4ae90de9d4de4c' && hashRecord(identity.sourceInventory)===identity.sourceInventorySha256,'source inventory differs');
+          check(identity.proofInventorySha256==='0a10953fe6e1dd6b0964d0e846d0e76d0450154fbe7b514409b4d8fd7c894d3b' && hashRecord(identity.proofInventory)===identity.proofInventorySha256,'proof inventory identity differs');
+          validateBuildConfig(identity.buildConfig);
+          check(identity.buildConfigSha256==='23f003635a1c0edfb3b6a998f36f78307716f477b95081aae820bfc8f0462729' && hashRecord(identity.buildConfig)===identity.buildConfigSha256,'build configuration differs');
+          const entries=Object.entries(identity.sourceInventory);
+          check(entries.length===191,'source inventory count differs');
+          for(const [name,digest] of entries){
+            check(isRuntimeSourcePath(name) && fs.lstatSync(name).isFile() && !fs.lstatSync(name).isSymbolicLink(),'invalid source entry');
+            check(createHash('sha256').update(fs.readFileSync(name)).digest('hex')===digest,'source file differs');
+          }
+          check(process.version==='v22.23.4','Node version differs');
+          await import('./tools/hosted-compute/worker.mjs');
+          console.log(JSON.stringify({anonymousFreshPull:true,sourceRevision:identity.sourceRevision,sourceFiles:entries.length,sourceInventorySha256:identity.sourceInventorySha256,buildConfigSha256:identity.buildConfigSha256,workerImport:true,gpuQualified:false}));
+          JS
+          docker run --rm "$image" python -c "import platform,torch,onnx,onnxruntime; import righelt_training.hosted_science; assert platform.machine()=='x86_64'; assert platform.python_version().startswith('3.14.'); assert torch.__version__.split('+')[0]=='2.14.1'; assert torch.version.cuda=='13.0'; print('Anonymous pulled Linux runtime imports passed. Actual GPU/driver remains unqualified.')"
+          test ! -e "$DOCKER_CONFIG/config.json"
