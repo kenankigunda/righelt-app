@@ -14,6 +14,7 @@ import {
   getControlSeatForTurn,
   getSideForSeat,
 } from "../generated/packages/shared-types/src/shell-live-turn.js";
+import { getNextDisplayMoveNumber } from "../generated/packages/shared-types/src/history.js";
 
 const clone = (value) => structuredClone(value);
 const getActiveTurn = (game) => game.turns?.[game.turns.length - 1] ?? null;
@@ -94,9 +95,10 @@ const completeTurn = (game, queuedAt, pendingMoves, operationId) => {
   return { ok: true, nextTurn, events, destroyedPieces:lastMove?.destroyedPieces??[] };
 };
 
-const buildPendingMoveEntry = ({ command, selectionSnapshot, snapshot, activeTurn, index }) => ({
+const buildPendingMoveEntry = ({ command, selectionSnapshot, snapshot, activeTurn, index, displayMoveNumber }) => ({
   moveId: command.clientCommandId,
   index,
+  displayMoveNumber,
   turnIndex: activeTurn.index,
   turnMoveIndex: activeTurn.moveIndexes.length - 1,
   actorSide: selectionSnapshot.sideToMove,
@@ -148,6 +150,7 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
 
   const pendingMoves = [];
   const commandResults = new Map();
+  let nextDisplayMoveNumber = getNextDisplayMoveNumber(workingGame.moves);
   let liveLegalActions;
 
   for (const command of queue) {
@@ -210,6 +213,7 @@ export const projectOptimisticGame = ({ authoritativeGame, identityId, queue }) 
         snapshot: settledState,
         activeTurn,
         index: workingGame.moves.length + pendingMoves.length,
+        displayMoveNumber: nextDisplayMoveNumber++,
       });
       pendingMove.inspectionSnapshot = inspectionSnapshot(inspectionFrame, settledState);
       pendingMoves.push(pendingMove);
