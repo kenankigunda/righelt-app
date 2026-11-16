@@ -95,6 +95,8 @@ export class ComputeController {
     if (request.method === 'POST' && action === 'settle' && worker) return json(await this.core.settle(id, generation, await request.json()));
     assert(admin, 'administrator operation required');
     if(request.method==='GET'&&action==='attempt-binding')return json(await this.core.attemptBinding(id));
+    if(request.method==='GET'&&action==='actual-spend-binding')return json(await this.core.actualSpendBinding());
+    if(request.method==='POST'&&action==='actual-spend-reconcile')return json(await this.core.reconcileActualSpend(id,await request.json()));
     if(request.method==='POST'&&action==='manual-prepare'){
       const result=await this.core.manualPrepare(id,await request.json());await this.arm(Date.now()+1000);return json(result);
     }
