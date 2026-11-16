@@ -2,7 +2,7 @@ import { pathToFileURL } from 'node:url';
 import { assert } from './policy.mjs';
 import { GitHubControlWriter } from './github-control.mjs';
 import { RunpodCleanup,sweepExternal } from './external-cleanup.mjs';
-import {readCleanupRegistry,sameReference} from './manual-authority.mjs';
+import {readCleanupRegistry,sameReference,CLEANUP_CONTRACTS} from './manual-authority.mjs';
 
 export async function cleanupFromEnvironment(env=process.env,{fetcher,clock}={}) {
   assert(env.COMPUTE_CONTROL_ARMED==='true','external cleanup is not armed');
@@ -19,16 +19,17 @@ export async function cleanupFromEnvironment(env=process.env,{fetcher,clock}={})
     const results=[];
     for(const ref of registry.references){
       try{results.push({...await sweepExternal({store,reference:ref,provider,clock,workflowRevision:env.COMPUTE_RUNTIME_REVISION,registryAuthority:registry}),prearmSha256:ref.sha256});}
-      catch{results.push({armed:true,remaining:null,failures:[{operation:'ownership-sweep',reason:'cleanup-unavailable'}]});}
+      catch{results.push({armed:true,remaining:null,prearmSha256:ref.sha256,failures:[{operation:'ownership-sweep',reason:'cleanup-unavailable'}]});}
     }
-    return {schema:1,kind:'dual-cleanup-result',armed:true,results};
+    return {schema:1,kind:CLEANUP_CONTRACTS[registry.kind].resultKind,armed:true,results};
   }
   return sweepExternal({store,reference,provider,clock,workflowRevision:env.COMPUTE_RUNTIME_REVISION});
 }
 export function cleanupProcessResult(result) {
-  if(result.kind==='dual-cleanup-result'){
+  const contract=Object.values(CLEANUP_CONTRACTS).find(c=>c.resultKind===result.kind);
+  if(contract){
     const children=result.results.map(cleanupProcessResult);
-    return {status:{state:'dual-cleanup',armed:true,cleanupObservedAbsent:children.every(c=>c.status.cleanupObservedAbsent),usageReviewRequired:children.some(c=>c.status.usageReviewRequired),ownershipSets:result.results.map(r=>({prearmSha256:r.prearmSha256,state:r.state??'terminal',failures:r.failures?.length??0,usageReviewRequired:r.usageReviewRequired===true,cleanupObservedAbsent:r.cleanupObservedAbsent??false,durableReceiptConfirmed:r.durableReceiptConfirmed??false}))},exitCode:children.some(c=>c.exitCode)?1:0};
+    return {status:{state:contract.state,armed:true,cleanupObservedAbsent:children.every(c=>c.status.cleanupObservedAbsent),usageReviewRequired:children.some(c=>c.status.usageReviewRequired),ownershipSets:result.results.map(r=>({prearmSha256:r.prearmSha256,state:r.state??'terminal',failures:r.failures?.length??0,usageReviewRequired:r.usageReviewRequired===true,cleanupObservedAbsent:r.cleanupObservedAbsent??false,durableReceiptConfirmed:r.durableReceiptConfirmed??false}))},exitCode:children.some(c=>c.exitCode)?1:0};
   }
   return {status:{state:result.state??'terminal',cleanupObservedAbsent:result.cleanupObservedAbsent??false,armed:result.armed,usageReviewRequired:result.usageReviewRequired===true},
     exitCode:result.failures?.length || result.remaining?.length || result.usageReviewRequired ? 1 : 0};

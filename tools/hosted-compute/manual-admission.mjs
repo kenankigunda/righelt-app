@@ -2,7 +2,7 @@ import {publicWorkAuthority} from './public-work.mjs';
 import {validatePublicTimingTransition} from './public-timing-transition.mjs';
 import {POLICY,assert,canonical,encode,sha256,reserveCents,TERMINAL} from './policy.mjs';
 import {cashPlan,cloudflareCoverage} from './cash.mjs';
-import {readCleanupRegistry,readOperatorReceipt,sameReference,validateManualIntent,validateRepairAllowance,operatorAttemptBinding,MANUAL_STARTUP_MS} from './manual-authority.mjs';
+import {readCleanupRegistry,readOperatorReceipt,sameReference,validateManualIntent,validateRepairAllowance,operatorAttemptBinding,MANUAL_STARTUP_MS,CLEANUP_CONTRACTS} from './manual-authority.mjs';
 import {validateRuntimeUpgrade} from './runtime-upgrade.mjs';
 import {actualEnvelope} from './actual-spend.mjs';
 
@@ -38,6 +38,26 @@ export async function manualAuthority(core,db,c,intent){
   assert(intent.fundingSha256===await hash(c.manifest.cash),'manual funding identity differs');
   const control=core.externalControl(c.manifest),registry=await readCleanupRegistry(control.store,intent.registry);
   assert(registry.references.some(r=>sameReference(r,c.manifest.externalControl))&&registry.references.some(r=>sameReference(r,prior.manifest.externalControl)),'dual registry omits an ownership set');
+  const cleanupContract=CLEANUP_CONTRACTS[registry.kind];
+  assert(cleanupContract.owners===2||actual,'three-owner admission requires fresh actual-spend reconciliation');
+  // Every historical unresolved attempt retains exact independent cleanup,
+  // regardless of the campaign's current label or a later finished attempt.
+  for(const owner of Object.values(db.campaigns)){
+    const unresolved=owner.attempts.filter((a,index)=>{
+      const observed=db.actualSpendBasis?.activeResources.some(r=>r.campaignId===owner.manifest.id&&r.generation===index+1&&!(a.endedAt>db.actualSpendBasis.observedAt&&owner.cleanupVerified));
+      return a.uncertain===true||!Number.isSafeInteger(a.endedAt)||owner.cleanupVerified!==true||observed;
+    });
+    if(!unresolved.length)continue;
+    const reference=owner.manifest.externalControl;
+    const index=registry.references.findIndex(r=>sameReference(r,reference));
+    assert(index>=0,'cleanup registry capacity or unresolved ownership coverage missing');
+    const record=registry.records[index];
+    assert(unresolved.every(a=>a.prearmSha256===reference.sha256&&record.launches.some(launch=>launch.name===a.name)),'unresolved attempt prearm identity differs');
+    if(owner!==c){
+      const retainedFence=await control.store.readFence(record.nonce,reference);
+      assert(retainedFence?.kind==='terminal'&&retainedFence.prearmSha256===reference.sha256,'retained unresolved owner terminal fence missing');
+    }
+  }
   const oldRecord=registry.records[registry.references.findIndex(r=>sameReference(r,prior.manifest.externalControl))];
   assert(oldRecord.accountId===intent.accountId,'manual account differs');
   const fence=await control.store.readFence(oldRecord.nonce,prior.manifest.externalControl);
@@ -48,13 +68,15 @@ export async function manualAuthority(core,db,c,intent){
   assert(authority.name===intent.name&&authority.name!==old.name,'manual exact name differs');
   assert(intent.liabilityUntil>=authority.cutoff,'cleanup and response liability horizon missing');
   const ready=await readOperatorReceipt(control.store,intent.cleanupReady);
-  assert(ready.schema===1&&ready.kind==='dual-cleanup-readiness'&&sameReference(ready.registry,intent.registry)&&ready.runtimeRevision===registry.runtimeRevision&&/^[a-f0-9]{64}$/.test(ready.workflowSourceSha256)&&/^[a-f0-9]{40}$/.test(ready.workflowCommit),'cleanup readiness source differs');
+  assert(ready.schema===1&&ready.kind===cleanupContract.readinessKind&&sameReference(ready.registry,intent.registry)&&ready.runtimeRevision===registry.runtimeRevision&&/^[a-f0-9]{64}$/.test(ready.workflowSourceSha256)&&/^[a-f0-9]{40}$/.test(ready.workflowCommit),'cleanup readiness source differs');
   assert(Number.isSafeInteger(ready.observedAt)&&ready.observedAt<=now&&now-ready.observedAt<=900000&&Number.isSafeInteger(ready.run?.id)&&['success','failure'].includes(ready.run.conclusion)&&ready.run.headSha===ready.workflowCommit,'fresh actual dual runner proof required');
-  assert(Array.isArray(ready.run.results)&&ready.run.results.length===2&&new Set(ready.run.results.map(r=>r.prearmSha256)).size===2,'dual runner evidence inventory differs');
+  assert(Array.isArray(ready.run.results)&&ready.run.results.length===cleanupContract.owners&&new Set(ready.run.results.map(r=>r.prearmSha256)).size===cleanupContract.owners,'finite runner evidence inventory differs');
   for(const ref of registry.references){const result=ready.run.results.find(r=>r.prearmSha256===ref.sha256);assert(result&&['waiting','terminal'].includes(result.state)&&result.failures===0&&(result.state!=='terminal'||result.cleanupObservedAbsent===true&&result.durableReceiptConfirmed===true),'dual cleanup proof incomplete');}
-  if(ready.run.conclusion==='failure'){
-    const oldResult=ready.run.results.find(r=>r.prearmSha256===prior.manifest.externalControl.sha256),newResult=ready.run.results.find(r=>r.prearmSha256===c.manifest.externalControl.sha256);
-    assert(ready.run.usageReviewRequired===true&&oldResult.state==='terminal'&&oldResult.usageReviewRequired===true&&newResult.usageReviewRequired===false,'cleanup failure is not solely the retained old usage warning');
+  const warnings=ready.run.results.filter(r=>r.usageReviewRequired===true);
+  assert((ready.run.usageReviewRequired===true)===(warnings.length>0)&&ready.run.conclusion===(warnings.length?'failure':'success'),'cleanup runner conclusion or warning evidence differs');
+  if(warnings.length){
+    const newResult=ready.run.results.find(r=>r.prearmSha256===c.manifest.externalControl.sha256);
+    assert(ready.run.usageReviewRequired===true&&warnings.length>0&&warnings.every(r=>r!==newResult&&r.state==='terminal')&&newResult.usageReviewRequired===false,'cleanup failure is not solely a retained old usage warning');
   }
   const funding=await readOperatorReceipt(control.store,intent.fundingReservation),oldFunding=funding.oldAttempt,next=funding.newIntent,total=funding.aggregate;
   if(intent.startup)assert(next?.startupDeadline===intent.startup.deadline,'startup funding binding differs');
