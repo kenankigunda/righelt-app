@@ -53,3 +53,19 @@ The controller independently verifies the typed result, original phase/work dead
 ## Validation boundary
 
 Local contract tests use synthetic service/player/inference fixtures. The cross-language fixture copies the already approved public ONNX bytes solely to bind input checksums; it does not load the model. Native engine protocol tests stop at a tiny explicit deadline before inference. Actual CPU ORT whole-game timing, all-in resource cost and the new image's target-host proof remain separate Root-owned acceptance.
+
+## New finite public execution
+
+A phase longer than15 minutes requires `intent.publicWorkAuthority`, an immutable private `finite-public-work-authority` receipt. This applies to a NEW exact campaign. Existing intents and attempts gain no time. The source-only preparation command accepts an explicitly chosen phase up to the existing24-hour campaign policy, while still granting no launch authority.
+
+The receipt binds schema/kind/id, fresh createdAt/expiresAt, exact campaignId/manifestSha256/sourceRevision/publicTiming/phaseSeconds, admissionDeadline and executionDeadline. Its `timingQualification` names a completed, cleaned public timing campaign, manifest hash and result hash using the same image/source/model/profiles/runtime. At least one verified whole-game original measurement is required. Partial profile coverage stays explicit. `review` binds local evidence, independent review and the operator's qualified timing/cost evidence hashes. `historicalDisposition` is `preserve-all-prior-authorities-and-failures`.
+
+The admission deadline is explicit and no later than2026-11-16T19:00Z. It permits only already reviewed productive attachment after the18:00Z engineering cutoff. CREATE/ATTACH still expires within five minutes. Confirmed startup remains bounded and must finish before the declared admission deadline. Legacy and nonpublic admission still end at18:00Z. Startup failure after the repair cutoff leads to cleanup, not engineering or replacement.
+
+The execution deadline is fixed once at attachment and bounded by manifest, external prearm, funding and the global program end. Heartbeat, polling, recovery and reattachment cannot renew it. The queue has no automatic Pod creation or replacement: worker/lease failure cleans up and reaches durable failure. Root supplies the finite ordered IDs, seeds and per-job bounds after actual short timing and cost review.
+
+A job starts only when its declared bound plus the existing arena serialization margin fit before the original work deadline. An oversized remaining job stays unstarted, and a later independent bounded job may still run. Ordinary timeout/truncation retains its accounting and advances. Shared identity, protocol, replay, malformed/nonfinite output or unclassified failures stop new work and retain aborted accounting. Model startup exceptions likewise retain accounting and abort; expiry without model dispatch still recovers prior work honestly.
+
+Every accounted job writes an immutable compact prefix and atomic `latest.json` pointer. The prefix is privately published between jobs, and the existing supervised snapshot path can retain the whole coherent tree. Persistent transport failure stops new work. Safe reads and identical hash-bound uploads get at most one retry; ambiguous claims are queried by the same key without create. Lost settlement responses are reconciled by the same key/bytes, with at most one identical settlement write. Authentication, corruption and malformed JSON never gain a retry or game replay.
+
+Shared policy bounds a conservative artifact/log envelope before admission/preparation. This is a technical capacity guard, not actual long-run growth, throughput or Cloudflare cost acceptance. Root must measure those with the exact image and reduce the frozen queue if needed. These runtime changes require a newly built/import-qualified image; do not relabel370 or9f.

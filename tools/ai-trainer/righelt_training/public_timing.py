@@ -19,6 +19,10 @@ POLICY=json.loads((ROOT/'tools/hosted-compute/policy.json').read_bytes())
 TIMING=POLICY['publicTiming']
 
 
+class PublicTimingStopped(RuntimeError):
+    """Retained accounting exists, but shared correctness forbids continuation."""
+    pass
+
 def encoded(value):return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False).encode()
 def digest(raw):return hashlib.sha256(raw).hexdigest()
 def record_digest(value):return digest(encoded(value))
@@ -45,7 +49,7 @@ def validate_plan(plan,profiles,work_ids):
     require(plan['profiles']==profiles and re.fullmatch('[a-f0-9]{64}',plan['qualifiedRuntimeSha256'] or ''),'public timing profile or cohort differs')
     require(type(plan['accountingReserveSeconds']) in (int,float) and math.isfinite(plan['accountingReserveSeconds']) and plan['accountingReserveSeconds']>0,'explicit accounting publication reserve required')
     schedule=plan['schedule']
-    require(isinstance(schedule,list) and schedule and len(schedule)*5+12<=POLICY['maxArtifacts']
+    require(isinstance(schedule,list) and schedule and len(schedule)*TIMING['artifactsPerWork']+TIMING['baseArtifacts']<=POLICY['maxArtifacts']
         and [j.get('id') for j in schedule]==work_ids and len(set(work_ids))==len(work_ids),'finite public timing inventory differs')
     for job in schedule:
         require(set(job)=={'id','profile','referenceSeat','seed','gameSeconds','startKind','kind','startIdentity'}
@@ -88,7 +92,7 @@ def prepare_package(template,image,output,*,profiles_loader=None,start_loader=No
     require(set(template)=={'schema','purpose','campaignId','phaseSeconds','accountingReserveSeconds','qualifiedRuntimeSha256','schedule'}
         and template['schema']==1 and template['purpose']==TIMING['purpose']
         and isinstance(template['campaignId'],str) and re.fullmatch('[A-Za-z0-9][A-Za-z0-9._-]{0,39}',template['campaignId'])
-        and type(template['phaseSeconds']) is int and 0<template['phaseSeconds']<=POLICY['startupMs']/1000,'bounded operator public timing template required')
+        and type(template['phaseSeconds']) is int and 0<template['phaseSeconds']<=POLICY['campaignMs']/1000,'bounded operator public timing template required')
     producer=digest(Path(__file__).read_bytes())
     require(image.get('schema')==2 and image.get('sourceInventory',{}).get('tools/ai-trainer/righelt_training/public_timing.py')==producer,'preparation source differs from built image')
     if source_inspector is None:
@@ -114,6 +118,7 @@ def prepare_package(template,image,output,*,profiles_loader=None,start_loader=No
         'profiles':profiles,'schedule':jobs,'qualifiedRuntimeSha256':template['qualifiedRuntimeSha256'],
         'accountingReserveSeconds':template['accountingReserveSeconds']}
     validate_plan(plan,profiles,[j['id'] for j in jobs])
+    require(len(jobs)*TIMING['artifactsPerWork']+TIMING['baseArtifacts']+math.ceil(template['phaseSeconds']*1000/POLICY['snapshotEveryMs'])<=POLICY['maxArtifacts'],'finite queue artifact and log envelope exceeds controller bounds')
     require(0<plan['accountingReserveSeconds']<template['phaseSeconds'],'accounting reserve exceeds original phase')
     # Only the already approved public artifact is read. No model is loaded.
     model=(ROOT/'apps/web/computer/models'/f"{TIMING['incumbent']['id']}.onnx").read_bytes()
@@ -141,6 +146,18 @@ def prepare_package(template,image,output,*,profiles_loader=None,start_loader=No
     return receipt
 
 
+def atomic_pointer(path,value):
+    path=Path(path);fd,temporary=tempfile.mkstemp(dir=path.parent,prefix='.pointer-',suffix='.tmp')
+    try:
+        with os.fdopen(fd,'wb') as stream:stream.write(encoded(value)+b'\n');stream.flush();os.fsync(stream.fileno())
+        os.replace(temporary,path)
+        handle=os.open(path.parent,os.O_RDONLY)
+        try:os.fsync(handle)
+        finally:os.close(handle)
+    finally:
+        if os.path.exists(temporary):os.unlink(temporary)
+
+
 class MeasuredModel:
     def __init__(self,model,seat,clock):self.model=model;self.seat=seat;self.clock=clock;self.calls=0;self.seconds=0.
     def infer_export(self,encoded_state):
@@ -150,27 +167,28 @@ class MeasuredModel:
 
 
 def execute(plan,directory,execution,work_ids,*,context,seconds,barrier,profiles,start_expected,start_verify,verify,
-            model_factory,player,clock=time.monotonic,wall=time.time,writer=None):
+            model_factory,player,clock=time.monotonic,wall=time.time,writer=None,progress_publisher=None):
     from .prospective_durability import durable_json
     write=writer or durable_json
     started=clock();original_deadline=context['phaseDeadline'];work_deadline=original_deadline-plan['accountingReserveSeconds']*1000
     require(0<plan['accountingReserveSeconds']<seconds,'accounting reserve exceeds phase')
     deadline=min(started+seconds-plan['accountingReserveSeconds'],started+work_deadline/1000-wall())
     schedule=validate_plan(plan,profiles,work_ids)
+    require(len(schedule)*TIMING['artifactsPerWork']+TIMING['baseArtifacts']+math.ceil(seconds*1000/POLICY['snapshotEveryMs'])<=POLICY['maxArtifacts'],'finite queue artifact and log envelope exceeds controller bounds')
     directory=Path(directory);directory.mkdir(parents=True,exist_ok=True)
     preparation_started=clock()
     expected=start_expected(schedule,seconds=max(.001,min(10,deadline-clock()))) if clock()<deadline else None
     if expected is not None:require(len(expected)==len(schedule) and all(job['startIdentity']==root for job,root in zip(schedule,expected)),'canonical zero-warmup start differs')
     preparation_ms=max(0.,clock()-preparation_started)*1000
-    model_started=clock();model=None;model_failure=False
+    model_started=clock();model=None;model_failure=False;model_error=False
     if expected is None or clock()>=deadline:model_failure=True
     else:
         try:model=model_factory(plan['model'])
-        except Exception:model_failure=True
+        except Exception:model_failure=True;model_error=True
     model_load_ms=max(0.,clock()-model_started)*1000
     models={seat:MeasuredModel(model,seat,clock) for seat in ('P1','P2')} if model else {}
     runtime=model.runtime if model else {'kind':'unavailable','reason':'model-load-failed'}
-    receipts=[];attempts=[];paths=[]
+    receipts=[];attempts=[];paths=[];stop_category=None;stop_work_id=None
     namespace='public-timing:'+execution['manifestSha256']+':'+execution['phase']
     def save(path,value,role):
         write(path,value);a=artifact(path,role)
@@ -183,76 +201,88 @@ def execute(plan,directory,execution,work_ids,*,context,seconds,barrier,profiles
         attempt_start=clock();before={seat:(m.calls,m.seconds) for seat,m in models.items()}
         decision_path=directory/'decisions'/str(execution['generation'])/(key+'.jsonl')
         current={**base,'status':'unstarted','reason':'model-load-failed' if model_failure else 'original-budget','elapsedMs':0.,'inferenceMs':0.,'completedWholeGame':False}
-        profile=profiles['profiles'][job['profile']]
-        versions={seat:plan['model']['sha256'] for seat in ('P1','P2')}
-        profile_versions={seat:profile['version'] for seat in ('P1','P2')}
-        engine_job={**job,'purpose':TIMING['purpose'],'profiles':{seat:profile for seat in ('P1','P2')},
-            'modelVersions':versions,'profileVersions':profile_versions,
-            'evaluationProfile':{'name':job['profile'],'sourceSha256':profiles['sourceSha256'],
-                'definition':profile,'artifactSha256':record_digest(profiles)},'decisionLogPath':str(decision_path)}
-        played=False
-        def play(raw_complete):
-            nonlocal played
-            if model_failure or clock()>=deadline:return {'status':'unfinished','reason':'original-budget-before-dispatch'}
-            played=True
-            return player(engine_job,models,min(deadline,clock()+job['gameSeconds']+10),'cpu-onnxruntime',raw_complete=raw_complete)
-        def capture_measurements():return {'elapsedUntilRawMs':max(0.,clock()-attempt_start)*1000,'inferenceMs':sum(max(0.,m.seconds-before[seat][1]) for seat,m in models.items())*1000,'inferenceCalls':{seat:m.calls-before[seat][0] for seat,m in models.items()},'inferenceRuntime':runtime}
-        verification_seconds=0.
-        def replay(game,bound):
-            nonlocal verification_seconds
-            began=clock()
-            try:return verify(game,bound)
-            finally:verification_seconds+=max(0.,clock()-began)
-        try:
-            record,durable_paths=consume_and_qualify(job=engine_job,base=base,execution=execution,namespace=namespace,
-                directory=directory,deadline=deadline,barrier=barrier,play=play,verify=replay,
-                start_verify=start_verify,model_versions=versions,profile_versions=profile_versions,capture_metadata=capture_measurements,allow_new_work=not model_failure)
-            for retained in durable_paths:
-                a=artifact(retained,'verification' if 'verification' in Path(retained).parts else 'raw')
-                if not any(prior['path']==a['path'] for prior in paths):paths.append(a)
-            current.update(record)
-            current.update(completedWholeGame=record['status']=='complete',startVerified=record.get('engineReplayVerified') is True,
-                termination=record.get('game',{}).get('termination'),verificationMs=verification_seconds*1000)
-            # The exact raw game remains in its own immutable artifact.
-            current.pop('game',None)
-            measured=record.get('publicTimingMeasurements')
-            if measured is not None:
-                if model is None:runtime=measured['inferenceRuntime']
-                origin=record['originalGeneration'];measurement_namespace=namespace+':measurements:'+str(origin)
-                prior=barrier.evaluation_claim(measurement_namespace,job['id'],create=played and clock()<deadline)
-                saved=prior.get('result')
-                binding={**base,'kind':'public-timing-measurement','originalGeneration':origin,'rawEvidenceSha256':record.get('rawEvidenceSha256'),'verificationEvidenceSha256':record.get('verificationEvidenceSha256'),'status':record['status']}
-                if prior.get('created'):
-                    saved={**binding,'elapsedMs':max(0.,clock()-attempt_start)*1000,'verificationMs':verification_seconds*1000,**measured}
-                    write(directory/'measurements'/str(origin)/(key+'.json'),saved);barrier.settle(measurement_namespace,job['id'],saved)
-                complete=saved is not None and all(saved.get(k)==v for k,v in binding.items())
-                current.update(timingComplete=complete,elapsedMs=saved['elapsedMs'] if complete else measured['elapsedUntilRawMs'],
-                    inferenceMs=measured['inferenceMs'],inferenceCalls=measured['inferenceCalls'],verificationMs=saved['verificationMs'] if complete else verification_seconds*1000)
-                if complete:
-                    retained=write(directory/'measurements'/str(origin)/(key+'.json'),saved);measurement_artifact=artifact(retained,'measurements');paths.append(measurement_artifact);current['measurementEvidenceSha256']=measurement_artifact['sha256']
-        except Exception as error:
-            from .hosted_receipts import HostedInfrastructureError
-            if isinstance(error,HostedInfrastructureError):raise
-            current.update(status='failed',reason='public-game-or-verification-failed')
-            for folder,role in [('raw','raw'),('verification','verification')]:
-                for retained in (directory/folder).glob('*/'+key+'.json'):
-                    a=artifact(retained,role)
+        if stop_category is None:
+            profile=profiles['profiles'][job['profile']]
+            versions={seat:plan['model']['sha256'] for seat in ('P1','P2')}
+            profile_versions={seat:profile['version'] for seat in ('P1','P2')}
+            engine_job={**job,'purpose':TIMING['purpose'],'profiles':{seat:profile for seat in ('P1','P2')},
+                'modelVersions':versions,'profileVersions':profile_versions,
+                'evaluationProfile':{'name':job['profile'],'sourceSha256':profiles['sourceSha256'],
+                    'definition':profile,'artifactSha256':record_digest(profiles)},'decisionLogPath':str(decision_path)}
+            played=False
+            def play(raw_complete):
+                nonlocal played
+                if model_failure or clock()+job['gameSeconds']+10>deadline:return {'status':'unfinished','reason':'original-budget-before-dispatch'}
+                played=True
+                return player(engine_job,models,min(deadline,clock()+job['gameSeconds']+10),'cpu-onnxruntime',raw_complete=raw_complete)
+            def capture_measurements():return {'elapsedUntilRawMs':max(0.,clock()-attempt_start)*1000,'inferenceMs':sum(max(0.,m.seconds-before[seat][1]) for seat,m in models.items())*1000,'inferenceCalls':{seat:m.calls-before[seat][0] for seat,m in models.items()},'inferenceRuntime':runtime}
+            verification_seconds=0.
+            def replay(game,bound):
+                nonlocal verification_seconds
+                began=clock()
+                try:return verify(game,bound)
+                finally:verification_seconds+=max(0.,clock()-began)
+            try:
+                record,durable_paths=consume_and_qualify(job=engine_job,base=base,execution=execution,namespace=namespace,
+                    directory=directory,deadline=deadline,barrier=barrier,play=play,verify=replay,
+                    start_verify=start_verify,model_versions=versions,profile_versions=profile_versions,capture_metadata=capture_measurements,allow_new_work=not model_failure and clock()+job['gameSeconds']+10<=deadline)
+                for retained in durable_paths:
+                    a=artifact(retained,'verification' if 'verification' in Path(retained).parts else 'raw')
                     if not any(prior['path']==a['path'] for prior in paths):paths.append(a)
-        if not current.get('publicTimingMeasurements'):
-            current.update(elapsedMs=0. if current['status']=='unstarted' else max(0.,clock()-attempt_start)*1000,inferenceMs=sum(max(0.,m.seconds-before[seat][1]) for seat,m in models.items())*1000,inferenceCalls={seat:m.calls-before[seat][0] for seat,m in models.items()},timingComplete=False)
-        if decision_path.exists():paths.append(artifact(decision_path,'decisions'))
+                current.update(record)
+                current.update(completedWholeGame=record['status']=='complete',startVerified=record.get('engineReplayVerified') is True,
+                    termination=record.get('game',{}).get('termination'),verificationMs=verification_seconds*1000)
+                # The exact raw game remains in its own immutable artifact.
+                current.pop('game',None)
+                measured=record.get('publicTimingMeasurements')
+                if measured is not None:
+                    if model is None:runtime=measured['inferenceRuntime']
+                    origin=record['originalGeneration'];measurement_namespace=namespace+':measurements:'+str(origin)
+                    prior=barrier.evaluation_claim(measurement_namespace,job['id'],create=played and clock()<deadline)
+                    saved=prior.get('result')
+                    binding={**base,'kind':'public-timing-measurement','originalGeneration':origin,'rawEvidenceSha256':record.get('rawEvidenceSha256'),'verificationEvidenceSha256':record.get('verificationEvidenceSha256'),'status':record['status']}
+                    if prior.get('created'):
+                        saved={**binding,'elapsedMs':max(0.,clock()-attempt_start)*1000,'verificationMs':verification_seconds*1000,**measured}
+                        write(directory/'measurements'/str(origin)/(key+'.json'),saved);barrier.settle(measurement_namespace,job['id'],saved)
+                    complete=saved is not None and all(saved.get(k)==v for k,v in binding.items())
+                    current.update(timingComplete=complete,elapsedMs=saved['elapsedMs'] if complete else measured['elapsedUntilRawMs'],
+                        inferenceMs=measured['inferenceMs'],inferenceCalls=measured['inferenceCalls'],verificationMs=saved['verificationMs'] if complete else verification_seconds*1000)
+                    if complete:
+                        retained=write(directory/'measurements'/str(origin)/(key+'.json'),saved);measurement_artifact=artifact(retained,'measurements');paths.append(measurement_artifact);current['measurementEvidenceSha256']=measurement_artifact['sha256']
+            except Exception as error:
+                from .hosted_receipts import HostedInfrastructureError
+                if isinstance(error,HostedInfrastructureError):raise
+                if isinstance(error,(TimeoutError,subprocess.TimeoutExpired)):
+                    current.update(status='unfinished',reason='job-local-timeout')
+                else:
+                    current.update(status='failed',reason='shared-correctness-stop');stop_category='shared-correctness';stop_work_id=job['id']
+                for folder,role in [('raw','raw'),('verification','verification')]:
+                    for retained in (directory/folder).glob('*/'+key+'.json'):
+                        a=artifact(retained,role)
+                        if not any(prior['path']==a['path'] for prior in paths):paths.append(a)
+            if not current.get('publicTimingMeasurements'):
+                current.update(elapsedMs=0. if current['status']=='unstarted' else max(0.,clock()-attempt_start)*1000,inferenceMs=sum(max(0.,m.seconds-before[seat][1]) for seat,m in models.items())*1000,inferenceCalls={seat:m.calls-before[seat][0] for seat,m in models.items()},timingComplete=False)
+            if decision_path.exists():paths.append(artifact(decision_path,'decisions'))
         current['kind']='public-timing-attempt'
         a=save(directory/'attempts'/str(execution['generation'])/(key+'.json'),current,'attempt')
         receipts.append({'workId':job['id'],'status':current['status'],'evidenceSha256':a['sha256']});attempts.append(current)
+        prefix={'schema':1,'kind':'public-timing-prefix','execution':execution,'originalDeadline':original_deadline,
+            'originalWorkDeadline':work_deadline,'receipts':receipts.copy(),'completedWorkIds':[a['workId'] for a in attempts if a['status']=='complete'],
+            'stopCategory':stop_category,'remainingWorkIds':work_ids[len(receipts):]}
+        prefix_path=directory/'progress'/str(execution['generation'])/(str(len(receipts))+'.json')
+        progress=save(prefix_path,prefix,'progress')
+        atomic_pointer(directory/'latest.json',{'checkpoint':str(prefix_path.resolve()),'sha256':progress['sha256']})
+        if progress_publisher:progress_publisher(prefix_path.read_bytes())
     cells=[]
     for name in sorted(profiles['profiles']):
         for seat in ('P1','P2'):
             rows=[a for a in attempts if a['profile']==name and a['referenceSeat']==seat]
             cells.append({'profile':name,'referenceSeat':seat,'planned':len(rows),
                 **{status:sum(a['status']==status for a in rows) for status in ('complete','unfinished','failed','unstarted')}})
+    if model_error:stop_category='model-startup-failure'
     completed=[a for a in attempts if a['status']=='complete']
     report={'schema':1,'kind':TIMING['reportKind'],'accountingComplete':True,'scopeCoverageComplete':all(c['complete']>0 for c in cells) and all(sum(a.get('inferenceCalls',{}).get(seat,0) for a in attempts)>0 for seat in ('P1','P2')),
-        'strengthEstablished':False,'scientificAdmission':False,'completedWholeGames':len(completed),'scopeCells':cells,
+        'strengthEstablished':False,'scientificAdmission':False,'queueStopped':stop_category is not None,'stopCategory':stop_category,'stopWorkId':stop_work_id,'completedWholeGames':len(completed),'scopeCells':cells,
         'timingCoverageComplete':all(a.get('timingComplete') is True for a in completed) and bool(completed),
         'completedWholeGameMs':[a['elapsedMs'] for a in completed if a.get('timingComplete') is True],
         'completedTimeLowerBoundMs':[a['elapsedMs'] for a in completed if a.get('timingComplete') is not True],
@@ -270,20 +300,13 @@ def execute(plan,directory,execution,work_ids,*,context,seconds,barrier,profiles
         'originalIncumbent':TIMING['incumbent'],'originalDeadline':original_deadline,'originalWorkDeadline':work_deadline,'workReceipts':receipts,'inferenceRuntime':runtime,
         'runtimeArtifactSha256':context['runtimeArtifact']['sha256'],'reportSha256':report_path['sha256']}
     save(directory/f"timing-proof-{execution['generation']}.json",proof,'proof')
-    result={'schema':1,'kind':TIMING['resultKind'],'disposition':'complete','execution':execution,
+    result={'schema':1,'kind':TIMING['resultKind'],'disposition':'aborted' if stop_category else 'complete','execution':execution,
         'accountedWorkIds':work_ids,'completedWorkIds':[a['workId'] for a in completed],
         'accountingComplete':True,'scopeCoverageComplete':report['scopeCoverageComplete'],
         'strengthEstablished':False,'scientificAdmission':False,'artifacts':paths+context['inputArtifacts']+[context['runtimeArtifact']]}
     retained=write(directory/f"result-{execution['generation']}.json",result)
-    fd,temporary=tempfile.mkstemp(dir=directory,prefix='.result-',suffix='.tmp')
-    try:
-        with os.fdopen(fd,'wb') as stream:stream.write(Path(retained).read_bytes());stream.flush();os.fsync(stream.fileno())
-        os.replace(temporary,directory/'result.json')
-        handle=os.open(directory,os.O_RDONLY)
-        try:os.fsync(handle)
-        finally:os.close(handle)
-    finally:
-        if os.path.exists(temporary):os.unlink(temporary)
+    atomic_pointer(directory/'result.json',result)
+    if stop_category:raise PublicTimingStopped('public timing retained accounting and stopped')
     return result
 
 
@@ -338,7 +361,7 @@ def main():
     context['runtimeArtifact']=artifact(directory/f"runtime-{execution['generation']}.json",'runtime')
     result=execute(json.loads(plan_raw),directory,execution,context['completedWorkIds'],context=context,seconds=args.seconds,
         barrier=hosted_receipts,profiles=authoritative_profiles(seconds=max(.001,min(10,context['phaseDeadline']/1000-time.time()))),start_expected=expected_evaluation_starts,
-        start_verify=verify_evaluation_game_start,verify=verify_game,model_factory=ExportedModel,player=play_game,writer=durable_json)
+        start_verify=verify_evaluation_game_start,verify=verify_game,model_factory=ExportedModel,player=play_game,writer=durable_json,progress_publisher=hosted_receipts.publish_progress)
     print(json.dumps({'kind':TIMING['resultKind'],'accountingComplete':result['accountingComplete'],
         'scopeCoverageComplete':result['scopeCoverageComplete'],'strengthEstablished':False}))
 

@@ -1,3 +1,4 @@
+import {publishSnapshot} from '../worker.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {promises as fs} from 'node:fs';
@@ -45,8 +46,8 @@ test('actual controller completes, retains and cleans a bound public timing acco
  const final=(await core.load()).campaigns[m.id];assert.equal(final.status,'complete');assert.equal(final.cleanupVerified,true);assert.equal(f.f.providers.resources.size,0);assert.equal(final.outputs['public-timing/timing'].sha256,output.sha256);
 });
 
-test('unavailable model preserves honest unstarted accounting but never inferred work',async t=>{
- const f=await synthetic(t,{unavailable:true});await f.verify(f.result);
+test('unavailable model retains unstarted accounting and aborts without inferred work',async t=>{
+ const f=await synthetic(t,{unavailable:true});await assert.rejects(f.verify(f.result),/typed completed result required/);
  assert.deepEqual(f.result.completedWorkIds,[]);assert.equal(f.result.scopeCoverageComplete,false);
  const attempt=f.result.artifacts.find(a=>a.role==='attempt'),original=JSON.parse(await f.read(attempt));
  for(const change of [a=>a.status='failed',a=>a.inferenceMs=1,a=>a.inferenceCalls={P1:1,P2:0},a=>a.timingComplete=true]){
@@ -55,7 +56,7 @@ test('unavailable model preserves honest unstarted accounting but never inferred
   const proofDescriptor=result.artifacts.find(a=>a.role==='proof'),proof=JSON.parse(await f.read(proofDescriptor));proof.workReceipts.find(r=>r.evidenceSha256===attempt.sha256).evidenceSha256=hash;
   if(value.status!=='unstarted')proof.workReceipts.find(r=>r.evidenceSha256===hash).status=value.status;
   const proofRaw=encode(JSON.stringify(proof));proofDescriptor.sha256=await sha256(proofRaw);proofDescriptor.name=proofDescriptor.sha256;proofDescriptor.bytes=proofRaw.length;
-  await assert.rejects(verifyResult(result,{manifest:f.manifest,manifestSha256:f.manifestSha256,phase:f.phase,generation:1,phaseDeadline:f.phaseDeadline,read:a=>a.path===attempt.path?raw:a.role==='proof'?proofRaw:f.read(a)}),/unavailable runtime/);
+  await assert.rejects(verifyResult(result,{manifest:f.manifest,manifestSha256:f.manifestSha256,phase:f.phase,generation:1,phaseDeadline:f.phaseDeadline,read:a=>a.path===attempt.path?raw:a.role==='proof'?proofRaw:f.read(a)}),/typed completed result required|unavailable runtime/);
  }
 });
 
@@ -90,4 +91,12 @@ test('expired recovery keeps all completed work and original measurements throug
  const report=JSON.parse(await f.read(f.result.artifacts.find(a=>a.role==='report')));
  assert.deepEqual(report.inferenceCalls,{P1:6,P2:6});assert.equal(report.completedWholeGameMs.length,6);
  assert(report.completedWholeGameMs.every(ms=>ms>6000));
+});
+
+test('producer progress pointer publishes through the existing coherent cloud snapshot path',async t=>{
+ const f=await synthetic(t),uploaded=new Map();let posted;
+ const client={upload:async bytes=>{const hash=await sha256(bytes);uploaded.set(hash,bytes);return {sha256:hash,bytes:bytes.length};},json:async(action,value)=>{assert.equal(action,'snapshot');posted=value;return {accepted:true};}};
+ const snapshot=await publishSnapshot(client,f.root,f.phase.runDir,f.root,false);
+ assert.equal(snapshot,posted);assert(snapshot.files.some(a=>a.path.endsWith('/latest.json')));assert(snapshot.files.some(a=>a.path.includes('/progress/')));
+ for(const a of snapshot.files)assert.equal(await sha256(uploaded.get(a.sha256)),a.sha256);
 });

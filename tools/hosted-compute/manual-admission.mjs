@@ -1,3 +1,4 @@
+import {publicWorkAuthority} from './public-work.mjs';
 import {validatePublicTimingTransition} from './public-timing-transition.mjs';
 import {POLICY,assert,canonical,encode,sha256,reserveCents,TERMINAL} from './policy.mjs';
 import {cashPlan,cloudflareCoverage} from './cash.mjs';
@@ -32,7 +33,7 @@ export async function manualAuthority(core,db,c,intent){
   assert(canonical(intent.priorAttempt)===canonical({generation:prior.generation,name:old.name,prearmSha256:old.prearmSha256,startedAt:old.startedAt}),'original attempt binding differs');
   const repairStartedAt=operatorAttemptBinding(prior).repairStartedAt;
   assert(Number.isSafeInteger(repairStartedAt)&&repairStartedAt>=old.startedAt&&intent.repairStartedAt===repairStartedAt,'original repair clock differs');
-  assert(now>=intent.createdAt&&now<intent.expiresAt&&now<intent.repairDeadline,'manual admission window expired');
+  assert(now>=intent.createdAt&&now<intent.expiresAt&&(intent.publicWorkAuthority||now<intent.repairDeadline),'manual admission window expired');
   const host=c.manifest.phases[0].host;assert(host.quoteObservedAt<=now&&host.quoteExpires>now,'manual host quote expired');
   assert(intent.fundingSha256===await hash(c.manifest.cash),'manual funding identity differs');
   const control=core.externalControl(c.manifest),registry=await readCleanupRegistry(control.store,intent.registry);
@@ -42,7 +43,8 @@ export async function manualAuthority(core,db,c,intent){
   const fence=await control.store.readFence(oldRecord.nonce,prior.manifest.externalControl);
   assert(fence?.kind==='terminal'&&fence.prearmSha256===prior.manifest.externalControl.sha256,'original terminal fence missing');
   const authority=await control.authorizeLaunch(c.manifest,{phaseIndex:0,generation:1});
-  if(intent.startup)assert(intent.startup.deadline<=Math.min(c.manifest.deadline,authority.cutoff,intent.repairDeadline,db.manualProgram?.deadline??Infinity),'startup authority exceeds immutable bounds');
+  const publicWork=await publicWorkAuthority(core,db,c,intent,authority);
+  if(intent.startup)assert(intent.startup.deadline<=Math.min(c.manifest.deadline,authority.cutoff,publicWork?.admissionDeadline??intent.repairDeadline,db.manualProgram?.deadline??Infinity),'startup authority exceeds immutable bounds');
   assert(authority.name===intent.name&&authority.name!==old.name,'manual exact name differs');
   assert(intent.liabilityUntil>=authority.cutoff,'cleanup and response liability horizon missing');
   const ready=await readOperatorReceipt(control.store,intent.cleanupReady);
@@ -68,7 +70,8 @@ export async function manualAuthority(core,db,c,intent){
   assert(now<=Date.parse(next.latestAdmission)&&intent.expiresAt<=Date.parse(next.latestAdmission)&&intent.expiresAt-intent.createdAt<=next.maximumIntentMs&&next.maximumIntentMs===900000&&authority.cutoff<=Date.parse(next.latestWorkCutoff)&&intent.liabilityUntil<=Date.parse(next.responseUntil)&&intent.liabilityUntil>=authority.cutoff+7200000,'finite operator funding window exceeded');
   assert(total?.runpodEncumberedCents===encumberedCents&&total.repairEncumberedCents===encumberedCents&&total.runpodEncumberedCents<=total.runpodCeilingCents&&total.runpodCeilingCents<=10000&&total.repairEncumberedCents<=intent.repairMaxCents&&total.repairCeilingCents===intent.repairMaxCents&&total.cloudflareEncumberedCents<=total.cloudflareCeilingCents&&total.cloudflareCeilingCents<=2000&&total.githubPaidOverageAuthorized===false,'operator aggregate funding exceeded');
   cloudflareCoverage(c.manifest.cash,{now,deadline:c.manifest.deadline,forecastUntil:authority.forecastUntil});
-  return {prior,old,authority,registry};
+  assert(core.now()<intent.expiresAt&&core.now()<(publicWork?.admissionDeadline??intent.repairDeadline),'manual admission expired during authorization');
+  return {prior,old,authority,registry,publicWork};
 }
 function repairCost(core,db,prior){
   let total=core.cost(prior);
@@ -102,7 +105,7 @@ export async function prepareManual(core,id,intent){
   assert(c.status==='staged'&&core.config.enabled===true,'manual campaign unavailable');
   assert(!db.manualFundingReservations?.[intent.fundingReservation?.sha256],'funding reservation already assigned');
   assert(!db.manualProgram||core.now()<db.manualProgram.deadline,'overall actual program ended');
-  const {prior,authority}=await manualAuthority(core,db,c,intent),now=core.now();
+  const {prior,authority,publicWork}=await manualAuthority(core,db,c,intent),now=core.now();
   for(const other of Object.values(db.campaigns))assert(other===c||other===prior||TERMINAL.has(other.status)||other.status==='staged','another campaign owns compute');
   for(const input of c.manifest.inputs)assert(c.objects[input.sha256]?.bytes===input.bytes,'manual inputs incomplete');
   const host=c.manifest.phases[0].host;assert(host.quoteObservedAt<=now&&host.quoteExpires>now,'manual host quote expired');
@@ -113,7 +116,7 @@ export async function prepareManual(core,id,intent){
   const actual=Boolean(db.actualSpendBasis),envelope=actual?actualEnvelope(core,db,c,intent):null;
   assert(actual?envelope.requiredCents<=cash.fundedCreditCents:(db.creditAllocatedCents??0)+c.manifest.maxCents+additionalRisk<=cash.fundedCreditCents&&(db.pilotReservedCents??0)+c.manifest.maxCents+additionalRisk<=core.config.authorizedCents,'manual cumulative credit/authorization exhausted');
   assert((db.cloudflareAllocatedCents??0)+cloudflareUsageCapCents<=cash.cloudflareReservedCents,'manual cumulative Cloudflare reserve exhausted');
-  c.manual={intent:structuredClone(intent),intentSha256};
+  c.manual={intent:structuredClone(intent),intentSha256,...(publicWork?{publicWork:structuredClone(publicWork)}:{})};
   if(actual)c.manual.actualSpendBasisSha256=db.actualSpendBasis.receiptSha256;
   c.attempts.push({manual:true,provider:'runpod',name:authority.name,quote:structuredClone(host),hourlyCents:host.hourlyCents,startedAt:intent.createdAt,cutoff:authority.cutoff,prearmSha256:authority.prearmSha256,uncertain:true});
   requireHeadroom(core,db,prior,c,authority.cutoff);
@@ -133,21 +136,22 @@ export async function attachManual(core,id,body){
   assert(c.manual?.intentSha256===body.intentSha256&&c.manual.intent.accountId===body.accountId,'manual intent/account differs');
   if(c.manual.attached){assert(c.manual.attached.podId===body.podId&&c.manual.attached.acceptedAt===body.acceptedAt,'manual attachment already bound');return core.status(c);}
   assert(c.status==='manual-pending'&&body.acceptedAt>=a.startedAt&&body.acceptedAt<=core.now(),'manual accepted clock differs');
-  const {prior,authority}=await manualAuthority(core,db,c,c.manual.intent);
+  const {prior,authority,publicWork}=await manualAuthority(core,db,c,c.manual.intent);
+  assert(canonical(publicWork)===canonical(c.manual.publicWork??null),'public work authority changed after preparation');
   requireHeadroom(core,db,prior,c,authority.cutoff);
   const observed=await core.providers.inspect('runpod',body.podId);
   assert(observed?.id===body.podId,'observed Pod identity differs');
   if(observed.createdAt!==undefined)assert(Number.isFinite(Date.parse(observed.createdAt))&&body.acceptedAt<=Date.parse(observed.createdAt),'manual accepted clock is later than provider creation');
   const placement=core.providers.qualify(observed,c.manifest.phases[0].host,a.name);
   // Recheck the actual wall clock after provider I/O, before granting authority.
-  assert(core.now()<c.manual.intent.expiresAt&&core.now()<authority.cutoff&&core.now()<c.manual.intent.repairDeadline,'manual attach expired during qualification');
+  assert(core.now()<c.manual.intent.expiresAt&&core.now()<authority.cutoff&&core.now()<(publicWork?.admissionDeadline??c.manual.intent.repairDeadline),'manual attach expired during qualification');
   c.manual.attached={podId:body.podId,acceptedAt:body.acceptedAt};
   if(db.manualProgram)assert(body.acceptedAt>=db.manualProgram.acceptedAt,'overall actual start cannot move backward');
   else db.manualProgram={acceptedAt:body.acceptedAt,deadline:body.acceptedAt+c.manual.intent.runtimeWindowMs,intentSha256:body.intentSha256,campaignId:id};
   c.programAnchor=structuredClone(db.manualProgram);
-  c.manual.campaignDeadline=Math.min(db.manualProgram.deadline,c.manifest.deadline,body.acceptedAt+MANUAL_STARTUP_MS);
+  c.manual.campaignDeadline=Math.min(db.manualProgram.deadline,c.manifest.deadline,publicWork?.executionDeadline??body.acceptedAt+MANUAL_STARTUP_MS);
   assert(core.now()<c.manual.campaignDeadline,'manual actual run window expired');
-  if(c.manual.intent.startup){c.manual.startupDeadline=Math.min(c.manual.intent.startup.deadline,body.acceptedAt+c.manual.intent.startup.maximumMs,c.manual.campaignDeadline,authority.cutoff,c.manual.intent.repairDeadline);assert(core.now()<c.manual.startupDeadline,'manual startup already expired');}
+  if(c.manual.intent.startup){c.manual.startupDeadline=Math.min(c.manual.intent.startup.deadline,body.acceptedAt+c.manual.intent.startup.maximumMs,c.manual.campaignDeadline,authority.cutoff,publicWork?.admissionDeadline??c.manual.intent.repairDeadline);assert(core.now()<c.manual.startupDeadline,'manual startup already expired');}
   a.resourceId=body.podId;a.placement=placement;a.uncertain=false;
   c.status='provisioning';core.event(c,'manual-attached',{intentSha256:body.intentSha256});await core.save(db);
   return core.status(c);
@@ -160,7 +164,7 @@ export function checkManualLiability(core,db,c){
   const prior=core.campaign(db,c.manual.intent.priorCampaignId);
   if(db.actualSpendBasis&&c.manual.actualSpendBasisSha256){
     actualEnvelope(core,db,c,c.manual.intent);
-    assert(c.attempts.at(-1)?.workStartedAt||core.now()<c.manual.intent.repairDeadline,'manual repair allowance exhausted');return;
+    assert(c.attempts.at(-1)?.workStartedAt||core.now()<(c.manual.publicWork?.admissionDeadline??c.manual.intent.repairDeadline),'manual repair allowance exhausted');return;
   }
   assert(core.cost(prior)<=prior.manifest.maxCents+c.manual.intent.priorRiskReserveCents-reserveCents(prior.manifest.maxCents),'prior risk reserve exhausted');
   if(!c.attempts.at(-1)?.workStartedAt){
