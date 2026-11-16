@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {mkdtempSync,rmSync,readFileSync,writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import path from "node:path";
-import {parseResetArgs,runStorageReset,bindingConfig,recoverySocketSnapshot} from "./storage-reset.mjs";
+import {parseResetArgs,runStorageReset,bindingConfig,recoverySocketSnapshot,verifyRecoveryHistory} from "./storage-reset.mjs";
 
 test("reset mutations require explicit targets, private receipt and apply mode",()=>{
   assert.throws(()=>parseResetArgs(["prepare","--old","a","--new","a","--receipt","/tmp/r"]),/distinct/);
@@ -67,4 +67,27 @@ test("binding preparation fences direct deployment paths as well as the workflow
  assert.match(bound,/database_name = "new"/);
  const rebound=bindingConfig(bound,"new","22222222-2222-2222-2222-222222222222","reset-other");
  assert.match(rebound,/STORAGE_GENERATION = "reset-other"/);assert.equal((rebound.match(/STORAGE_GENERATION/g)||[]).length,1);
+});
+
+
+test("recovery history reads durable decisions without writing a viewing preference",async()=>{
+ const board={pieces:[{id:"red-1",x:2,y:3}],sideToMove:"P2",turnIndex:1};
+ const loaded={eventSeq:2,game:{gameplayRevision:1,board:{state:board},moves:[{moveId:"move-1",clientCommandId:"v2:accepted"}]}};
+ const initialState={pieces:[],sideToMove:"P1"};
+ const history={items:[{id:"initial",kind:"initial",state:{pieces:[],sideToMove:"P1"}},{id:"move-1",kind:"decision",move:{moveId:"move-1",clientCommandId:"v2:accepted",snapshot:structuredClone(board)}}]};
+ const calls=[];
+ await verifyRecoveryHistory({gameId:"owned-game",identityId:"owned actor",loaded,initialState,request:async(route,body)=>{calls.push({route,body});return route.endsWith("/decision-history")?history:structuredClone(loaded);}});
+ assert.deepEqual(calls,[{route:"/api/shell/games/owned-game/decision-history",body:{identityId:"owned actor",protocolVersion:2}},{route:"/api/shell/games/owned-game?identityId=owned%20actor",body:undefined}]);
+ for(const defect of ["missing-initial","corrupt-initial","missing-decision","wrong-command","changed-snapshot","changed-event","changed-revision","changed-live-board"]){
+  const archived=structuredClone(history),live=structuredClone(loaded);
+  if(defect==="missing-initial")archived.items.shift();
+  if(defect==="corrupt-initial")archived.items[0].state={corrupt:true};
+  if(defect==="missing-decision")archived.items.pop();
+  if(defect==="wrong-command")archived.items[1].move.clientCommandId="v2:other";
+  if(defect==="changed-snapshot")archived.items[1].move.snapshot.pieces[0].x=9;
+  if(defect==="changed-event")live.eventSeq=3;
+  if(defect==="changed-revision")live.game.gameplayRevision=2;
+  if(defect==="changed-live-board")live.game.board.state.pieces[0].x=9;
+  await assert.rejects(verifyRecoveryHistory({gameId:"owned-game",identityId:"owned actor",loaded,initialState,request:async route=>route.endsWith("/decision-history")?archived:live}),/Recovery canary/,defect);
+ }
 });
