@@ -6,7 +6,7 @@ import { validateScientificAdmission } from './experiment.mjs';
 import { verifyResult } from './result.mjs';
 import { providerFailureDiagnostic } from './providers.mjs';
 import {prepareManual,attachManual,checkManualLiability} from './manual-admission.mjs';
-import {operatorAttemptBinding} from './manual-authority.mjs';
+import {operatorAttemptBinding,manualStartupUntil} from './manual-authority.mjs';
 import {spendBinding,reconcileActualSpend,knownManualCost} from './actual-spend.mjs';
 import { POLICY, TERMINAL, assert, artifact, canonical, encode, safeName, sha256, validateManifest, reserveCents } from './policy.mjs';
 
@@ -22,10 +22,23 @@ export class Controller {
   async actualSpendBinding(){return spendBinding(await this.load());}
   reconcileActualSpend(id,reference){return reconcileActualSpend(this,id,reference);}
   async attemptBinding(id){const db=await this.load();return operatorAttemptBinding(this.campaign(db,id));}
-  async manualReady(id,generation){
+  async manualReady(id,generation,claim){
     const db=await this.load(),c=this.campaign(db,id);
     assert(c.manual&&c.generation===generation,'manual bootstrap owner differs');
-    const until=Math.min(c.manual.intent.createdAt+300000,c.manual.intent.expiresAt);
+    let until=manualStartupUntil(c);
+    if(c.manual.intent.startup){
+      assert(claim&&Object.keys(claim).sort().join(',')==='intentSha256,podId,sessionId'&&typeof claim.podId==='string'&&typeof claim.intentSha256==='string'&&typeof claim.sessionId==='string'&&/^[A-Za-z0-9_-]+$/.test(claim.podId)&&/^[a-f0-9]{64}$/.test(claim.intentSha256)&&/^[a-f0-9]{32}$/.test(claim.sessionId)&&claim.intentSha256===c.manual.intentSha256,'typed startup claim differs');
+      if(!['manual-pending','provisioning','running'].includes(c.status)||c.attempts.at(-1)?.workStartedAt)return {ready:false,until:Math.min(until,this.now())};
+      if(!c.manual.attached)return {ready:false,until:c.manual.intent.expiresAt};
+      const a=c.attempts.at(-1);
+      assert(claim.podId===c.manual.attached.podId&&claim.podId===a.resourceId&&a.placement?.id===claim.podId,'startup Pod identity differs');
+      if(this.now()>=until)return {ready:false,until};
+      if(c.manual.startupSession)assert(c.manual.startupSession.sessionId===claim.sessionId,'startup session already bound');
+      this.fence(c,generation,{allowStartupClaim:true});checkManualLiability(this,db,c);
+      if(!c.manual.startupSession){c.manual.startupSession={...claim,generation,verifiedAt:this.now(),deadline:until};this.event(c,'manual-startup-confirmed',{deadline:until});await this.save(db);}
+      return {ready:true,until};
+    }
+    assert(claim===undefined,'legacy startup does not accept a cold-start claim');
     let ready=false;
     if(c.manual.attached&&c.attempts.at(-1)?.placement&&this.now()<until){
       this.fence(c,generation);checkManualLiability(this,db,c);ready=true;
@@ -33,6 +46,9 @@ export class Controller {
     return {ready,until};
   }
   campaign(db, id) { assert(safeName(id) && db.campaigns[id], 'campaign not found'); return db.campaigns[id]; }
+  workerSession(c,session){
+    if(c.manual?.intent.startup)assert(typeof session==='string'&&session===c.manual.startupSession?.sessionId,'startup process differs');
+  }
   event(c, type, detail = {}) {
     const last = c.events.at(-1);
     if (type === 'provider-unavailable' && last?.type === type) { last.count = (last.count ?? 1) + 1; last.lastAt = this.now(); last.diagnostic=detail.diagnostic; return; }
@@ -110,13 +126,14 @@ export class Controller {
     if (!c.objects[a.sha256]) await this.bucket.put(key, bytes, { sha256: a.sha256 });
     c.objects[a.sha256] = { bytes: a.bytes }; delete c.pendingObjects[a.sha256]; await this.save(db); return a;
   }
-  fence(c, generation) {
+  fence(c, generation,{allowStartupClaim=false}={}) {
     const a = c.attempts.at(-1);
     assert(c.generation === generation && ['provisioning', 'running'].includes(c.status) && a &&
-      this.now() < (a.leaseExpires ?? a.startedAt + POLICY.startupMs) && this.now() < c.manifest.deadline &&
+      this.now() < (a.leaseExpires ?? (c.manual?.intent.startup?manualStartupUntil(c):a.startedAt + POLICY.startupMs)) && this.now() < c.manifest.deadline &&
       (!c.phaseDeadline || this.now() < c.phaseDeadline), 'worker fenced');
     assert(!c.manual||c.manual.attached&&this.now()<c.manual.campaignDeadline,'manual worker fenced');
-    assert(!c.manual||a.workStartedAt||this.now()<c.manual.intent.expiresAt,'manual startup expired');
+    assert(!c.manual||a.workStartedAt||this.now()<manualStartupUntil(c),'manual startup expired');
+    assert(!c.manual?.intent.startup||allowStartupClaim||c.manual.startupSession?.podId===a.resourceId&&c.manual.startupSession.generation===generation,'confirmed startup session required');
     assert(!c.manual||this.config.enabled===true&&this.config.authorizedCents>=c.manual.requiredAuthorizationCents,'manual authorization revoked');
     assert(!a.cutoff || this.now() < a.cutoff, 'external funded cutoff reached');
   }
@@ -281,7 +298,7 @@ export class Controller {
     }
     if (['provisioning', 'running'].includes(c.status)) {
       const limit = c.status === 'provisioning' ? POLICY.startupMs : POLICY.leaseMs;
-      const expired = now - (c.lastHeartbeat ?? a.startedAt) >= limit ||
+      const expired = (c.manual?.intent.startup&&!a.workStartedAt?now>=manualStartupUntil(c):now - (c.lastHeartbeat ?? a.startedAt) >= limit) ||
         (a.workStartedAt && (now >= c.phaseDeadline || (phase.kind === 'training' && now - this.durabilityAt(c, a) >= POLICY.checkpointMs)));
       if (expired) {
         c.status = 'stopping'; c.failure = 'worker-or-checkpoint-timeout';

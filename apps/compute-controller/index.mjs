@@ -61,9 +61,11 @@ export class ComputeController {
     const generation = Number(request.headers.get('x-compute-generation'));
     const worker = !admin && Number.isSafeInteger(generation) && generation > 0 && await equalSecret(bearer, await this.workerToken(id, generation));
     assert(admin || worker, 'authentication required');
-    if(worker&&request.method==='GET'&&action==='manual-ready')return json(await this.core.manualReady(id,generation));
+    if(worker&&['GET','POST'].includes(request.method)&&action==='manual-ready')return json(await this.core.manualReady(id,generation,request.method==='POST'?await request.json():undefined));
     if (worker) {
-      const db = await this.core.load(); this.core.fence(this.core.campaign(db, id), generation);
+      const db = await this.core.load(), campaign=this.core.campaign(db,id);
+      this.core.workerSession(campaign,request.headers.get('x-compute-startup-session'));
+      this.core.fence(campaign, generation);
       assert(['work', 'heartbeat', 'snapshot', 'finish', 'objects', 'claim', 'counter', 'settle', 'progress'].includes(action), 'worker operation forbidden');
     }
     if (request.method === 'PUT' && action === 'manifest' && admin) {
