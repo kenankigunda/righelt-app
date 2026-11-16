@@ -4,11 +4,11 @@ import {setup} from './manual-fixture.mjs';
 import {canonical,encode,sha256} from '../policy.mjs';
 const hash=value=>sha256(encode(canonical(value)));
 
-export async function actualFixture(){
+export async function actualFixture({elapsedAfterFirstMs=12*3600000}={}){
   const f=await setup();f.config.authorizedCents=2000;
   await f.core.manualPrepare('ui',f.intent);f.addPod();await f.attach();await f.core.work('ui',1);
   f.advance(1000);await f.core.finish('ui',1,{kind:'correctness'});await f.core.reconcile();await f.core.reconcile();
-  f.advance(12*3600000); // A large legacy unknown-create estimate is not a debit.
+  f.advance(elapsedAfterFirstMs); // A large legacy unknown-create estimate is not a debit.
   const old=await f.state(),ended=await f.ui(),anchor=structuredClone((await f.core.load()).manualProgram);
   const m=structuredClone(f.m);m.id='actual-next';m.deadline=f.now()+900000;
   const prearm=await f.arm(m,'2'.repeat(32));await f.core.stage(m);
@@ -57,6 +57,11 @@ test('stale, changed, incomplete or invented observations cannot release allocat
     const f=await actualFixture();mutate(f.observation);const reference=await f.freeze(),before=await f.core.load();
     await assert.rejects(f.core.reconcileActualSpend('pilot',reference));assert.deepEqual(await f.core.load(),before);assert.equal(f.providers.creates,1);
   }
+});
+test('the first correction cannot use a fresh-looking observation from before an already evidenced legacy Pod ran',async()=>{
+  const f=await actualFixture({elapsedAfterFirstMs:0}),before=await f.core.load();
+  f.observation.observedAt=f.ended.manual.attached.acceptedAt-1;f.observation.validUntil=f.observation.observedAt+900000;
+  await assert.rejects(f.core.reconcileActualSpend('pilot',await f.freeze()),/predates known resource consumption/);assert.deepEqual(await f.core.load(),before);
 });
 test('an observation expiring during asynchronous ownership lookup cannot change counters',async()=>{
   const f=await actualFixture(),before=await f.core.load(),external=f.core.externalControl;
