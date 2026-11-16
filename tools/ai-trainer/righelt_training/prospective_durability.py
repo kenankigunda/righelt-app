@@ -96,15 +96,19 @@ def consume_and_qualify(*,job,base,execution,namespace,directory,deadline,barrie
         elif result.get('status')=='unfinished':
             if raw is not None:raise ValueError('player discarded durable completed game')
             raw={**base,'status':'unfinished','reason':result.get('reason','unknown')}
+            if public_timing:
+                raw['originalGeneration']=execution['generation']
+                if capture_metadata is not None:raw['publicTimingMeasurements']=capture_metadata()
             paths.append(durable_json(Path(directory)/'raw'/str(execution['generation'])/(key+'.json'),raw))
             barrier.settle(namespace,job['id'],raw)
-            return raw,paths
+            return ({**raw,'rawEvidenceSha256':hashlib.sha256(encoded(raw)+b'\n').hexdigest()} if public_timing else raw),paths
         else:raise ValueError('evaluation correctness failure')
     else:
         if any(raw.get(k)!=v for k,v in base.items()):raise ValueError('recovered prospective receipt identity mismatch')
         origin=checked_origin(raw.get('originalGeneration',current))
         paths.append(durable_json(Path(directory)/'raw'/str(origin)/(key+'.json'),raw))
-    if raw['status'] not in ('raw-complete','complete'):return raw,paths
+    if raw['status'] not in ('raw-complete','complete'):
+        return ({**raw,'rawEvidenceSha256':hashlib.sha256(encoded(raw)+b'\n').hexdigest()} if public_timing else raw),paths
     game=raw['game']
     if raw.get('gameSha256')!=sha(game):raise ValueError('retained raw game hash differs')
     # Even cached proofs must match this frozen job/model/profile identity.

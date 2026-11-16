@@ -104,6 +104,31 @@ class PublicTimingTest(unittest.TestCase):
         self.run_timing();original=(self.root/'.ai-runs/run/result-1.json').read_bytes();original_times=self.report()['completedWholeGameMs'];self.barrier.generation=2;self.execution['generation']=2;self.now=60.
         result=self.run_timing(player=lambda *_args,**_kwargs:self.fail('consumed game was replayed'))
         self.assertEqual(self.calls,6);self.assertEqual(result['completedWorkIds'],self.ids);self.assertEqual((self.root/'.ai-runs/run/result-1.json').read_bytes(),original);self.assertEqual(self.report()['completedWholeGameMs'],original_times)
+    def test_unfinished_recovery_preserves_original_spent_time_and_inference(self):
+        def unfinished(job,models,*args,**kwargs):
+            for model in models.values():model.infer_export([0.])
+            self.now+=7
+            return {'status':'unfinished','reason':'inference-budget'}
+        self.run_timing(player=unfinished);before=self.report()
+        self.assertEqual(sum(before['unfinishedLowerBoundMs']),42000.)
+        self.assertEqual(before['inferenceCalls'],{'P1':6,'P2':6})
+        self.execution['generation']=2;self.barrier.generation=2;self.now=60.
+        self.run_timing(player=lambda *_args,**_kwargs:self.fail('unfinished work replayed'))
+        after=self.report()
+        self.assertEqual(after['unfinishedLowerBoundMs'],before['unfinishedLowerBoundMs'])
+        self.assertEqual(after['inferenceCalls'],before['inferenceCalls'])
+        self.assertEqual(after['completedWholeGameMs'],[])
+        self.assertEqual(after['unknownOriginalCostWorkIds'],[])
+
+    def test_consumed_without_settlement_remains_unknown_cost_and_never_redispatches(self):
+        namespace='public-timing:'+self.execution['manifestSha256']+':'+self.execution['phase']
+        for identity in self.ids:self.barrier.evaluation_claim(namespace,identity,create=True)
+        self.run_timing(player=lambda *_args,**_kwargs:self.fail('uncertain consumed job replayed'))
+        report=self.report()
+        self.assertEqual(report['unknownOriginalCostWorkIds'],self.ids)
+        self.assertEqual(report['completedWholeGames'],0)
+        self.assertFalse(report['timingCoverageComplete'])
+
     def test_private_scientific_fields_and_changed_budgets_are_rejected(self):
         for mutate in [lambda p:p.update(familyInventory={}),lambda p:p['schedule'][0].update(partition='validation'),
             lambda p:p['schedule'][0].update(familyId='fake'),lambda p:p['schedule'][0].update(seed=2**32),

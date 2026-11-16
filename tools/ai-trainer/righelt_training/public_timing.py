@@ -257,6 +257,7 @@ def execute(plan,directory,execution,work_ids,*,context,seconds,barrier,profiles
         'completedWholeGameMs':[a['elapsedMs'] for a in completed if a.get('timingComplete') is True],
         'completedTimeLowerBoundMs':[a['elapsedMs'] for a in completed if a.get('timingComplete') is not True],
         'unfinishedLowerBoundMs':[a['elapsedMs'] for a in attempts if a['status'] in ('unfinished','failed')],
+        'unknownOriginalCostWorkIds':[a['workId'] for a in attempts if a['status'] in ('unfinished','failed') and not a.get('publicTimingMeasurements')],
         'elapsedMs':max(0.,clock()-started)*1000,'normalStartPreparationMs':preparation_ms,'modelLoadMs':model_load_ms,
         'inferenceMs':sum(a['inferenceMs'] for a in attempts),'inferenceCalls':{seat:sum(a.get('inferenceCalls',{}).get(seat,0) for a in attempts) for seat in ('P1','P2')},
         'recoveryBookkeepingMs':max(0.,clock()-started)*1000,

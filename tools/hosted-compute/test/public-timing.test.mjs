@@ -66,3 +66,20 @@ test('expired original work budget crosses producer and verifier without loading
  assert.deepEqual(report.inferenceCalls,{P1:0,P2:0});assert.equal(report.timingCoverageComplete,false);
  assert.equal(report.scopeCells.reduce((n,c)=>n+c.unstarted,0),6);
 });
+
+test('result rejects a rehashed timing report that its immutable proof did not bind',async t=>{
+ const f=await synthetic(t),result=structuredClone(f.result),a=result.artifacts.find(a=>a.role==='report');
+ const report=JSON.parse(await f.read(a));report.modelLoadMs=0;report.elapsedMs=0;
+ const raw=encode(JSON.stringify(report));a.sha256=await sha256(raw);a.name=a.sha256;a.bytes=raw.length;
+ await assert.rejects(verifyResult(result,{manifest:f.manifest,manifestSha256:f.manifestSha256,phase:f.phase,generation:1,phaseDeadline:f.phaseDeadline,read:b=>b.path===a.path?raw:f.read(b)}),/report differs from bound proof/);
+});
+
+test('result recomputes cost aggregates even when a changed report and proof are rehashed',async t=>{
+ const f=await synthetic(t);
+ for(const change of [r=>r.inferenceMs=123456,r=>r.unfinishedLowerBoundMs=[0]]){
+  const result=structuredClone(f.result),a=result.artifacts.find(a=>a.role==='report'),p=result.artifacts.find(a=>a.role==='proof');
+  const report=JSON.parse(await f.read(a));change(report);const raw=encode(JSON.stringify(report));a.sha256=await sha256(raw);a.name=a.sha256;a.bytes=raw.length;
+  const proof=JSON.parse(await f.read(p));proof.reportSha256=a.sha256;const proofRaw=encode(JSON.stringify(proof));p.sha256=await sha256(proofRaw);p.name=p.sha256;p.bytes=proofRaw.length;
+  await assert.rejects(verifyResult(result,{manifest:f.manifest,manifestSha256:f.manifestSha256,phase:f.phase,generation:1,phaseDeadline:f.phaseDeadline,read:b=>b.path===a.path?raw:b.path===p.path?proofRaw:f.read(b)}),/aggregate work cost differs/);
+ }
+});
