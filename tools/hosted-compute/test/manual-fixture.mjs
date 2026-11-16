@@ -1,16 +1,21 @@
 import {fixture} from './helpers.mjs';
 import {canonical,encode,sha256} from '../policy.mjs';
 const hash=v=>sha256(encode(canonical(v)));
-export async function setup({realTime=false,authorityDelay=0}={}){
+export async function setup({realTime=false,authorityDelay=0,upgradeRecipes=null}={}){
  const f=await fixture({maxCents:1000});
+ const recipeInput=async value=>{const bytes=encode(canonical(value));return {bytes,input:{name:'execution-recipe.json',path:'.ai-runs/pilot/execution-recipe.json',sha256:await sha256(bytes),bytes:bytes.length}};};
+ const oldRecipe=upgradeRecipes?await recipeInput(upgradeRecipes.before):null,newRecipe=upgradeRecipes?await recipeInput(upgradeRecipes.after):null;
+ if(oldRecipe){f.manifest.inputs.push(oldRecipe.input);f.manifest.executionRecipeSha256=oldRecipe.input.sha256;f.manifest.runtimeSha256='1'.repeat(64);}
  if(realTime){f.advance(Date.now()-3600000-f.now());f.manifest.deadline=f.now()+86400000;f.manifest.phases[0].host.quoteObservedAt=f.now();f.manifest.phases[0].host.quoteExpires=f.now()+172800000;}
  f.providers.create=async()=>{f.providers.creates++;throw Error('lost original response');};
  if(authorityDelay){const external=f.core.externalControl;f.core.externalControl=m=>{const control=external(m);if(m.id==='pilot'){const authorize=control.authorizeLaunch.bind(control);control.authorizeLaunch=async(...args)=>{const result=await authorize(...args);f.advance(authorityDelay);return result;};}return control;};}
- await f.stage();await f.core.start('pilot');await f.core.reconcile();await f.core.reconcile();
+ await f.stage();if(oldRecipe)await f.core.putObject('pilot',oldRecipe.input,oldRecipe.bytes);await f.core.start('pilot');await f.core.reconcile();await f.core.reconcile();
  const prior=await f.state(),old=structuredClone(prior.attempts[0]);f.advance(3600000);
  const m=structuredClone(f.manifest);m.id='ui';m.maxCents=300;m.cash.computeUsageCapCents=300;m.cash.cloudflareUsageCapCents=50;m.deadline=f.now()+900000;m.phases[0].seconds=600;m.phases[0].host.hourlyCents=74;
+ if(newRecipe){m.inputs[m.inputs.length-1]=newRecipe.input;m.executionRecipeSha256=newRecipe.input.sha256;m.sourceRevision='e'.repeat(40);m.runtimeSha256='2'.repeat(64);m.phases[0].host.image=`example/repaired@sha256:${'c'.repeat(64)}`;}
  const record=await f.arm(m,'a'.repeat(32));await f.core.stage(m);
  for(const [a,bytes]of [[f.inputs[0],f.cp],[f.inputs[1],f.corpus],[f.inputs[2],f.recipe]])await f.core.putObject('ui',a,bytes);
+ if(newRecipe)await f.core.putObject('ui',newRecipe.input,newRecipe.bytes);
  const registry={schema:1,kind:'runpod-dual-cleanup-registry',runtimeRevision:'c'.repeat(40),references:[f.manifest.externalControl,m.externalControl]};
  const ref={repository:'fixture/private-control',commit:'e'.repeat(40),path:`control/prearms/${'b'.repeat(32)}.json`,sha256:await hash(registry)};
  f.control.records=new Map([[`${ref.path}@${ref.commit}`,registry]]);
