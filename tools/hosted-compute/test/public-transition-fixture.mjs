@@ -55,7 +55,7 @@ export async function publicTransitionFixture(t,{long=false,diagnostic=false,dia
   await sc.finish('short-public',1,{kind:'complete',outputs:{timing:out},files});await sc.reconcile();await sc.reconcile();
   const closed=(await sc.load()).campaigns['short-public'];assert.equal(closed.status,'complete');assert.equal(closed.cleanupVerified,true);
   db=await core.load();db.campaigns['short-public']=closed;await core.save(db);for(const [key,value]of sf.f.bucket.data)await f.bucket.put(key,value);
-  shortTiming={campaignId:'short-public',host,manifestSha256:closed.manifestSha256,resultSha256:out.sha256};
+  shortTiming={campaignId:'short-public',manifestSha256:closed.manifestSha256,resultSha256:out.sha256};
  }
  const binding=await core.actualSpendBinding(),observation={schema:1,kind:'operator-actual-spend-reconciliation',id:'5'.repeat(32),priorCampaignId:'pilot',ledgerSha256:binding.ledgerSha256,priorBasisSha256:binding.priorBasisSha256,authority:{kind:'user-actual-spend-basis-correction',evidenceSha256:'a'.repeat(64),repairCeilingCents:2000,runpodCeilingCents:10000},accountId:'test-account',observedAt:f.now(),validUntil:f.now()+900000,balance:{openingCreditCents:10000,currentCreditCents:9997,debitsCents:3,creditsCents:0,currentHourlyCents:0,autoPay:false,evidenceSha256:'b'.repeat(64)},inventory:{ordinary:{complete:true,evidenceSha256:'c'.repeat(64),resourceIds:[]},queued:{complete:true,evidenceSha256:'d'.repeat(64),resourceIds:[]}},activeResources:[]};
  const actual=await receipt(observation,'5');await core.reconcileActualSpend('pilot',actual);
