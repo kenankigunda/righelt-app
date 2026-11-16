@@ -115,7 +115,11 @@ test("metadata commits preserve history bytes, survive restart and return to ful
   assert.deepEqual(after.state_blob,before.state_blob);
   assert.equal(after.state_sha256,before.state_sha256);
   assert.deepEqual((await loadGameProjection({DB},game.id)).game,game);
-  await persistGameState({DB,STORAGE_COMPRESSION:"true"},game,3);
+  game.notifications.push("Second metadata commit");
+  await persistGameState(env,game,3,null,{metadataOnly:true});
+  assert.deepEqual(await payload(),after,"Already-upgraded history bytes and format stay unchanged");
+  assert.deepEqual((await loadGameProjection({DB},game.id)).game,game);
+  await persistGameState({DB,STORAGE_COMPRESSION:"true"},game,4);
   assert.equal((await payload()).format_version,1);
   assert.deepEqual((await loadGameProjection({DB},game.id)).game,game);
 });

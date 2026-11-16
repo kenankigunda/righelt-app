@@ -1304,7 +1304,7 @@ export const persistGameState = async (
     statements.push(env.DB.prepare("INSERT INTO game_payloads(game_id,format_version,state_blob,state_sha256) VALUES(?1,1,?2,?3) ON CONFLICT(game_id) DO UPDATE SET format_version=excluded.format_version,state_blob=excluded.state_blob,state_sha256=excluded.state_sha256").bind(game.id,stored.blob,stored.checksum));
   } else if (retained) {
     // The card is the metadata authority for format 2. History bytes stay immutable.
-    statements.push(env.DB.prepare("UPDATE game_payloads SET format_version=2 WHERE game_id=?1").bind(game.id));
+    if (retained.format_version !== 2) statements.push(env.DB.prepare("UPDATE game_payloads SET format_version=2 WHERE game_id=?1").bind(game.id));
   } else if (!options.preservePayload) {
     // Readers always understand compact data. Disabling compression writes must
     // remove its stale authoritative copy atomically with the new JSON state.
