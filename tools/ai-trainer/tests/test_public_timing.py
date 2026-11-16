@@ -17,6 +17,7 @@ class Barrier:
         if not create:return {'created':False,'unclaimed':True}
         self.records[key]={'record':{'generation':self.generation}};self.after_claim()
         return {'created':True}
+    def evaluation_pending(self,namespace,identities):return any((namespace,identity) not in self.records for identity in identities)
     def settle(self,namespace,identity,value):
         if self.fail:raise hosted_receipts.HostedInfrastructureError('synthetic uncertain settlement')
         record=self.records[(namespace,identity)]
@@ -123,8 +124,9 @@ class PublicTimingTest(unittest.TestCase):
     def test_consumed_without_settlement_remains_unknown_cost_and_never_redispatches(self):
         namespace='public-timing:'+self.execution['manifestSha256']+':'+self.execution['phase']
         for identity in self.ids:self.barrier.evaluation_claim(namespace,identity,create=True)
-        self.run_timing(player=lambda *_args,**_kwargs:self.fail('uncertain consumed job replayed'))
+        with self.assertRaises(timing.PublicTimingStopped):self.run_timing(player=lambda *_args,**_kwargs:self.fail('uncertain consumed job replayed'))
         report=self.report()
+        self.assertEqual(report['stopCategory'],'retained-custody-incomplete')
         self.assertEqual(report['unknownOriginalCostWorkIds'],self.ids)
         self.assertEqual(report['completedWholeGames'],0)
         self.assertFalse(report['timingCoverageComplete'])
@@ -136,14 +138,76 @@ class PublicTimingTest(unittest.TestCase):
         self.assertEqual(self.report()['completedWholeGameMs'],before['completedWholeGameMs'])
         self.assertEqual(self.report()['inferenceCalls'],before['inferenceCalls'])
 
-    def test_model_reload_failure_recovers_consumed_work_without_dispatch(self):
-        self.plan['schedule']=self.plan['schedule'][:1];self.ids=self.ids[:1]
-        self.run_timing();before=self.report();self.execution['generation']=2;self.barrier.generation=2;self.now=60.
+    def test_retained_only_recovery_does_not_attempt_model_reload(self):
+        self.run_timing();before=self.report();claims_before=copy.deepcopy(self.barrier.records);self.execution['generation']=2;self.barrier.generation=2;self.now=60.
         def unavailable(_):raise RuntimeError('synthetic reload failure')
-        result=self.run_timing(model_factory=unavailable,player=lambda *_a,**_k:self.fail('replayed'))
-        self.assertEqual(result['completedWorkIds'],self.ids)
+        model_calls=[]
+        def forbidden_reload(binding):model_calls.append(binding);return unavailable(binding)
+        result=self.run_timing(model_factory=forbidden_reload,player=lambda *_a,**_k:self.fail('replayed'))
+        self.assertEqual(model_calls,[]);self.assertEqual(result['completedWorkIds'],self.ids);self.assertEqual(len(self.ids),6);self.assertEqual(self.barrier.records,claims_before)
         self.assertEqual(self.report()['completedWholeGameMs'],before['completedWholeGameMs'])
         self.assertEqual(self.report()['inferenceCalls'],before['inferenceCalls'])
+
+    def test_local_timeout_advances_to_independent_successes_and_publishes_each_prefix(self):
+        published=[];normal=self.player
+        def player(job,*args,**kwargs):
+            if job['id']==self.ids[0]:self.now+=3;raise TimeoutError('synthetic local bound')
+            return normal(job,*args,**kwargs)
+        result=self.run_timing(player=player,progress_publisher=lambda raw:published.append(json.loads(raw)))
+        self.assertEqual(result['completedWorkIds'],self.ids[1:]);self.assertEqual(len(published),6)
+        self.assertEqual(published[0]['receipts'][0]['status'],'unfinished')
+        pointer=json.loads((self.root/'.ai-runs/run/latest.json').read_bytes())
+        self.assertEqual(timing.digest(Path(pointer['checkpoint']).read_bytes()),pointer['sha256'])
+        self.assertEqual(self.report()['unfinishedLowerBoundMs'],[3000.])
+
+    def test_unclassified_correctness_errors_stop_new_jobs_and_retain_all_accounting(self):
+        for error in (ValueError('synthetic identity'),RuntimeError('synthetic protocol')):
+            with self.subTest(error=type(error).__name__):
+                # Independent generation directory for the injected failure.
+                self.execution['generation']+=1;self.barrier=Barrier();self.barrier.generation=self.execution['generation']
+                calls=[]
+                def broken(job,*args,**kwargs):calls.append(job['id']);raise error
+                with self.assertRaises(timing.PublicTimingStopped):self.run_timing(player=broken)
+                self.assertEqual(calls,[self.ids[0]])
+                report=self.report();self.assertTrue(report['queueStopped']);self.assertEqual(report['stopCategory'],'shared-correctness')
+                self.assertEqual(sum(c['unstarted'] for c in report['scopeCells']),5)
+
+    def test_progress_transport_interruption_retains_prefix_and_never_starts_next_job(self):
+        def lost(_):raise hosted_receipts.HostedInfrastructureError('synthetic persistent transport')
+        with self.assertRaises(hosted_receipts.HostedInfrastructureError):self.run_timing(progress_publisher=lost)
+        self.assertEqual(self.calls,1)
+        pointer=json.loads((self.root/'.ai-runs/run/latest.json').read_bytes())
+        prefix=json.loads(Path(pointer['checkpoint']).read_bytes())
+        self.assertEqual(prefix['completedWorkIds'],self.ids[:1]);self.assertEqual(prefix['remainingWorkIds'],self.ids[1:])
+
+    def test_insufficient_runway_skips_a_slow_cell_and_advances_to_bounded_independent_items(self):
+        self.plan['schedule'][0]['gameSeconds']=111
+        result=self.run_timing();self.assertEqual(result['completedWorkIds'],self.ids[1:]);self.assertEqual(self.calls,5)
+        self.assertEqual(self.report()['scopeCells'][0]['unstarted'],1)
+        namespace='public-timing:'+self.execution['manifestSha256']+':'+self.execution['phase']
+        self.assertNotIn((namespace,self.ids[0]),self.barrier.records)
+
+    def test_finite_artifact_envelope_rejects_an_oversized_queue_before_any_game(self):
+        self.plan['schedule']=[{**self.plan['schedule'][0],'id':'bounded-'+str(i)} for i in range(110)]
+        self.ids=[job['id'] for job in self.plan['schedule']]
+        with self.assertRaisesRegex(ValueError,'finite public timing inventory'):self.run_timing()
+        self.assertEqual(self.calls,0)
+
+    def test_reserved_long_question_can_never_be_claimed_in_the_frozen_short_window(self):
+        self.context['phaseDeadline']=1720000;self.plan['accountingReserveSeconds']=90
+        for job in self.plan['schedule']:job['gameSeconds']=90
+        reserved={**self.plan['schedule'][0],'id':'reserved-duration','seed':17,'gameSeconds':2700}
+        self.plan['schedule'].append(reserved);self.ids.append(reserved['id'])
+        result=self.run_timing(seconds=720)
+        self.assertEqual(result['completedWorkIds'],self.ids[:-1]);self.assertEqual(self.calls,6)
+        namespace='public-timing:'+self.execution['manifestSha256']+':'+self.execution['phase']
+        self.assertNotIn((namespace,reserved['id']),self.barrier.records)
+        claims_before=copy.deepcopy(self.barrier.records);self.execution['generation']=2;self.barrier.generation=2;self.now=60.;model_calls=[]
+        def forbidden(binding):model_calls.append(binding);raise RuntimeError('unnecessary reload')
+        recovered=self.run_timing(seconds=720,model_factory=forbidden,player=lambda *_a,**_k:self.fail('replayed'))
+        self.assertEqual(model_calls,[]);self.assertEqual(recovered['completedWorkIds'],self.ids[:-1]);self.assertEqual(self.barrier.records,claims_before)
+        attempts=[json.loads(path.read_bytes()) for path in (self.root/'.ai-runs/run/attempts/1').glob('*.json')]
+        self.assertEqual(next(a for a in attempts if a['workId']==reserved['id'])['status'],'unstarted')
 
     def test_private_scientific_fields_and_changed_budgets_are_rejected(self):
         for mutate in [lambda p:p.update(familyInventory={}),lambda p:p['schedule'][0].update(partition='validation'),
@@ -168,13 +232,13 @@ class PublicTimingTest(unittest.TestCase):
     def test_source_only_package_preserves_operator_schedule_and_pins_original_public_bytes(self):
         source=Path(__file__).resolve().parents[3]/'apps/web/computer/models/trained-20261029-1086.onnx'
         target=self.root/'apps/web/computer/models/trained-20261029-1086.onnx';target.parent.mkdir(parents=True);target.write_bytes(source.read_bytes())
-        template={'schema':1,'purpose':'public-performance-timing','campaignId':'synthetic-package','phaseSeconds':120,'accountingReserveSeconds':10,
+        template={'schema':1,'purpose':'public-performance-timing','campaignId':'synthetic-package','phaseSeconds':3600,'accountingReserveSeconds':10,
             'qualifiedRuntimeSha256':'f'*64,'schedule':[{k:j[k] for k in ('id','profile','referenceSeat','seed','gameSeconds')} for j in self.plan['schedule']]}
         image={'schema':2,'sourceRevision':'a'*40,'dependencySha256':'2'*64,'sourceInventorySha256':'3'*64,'proofInventorySha256':'4'*64,
             'sourceInventory':{'tools/ai-trainer/righelt_training/public_timing.py':timing.digest(Path(timing.__file__).read_bytes())}}
         output=self.root/'prepared'
         receipt=timing.prepare_package(template,image,output,profiles_loader=lambda:self.profiles,start_loader=lambda jobs:[self.start for _ in jobs],source_inspector=lambda _:None)
-        self.assertFalse(receipt['launchAuthorized']);self.assertEqual(receipt['phase']['workIds'],self.ids)
+        self.assertFalse(receipt['launchAuthorized']);self.assertEqual(receipt['phase']['workIds'],self.ids);self.assertEqual(receipt['phase']['seconds'],3600)
         self.assertEqual(len(receipt['inputs']),3);self.assertEqual((output.stat().st_mode&0o777),0o700)
         for a in receipt['inputs']:
             self.assertEqual(timing.digest((output/a['path']).read_bytes()),a['sha256']);self.assertEqual((output/a['path']).stat().st_mode&0o777,0o600)
@@ -214,6 +278,8 @@ def export_synthetic_fixture(root,context_path=None):
     with patch.object(timing,'ROOT',root):
         directory=root/'.ai-runs/run';directory.mkdir(parents=True,exist_ok=True)
         inputs=root/'.ai-runs/inputs';inputs.mkdir(parents=True,exist_ok=True)
+        if __import__('os').environ.get('SYNTHETIC_TIMING_UNAVAILABLE')=='diagnostic':
+            case.truncated=True;case.plan['schedule'][-1]['gameSeconds']=111
         model=(Path(__file__).resolve().parents[3]/'apps/web/computer/models/trained-20261029-1086.onnx').read_bytes();case.assertEqual(timing.digest(model),case.plan['model']['sha256']);case.assertEqual(len(model),322842)
         case.plan['model']['path']='.ai-runs/inputs/model.onnx';(inputs/'model.onnx').write_bytes(model)
         record={'schema':1,'kind':'cuda-runtime-probe','kernelPassed':True,'syntheticFixture':True}
@@ -237,7 +303,8 @@ def export_synthetic_fixture(root,context_path=None):
                 if __import__('os').environ.get('SYNTHETIC_TIMING_UNAVAILABLE')=='true':raise RuntimeError('synthetic model unavailable')
                 return FixtureModel()
             if __import__('os').environ.get('SYNTHETIC_TIMING_UNAVAILABLE')=='expired':case.now=111.
-            result=case.run_timing(model_factory=factory,wall=lambda:case.context['phaseDeadline']/1000-case.context['phaseSeconds']+case.now)
+            try:result=case.run_timing(model_factory=factory,wall=lambda:case.context['phaseDeadline']/1000-case.context['phaseSeconds']+case.now)
+            except timing.PublicTimingStopped:result=json.loads((directory/'result.json').read_bytes())
             if __import__('os').environ.get('SYNTHETIC_TIMING_UNAVAILABLE')=='recovery-expired':
                 case.execution['generation']=2;case.barrier.generation=2;case.now=111.
                 result=case.run_timing(model_factory=lambda _:case.fail('expired recovery loaded model'),player=lambda *_a,**_k:case.fail('consumed game replayed'),wall=lambda:case.context['phaseDeadline']/1000-case.context['phaseSeconds']+case.now)

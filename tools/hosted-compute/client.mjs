@@ -22,18 +22,29 @@ export class Client {
     return response;
   }
   async readJSON(response) {
-    try { return await response.json(); } catch { throw new InfrastructureError('controller response stream interrupted'); }
+    try { return await response.json(); } catch(error) { assert(!(error instanceof SyntaxError),'controller response malformed');throw new InfrastructureError('controller response stream interrupted'); }
   }
-  async json(action, body) { return this.readJSON(await this.request(action, body === undefined ? 'GET' : 'POST', body)); }
+  async json(action, body) {
+    const safe=body===undefined||this.generation&&['heartbeat','progress'].includes(action);
+    for(let attempt=0;attempt<2;attempt++){
+      try{return await this.readJSON(await this.request(action,body===undefined?'GET':'POST',body));}
+      catch(error){if(!safe||attempt||!(error instanceof InfrastructureError))throw error;}
+    }
+  }
   async upload(bytes) {
-    const hash = await sha256(bytes);
-    const a = await this.readJSON(await this.request(`objects/${hash}`, 'PUT', bytes, true));
-    assert(a.sha256 === hash && a.bytes === bytes.byteLength, 'upload verification failed'); return a;
+    const hash=await sha256(bytes);
+    for(let attempt=0;attempt<2;attempt++){
+      try{const a=await this.readJSON(await this.request(`objects/${hash}`,'PUT',bytes,true));assert(a.sha256===hash&&a.bytes===bytes.byteLength,'upload verification failed');return a;}
+      catch(error){if(attempt||!(error instanceof InfrastructureError))throw error;}
+    }
   }
   async download(a) {
-    const response = await this.request(`objects/${a.sha256}`);
-    let bytes;
-    try { bytes = new Uint8Array(await response.arrayBuffer()); } catch { throw new InfrastructureError('artifact response stream interrupted'); }
-    assert(bytes.length === a.bytes && await sha256(bytes) === a.sha256, 'download verification failed'); return bytes;
+    for(let attempt=0;attempt<2;attempt++){
+      try{
+        const response=await this.request(`objects/${a.sha256}`);let bytes;
+        try{bytes=new Uint8Array(await response.arrayBuffer());}catch{throw new InfrastructureError('artifact response stream interrupted');}
+        assert(bytes.length===a.bytes&&await sha256(bytes)===a.sha256,'download verification failed');return bytes;
+      }catch(error){if(attempt||!(error instanceof InfrastructureError))throw error;}
+    }
   }
 }

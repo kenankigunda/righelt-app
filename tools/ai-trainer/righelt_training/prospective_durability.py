@@ -89,7 +89,10 @@ def consume_and_qualify(*,job,base,execution,namespace,directory,deadline,barrie
         # An uncertain settlement raises, before any verifier is invoked.
         barrier.settle(namespace,job['id'],raw)
     if claim['created']:
-        result=play(save)
+        try:result=play(save)
+        except (TimeoutError,subprocess.TimeoutExpired):
+            if not public_timing:raise
+            result={'status':'unfinished','reason':'job-local-timeout'}
         if result.get('status')=='completed':
             if raw is None:save(result['game'])
             elif raw.get('game')!=result['game']:raise ValueError('player changed completed game')

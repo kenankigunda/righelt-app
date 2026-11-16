@@ -261,10 +261,10 @@ export class Controller {
     } else {
       c.failure = result.kind;
       if (result.kind === 'infrastructure') {
-        c.repairStartedAt ??= this.now(); c.repairStartCents ??= this.cost(c);
+        if(!c.manual?.publicWork){c.repairStartedAt ??= this.now(); c.repairStartCents ??= this.cost(c);}
         // Never restart an attempted evaluation game. Its runner must consume
         // its durable claims; a missing durable claim set requires agent repair.
-        c.nextStatus = this.recoveryReady(c) ? 'repairing' : 'failed';
+        c.nextStatus = !c.manual?.publicWork&&this.recoveryReady(c) ? 'repairing' : 'failed';
       } else c.nextStatus = 'failed';
       this.event(c, 'phase-failed', { kind: result.kind, phase: phase.id });
     }
@@ -306,8 +306,8 @@ export class Controller {
         (a.workStartedAt && (now >= c.phaseDeadline || (phase.kind === 'training' && now - this.durabilityAt(c, a) >= POLICY.checkpointMs)));
       if (expired) {
         c.status = 'stopping'; c.failure = 'worker-or-checkpoint-timeout';
-        c.repairStartedAt ??= now; c.repairStartCents ??= this.cost(c);
-        c.nextStatus = this.recoveryReady(c) ? 'repairing' : 'failed';
+        if(!c.manual?.publicWork){c.repairStartedAt ??= now; c.repairStartCents ??= this.cost(c);}
+        c.nextStatus = !c.manual?.publicWork&&this.recoveryReady(c) ? 'repairing' : 'failed';
         this.event(c, 'worker-expired');
       } else return;
     }
