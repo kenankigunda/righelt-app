@@ -6,6 +6,8 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { createInitialGame } from "../src/shell-live-core.ts";
 import { persistGameState } from "../src/shell-live-db.ts";
+import { archiveStatements } from "../src/decision-archive.ts";
+import { createComputerControl, CURRENT_COMPUTER_MODEL } from "../../shared-types/src/computer-play.ts";
 const require = createRequire(import.meta.url),
   wrangler = createRequire(require.resolve("wrangler/package.json"));
 const { Miniflare } = wrangler("miniflare"),
@@ -17,7 +19,27 @@ test(
   async () => {
     const bundle = await build({
       stdin: {
-        contents: `import {handleApiRequest,GameRoomDO as Base} from './packages/api-handler/src/index.ts'; export class GameRoomDO extends Base {constructor(state,env){let pause=false,activate=false;super(state,{...env,DB:{prepare:(...args)=>env.DB.prepare(...args),batch:async statements=>{if(activate){activate=false;await env.DB.prepare("UPDATE account_cutover SET activated_at=1,maintenance=1,canary_account_id='canary'").run();}if(pause){pause=false;await env.DB.prepare('UPDATE account_cutover SET maintenance=1').run();}return env.DB.batch(statements);}}});this.pauseNext=()=>pause=true;this.activateNext=()=>activate=true;} async fetch(request){if(request.headers.has('x-activate-at-commit'))this.activateNext();if(request.headers.has('x-pause-at-commit'))this.pauseNext();return super.fetch(request);}} export class GuestRoom extends GameRoomDO {constructor(state,env){super(state,{...env,AUTH_ENABLED:'false'});}} export default {fetch(r,e){return handleApiRequest(r,{...e,AUTH_ENABLED:r.headers.has('x-disabled')?'false':'true',GAME_ROOMS:r.headers.has('x-disabled')?e.GUEST_ROOMS:e.GAME_ROOMS});}}`,
+        contents: `import {handleApiRequest,GameRoomDO as Base} from './packages/api-handler/src/index.ts';
+export class GameRoomDO extends Base {
+ constructor(state,env){
+  let pause=false,activate=false,archiveId=null;
+  super(state,{...env,DB:{prepare:(...args)=>env.DB.prepare(...args),batch:async statements=>{
+   if(activate){activate=false;await env.DB.prepare("UPDATE account_cutover SET activated_at=1,maintenance=1,canary_account_id='canary'").run();}
+   if(pause){pause=false;await env.DB.prepare('UPDATE account_cutover SET maintenance=1').run();}
+   if(archiveId){const id=archiveId;archiveId=null;await env.DB.prepare("INSERT INTO game_archives(game_id,status,generation,event_seq,gameplay_revision,manifest_key,activity_at,updated_at) SELECT game_id,'archiving','test',event_seq,gameplay_revision,'test',created_at,updated_at FROM live_games WHERE game_id=?").bind(id).run();}
+   return env.DB.batch(statements);
+  }}});
+  this.pauseNext=()=>pause=true;this.activateNext=()=>activate=true;this.archiveNext=id=>archiveId=id;
+ }
+ async fetch(request){
+  if(request.headers.has('x-activate-at-commit'))this.activateNext();
+  if(request.headers.has('x-pause-at-commit'))this.pauseNext();
+  if(request.headers.has('x-archive-at-commit'))this.archiveNext(request.headers.get('x-archive-at-commit'));
+  return super.fetch(request);
+ }
+}
+export class GuestRoom extends GameRoomDO {constructor(state,env){super(state,{...env,AUTH_ENABLED:'false'});}}
+export default {fetch(r,e){return handleApiRequest(r,{...e,AUTH_ENABLED:r.headers.has('x-disabled')?'false':'true',GAME_ROOMS:r.headers.has('x-disabled')?e.GUEST_ROOMS:e.GAME_ROOMS});}}`,
         resolveDir: root,
       },
       bundle: true,
@@ -92,10 +114,14 @@ test(
         identityId: "legacy-player",
         selfPlayMode: true,
       });
-      await persistGameState({ DB: db }, legacyGame, 1, null);
+      legacyGame.computer = createComputerControl("legacy-player", { p1: null, p2: "babs" }, CURRENT_COMPUTER_MODEL.id);
+      const initialArchive = archiveStatements({ DB: db }, null, legacyGame, 1);
+      await persistGameState({ DB: db }, legacyGame, 1, null, { statements: initialArchive });
       const legacy = { body: { game: legacyGame } };
       const normal = await create(ordinary);
       assert.equal(normal.status, 200);
+      const nonCanaryOwned = await create(canary, false);
+      assert.equal(nonCanaryOwned.status, 200);
       const upgrade = await runtime.dispatchFetch(
         "https://test/api/shell/games/legacy/ws?identityId=legacy-player&protocolVersion=2&sessionId=legacy-session",
         {
@@ -130,12 +156,13 @@ test(
         .bind(legacyGame.id)
         .first();
       const guestHeld = await call(
-        "/api/shell/games/legacy/live",
+        "/api/shell/games/legacy/decision-attempt",
         null,
-        { identityId: "legacy-player" },
+        { identityId: "legacy-player", protocolVersion: 2, operation: "write", kind: "computer", attemptId: "held-guest-evidence", attempt: { outcome: "ready" } },
         { "x-disabled": "1", "x-activate-at-commit": "1" },
       );
       assert.ok(guestHeld.status >= 400);
+      assert.equal(await db.prepare("SELECT 1 FROM live_decision_attempts WHERE attempt_id='held-guest-evidence'").first(), null);
       assert.deepEqual(
         await db
           .prepare(
@@ -195,6 +222,13 @@ test(
       const canaryGame = await create(canary);
       assert.equal(canaryGame.status, 200);
       assert.equal(canaryGame.body.game.ownershipMode, "account_v1");
+      const forbiddenNote = await call(`/api/shell/games/${nonCanaryOwned.body.game.id}/decision-notes`, canary,
+        { protocolVersion: 2, operation: "write", decisionId: "initial", note: { text: "Not a maintenance canary", flagged: false } });
+      assert.ok(forbiddenNote.status >= 400);
+      assert.equal(await db.prepare("SELECT 1 FROM live_decision_notes WHERE game_id=?").bind(nonCanaryOwned.body.game.id).first(), null);
+      const allowedNote = await call(`/api/shell/games/${canaryGame.body.game.id}/decision-notes`, canary,
+        { protocolVersion: 2, operation: "write", decisionId: "initial", note: { text: "Valid maintenance canary", flagged: false } });
+      assert.equal(allowedNote.status, 200);
       assert.equal(
         (
           await db
@@ -281,12 +315,14 @@ test(
           .first()
       ).n;
       const interrupted = await call(
-        "/api/shell/games/" + normal.body.game.id + "/live",
+        "/api/shell/games/" + normal.body.game.id + "/decision-notes",
         ordinary,
-        {},
+        { protocolVersion: 2, operation: "write", decisionId: "initial", note: { text: "Interrupted by maintenance", flagged: false } },
         { "x-pause-at-commit": "1" },
       );
       assert.ok(interrupted.status >= 400);
+      assert.equal((await db.prepare("SELECT maintenance FROM account_cutover WHERE singleton=1").first()).maintenance, 1, "fault must reach maintenance activation before commit");
+      assert.equal(await db.prepare("SELECT 1 FROM live_decision_notes WHERE game_id=?").bind(normal.body.game.id).first(), null);
       assert.deepEqual(
         await db
           .prepare(
@@ -315,6 +351,12 @@ test(
       );
       await db.exec("UPDATE account_cutover SET maintenance=0");
       // Even an old writer that knows an account-owned ID cannot write without an atomic permit.
+      const archiveRace = await call(`/api/shell/games/${normal.body.game.id}/decision-notes`, ordinary,
+        { protocolVersion: 2, operation: "write", decisionId: "initial", note: { text: "Concurrent archive", flagged: false } },
+        { "x-archive-at-commit": normal.body.game.id });
+      assert.ok(archiveRace.status >= 400);
+      assert.equal((await db.prepare("SELECT status FROM game_archives WHERE game_id=?").bind(normal.body.game.id).first()).status, "archiving", "fault must reach the archive transition");
+      assert.equal(await db.prepare("SELECT 1 FROM live_decision_notes WHERE game_id=?").bind(normal.body.game.id).first(), null);
       await assert.rejects(
         db
           .prepare("DELETE FROM live_invites WHERE game_id=?")

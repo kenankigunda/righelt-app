@@ -4,6 +4,7 @@ import { ACTION_CONTRACT_HEADER, ACTION_CONTRACT_VERSION, canonicalCommandJson }
 import { stampAcceptedRestoration, type AcceptedRestoration, archiveStatements, readDecision, readDecisionPage, readAdditionalDecisionPage, parseHistoryCursor, prepareImportedHistory, readDecisionNotes, noteStatement, readAttempt, readAttemptPage, attemptStatement } from './decision-archive';
 import { StorageWriteLimitError } from './storage-codec';
 import { SessionAlarm } from './session-alarm';
+import { growthGuard } from './storage-budget';
 import { COMPUTER_CAPABILITIES, COMPUTER_LIMITS, changeComputerControl, computerCommandError, computerModelForCreation, createComputerControl, parseComputerSeats, type ComputerProof } from '../../shared-types/src/computer-play';
 import { STORAGE_POLICY, STORAGE_GENERATION_HEADER } from "../../shared-types/src/storage-policy";
 import { storageRoomName } from "./storage-generation";
@@ -527,7 +528,8 @@ export class GameRoomDO {
       return json({ ok: false, error: "invalid_identity" }, 400);
     }
 
-    const loaded = await this.ensureLoaded();
+    const recordWrite = request.method === "POST" && body.operation === "write" && ["/decision-attempt", "/decision-notes"].includes(path);
+    const loaded = await this.ensureLoaded(!recordWrite);
     if (!loaded) {
       return json({ ok: false, error: "game_not_found" }, 404);
     }
@@ -630,7 +632,7 @@ export class GameRoomDO {
       let statement;
       try { statement = attemptStatement(this.env, game.id, identityId, body.attemptId, String(body.kind), body.attempt); }
       catch { return json({ ok: false, error: 'invalid_attempt' }, 400); }
-      await this.persistCandidate(game, null, undefined, false, [statement]);
+      await this.persistDecisionRecord(game, statement);
       return json({ ok: true });
     }
     if (request.method === 'POST' && path === '/decision-notes') {
@@ -641,7 +643,7 @@ export class GameRoomDO {
         let statement;
         try { statement = noteStatement(this.env, game.id, identityId, body.decisionId, body.note); }
         catch { return json({ ok: false, error: 'invalid_decision_note' }, 400); }
-        await this.persistCandidate(game, null, undefined, false, [statement]);
+        await this.persistDecisionRecord(game, statement);
       }
       return json({ ok: true, notes: await readDecisionNotes(this.env, game.id, identityId) });
     }
@@ -1540,6 +1542,55 @@ export class GameRoomDO {
     // Separate serialized invocations keep each chunk inside provider limits.
     // Errors stop this chain; the next sweep resumes its durable cursor.
     this.state.waitUntil(rooms.get(rooms.idFromName(storageRoomName(this.env,gameId))).fetch(new Request("https://game-room/_storage/tick",{method:"POST",headers:{"x-game-id":gameId,[`x-storage-${kind}-steps`]:String(remaining-1),...(this.env.STORAGE_GENERATION?{[STORAGE_GENERATION_HEADER]:this.env.STORAGE_GENERATION}:{})}})).then(async response=>{if(!response.ok)console.warn(JSON.stringify({event:"storage_continuation_deferred",kind,status:response.status}));await response.body?.cancel();}).catch(()=>{console.warn(JSON.stringify({event:"storage_continuation_deferred",kind}));}));
+  }
+
+  private async persistDecisionRecord(game: LiveGame, statement: D1Statement) {
+    this.env = await withCutoverPolicy(this.env);
+    if (authActive(this.env) && (this.env.AUTH_ENABLED !== "true" || !maintenanceAllowed(this.env, this.requestAuthority?.accountId))) throw new AuthProblem("temporarily_unavailable", 503);
+    if (!authActive(this.env) && game.ownershipMode === "account_v1") throw new AuthProblem("temporarily_unavailable", 503);
+    if (authActive(this.env) && !this.requestAuthority) throw new AuthProblem("invalid_credentials", 401);
+    // Retained games need their first replay checkpoint before targeted writes.
+    // Keep archive/restore and initial backfill on the established transaction.
+    // Never mutate the borrowed live projection.
+    if (game.archiveStartRevision === undefined || await archiveRow(this.env, game.id)) return this.persistCandidate(clone(game), null, undefined, false, [statement]);
+    const permit = cutoverWritePermit(this.env, game.id, this.requestAuthority);
+    const budget = growthGuard(this.env);
+    const guardId = crypto.randomUUID();
+    const statements = [
+      ...budget.before, ...permit.before as D1Statement[],
+      this.env.DB.prepare("INSERT INTO account_transaction_guards(guard_id,valid) VALUES(?1,COALESCE((SELECT 1 FROM live_games WHERE game_id=?2 AND event_seq=?3 AND gameplay_revision=?4 AND ownership_mode=?5 AND NOT EXISTS(SELECT 1 FROM game_archives WHERE game_id=?2)),0))")
+        .bind(guardId, game.id, this.eventSeq, game.gameplayRevision, game.ownershipMode ?? "legacy_guest"),
+      // Reuse the database's live-game cutover/lifecycle triggers in this same
+      // transaction. Preflight policy or a session permit alone is insufficient
+      // when maintenance changes before the batch or the game is not a canary.
+      this.env.DB.prepare("UPDATE live_games SET commit_base_event_seq=NULL WHERE game_id=?1").bind(game.id),
+      statement,
+      ...(this.requestAuthority && authActive(this.env) ? gameGuardStatements(this.env, this.requestAuthority) as D1Statement[] : []),
+      this.env.DB.prepare("DELETE FROM account_transaction_guards WHERE guard_id=?1").bind(guardId),
+      ...permit.after as D1Statement[], ...budget.after,
+    ];
+    let results;
+    try {
+      results = await this.env.DB.batch(statements);
+      if (results.length !== statements.length || results.some(result => !result.success)) throw new Error("uncertain_commit_result");
+    } catch (error) {
+      // A lost response may follow a committed record. Recover durable authority
+      // before another request; attempt IDs retain their existing retry contract.
+      this.needsDurableReload = true;
+      this.game = null;
+      this.eventSeq = 0;
+      try { await this.ensureLoaded(); this.needsDurableReload = false; } catch { /* Reload before the next mutation. */ }
+      this.env = await withCutoverPolicy(this.env);
+      if (String(error).includes("storage_capacity")) throw new AuthProblem("storage_capacity", 503);
+      if (authActive(this.env) && !this.requestAuthority) throw new AuthProblem("upgrade_required", 426);
+      if (authActive(this.env) && this.requestAuthority && !await currentGameAuthority(this.env, this.requestAuthority)) throw new AuthProblem("session_changed", 409);
+      throw error;
+    }
+    const size = results.at(-1)?.meta?.size_after;
+    if (this.env.STORAGE_BUDGET_ENABLED === "true" && Number.isSafeInteger(size)) {
+      try { await this.env.DB.prepare("UPDATE storage_budget SET d1_bytes=?1 WHERE singleton=1").bind(size).run(); }
+      catch { console.warn(JSON.stringify({ event: "storage_size_observation_deferred" })); }
+    }
   }
 
   private async persistCandidate(game: LiveGame, event: (ServerEvent & { eventSeq: number }) | null, receipt?: CommandReceipt, systemPresence = false, additionalStatements: D1Statement[] = [], presenceIdentity?:string, restoration?: AcceptedRestoration) {
