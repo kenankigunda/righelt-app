@@ -1,3 +1,4 @@
+import {programWindowBinding,amendProgramWindow} from './program-window.mjs';
 import { validateOperatorAttestation } from './operator-attestation.mjs';
 import { qualifyPilot } from './report.mjs';
 import { qualificationIdentity } from './qualification.mjs';
@@ -19,6 +20,8 @@ export class Controller {
   async save(db) { await this.storage.put('ledger', db); }
   manualPrepare(id,intent){return prepareManual(this,id,intent);}
   manualAttach(id,body){return attachManual(this,id,body);}
+  async programWindowBinding(){return programWindowBinding(await this.load());}
+  amendProgramWindow(id,reference){return amendProgramWindow(this,id,reference);}
   async actualSpendBinding(){return spendBinding(await this.load());}
   reconcileActualSpend(id,reference){return reconcileActualSpend(this,id,reference);}
   async attemptBinding(id){const db=await this.load();return operatorAttemptBinding(this.campaign(db,id));}

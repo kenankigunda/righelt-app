@@ -96,6 +96,8 @@ export class ComputeController {
     if (request.method === 'POST' && action === 'counter' && worker) return json(await this.core.counter(id, generation, await request.json()));
     if (request.method === 'POST' && action === 'settle' && worker) return json(await this.core.settle(id, generation, await request.json()));
     assert(admin, 'administrator operation required');
+    if(request.method==='GET'&&action==='program-window-binding')return json(await this.core.programWindowBinding());
+    if(request.method==='POST'&&action==='program-window-amend')return json(await this.core.amendProgramWindow(id,await request.json()));
     if(request.method==='GET'&&action==='attempt-binding')return json(await this.core.attemptBinding(id));
     if(request.method==='GET'&&action==='actual-spend-binding')return json(await this.core.actualSpendBinding());
     if(request.method==='POST'&&action==='actual-spend-reconcile')return json(await this.core.reconcileActualSpend(id,await request.json()));
