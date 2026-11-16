@@ -1,6 +1,10 @@
 import {assert,canonical,encode,sha256,POLICY} from './policy.mjs';
 import {validateReference} from './external-control.mjs';
 
+export const CLEANUP_CONTRACTS=Object.freeze({
+  'runpod-dual-cleanup-registry':Object.freeze({owners:2,readinessKind:'dual-cleanup-readiness',resultKind:'dual-cleanup-result',state:'dual-cleanup'}),
+  'runpod-finite-cleanup-registry':Object.freeze({owners:3,readinessKind:'finite-cleanup-readiness',resultKind:'finite-cleanup-result',state:'finite-cleanup'}),
+});
 const registries=new WeakSet();
 const digest=/^[a-f0-9]{64}$/;
 const revision=/^[a-f0-9]{40}$/;
@@ -28,8 +32,9 @@ export async function readCleanupRegistry(store,reference){
   assert(reference.repository===store.repository,'cleanup registry repository differs');
   const registry=await store.read(reference.path,reference.commit);
   assert(registry&&await sha256(encode(canonical(registry)))===reference.sha256,'cleanup registry bytes differ');
-  assert(Object.keys(registry).sort().join(',')==='kind,references,runtimeRevision,schema'&&registry.schema===1&&registry.kind==='runpod-dual-cleanup-registry'&&revision.test(registry.runtimeRevision),'typed cleanup registry required');
-  assert(Array.isArray(registry.references)&&registry.references.length===2&&!sameReference(...registry.references),'exactly two distinct cleanup references required');
+  assert(Object.keys(registry).sort().join(',')==='kind,references,runtimeRevision,schema'&&registry.schema===1&&Object.hasOwn(CLEANUP_CONTRACTS,registry.kind)&&revision.test(registry.runtimeRevision),'typed cleanup registry required');
+  const contract=CLEANUP_CONTRACTS[registry.kind];
+  assert(Array.isArray(registry.references)&&registry.references.length===contract.owners&&new Set(registry.references.map(canonical)).size===contract.owners,'exact finite distinct cleanup references required');
   const records=[];const names=new Set();
   for(const ref of registry.references){
     assert(ref.repository===reference.repository,'cleanup registry crosses repositories');
@@ -37,8 +42,8 @@ export async function readCleanupRegistry(store,reference){
     for(const launch of record.launches){assert(!names.has(launch.name),'cleanup ownership sets overlap');names.add(launch.name);}
     records.push(record);
   }
-  assert(records[0].accountId===records[1].accountId,'cleanup accounts differ');
-  const authority=Object.freeze({runtimeRevision:registry.runtimeRevision,references:Object.freeze(registry.references.map(r=>Object.freeze({...r}))),records:Object.freeze(records),sha256:reference.sha256});
+  assert(records.every(record=>record.accountId===records[0].accountId),'cleanup accounts differ');
+  const authority=Object.freeze({kind:registry.kind,runtimeRevision:registry.runtimeRevision,references:Object.freeze(registry.references.map(r=>Object.freeze({...r}))),records:Object.freeze(records),sha256:reference.sha256});
   registries.add(authority);return authority;
 }
 export function registryAuthorizes(authority,reference,runtimeRevision){

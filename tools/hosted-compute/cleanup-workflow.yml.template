@@ -44,7 +44,7 @@ jobs:
           COMPUTE_PREARM_COMMIT: ${{ vars.COMPUTE_PREARM_COMMIT }}
           COMPUTE_PREARM_PATH: ${{ vars.COMPUTE_PREARM_PATH }}
           COMPUTE_PREARM_SHA256: ${{ vars.COMPUTE_PREARM_SHA256 }}
-          # Optional immutable dual registry. Original prearm variables remain
+          # Optional immutable two- or three-owner finite registry. Original prearm variables remain
           # unchanged and must be a member of the explicitly reviewed registry.
           COMPUTE_CLEANUP_REGISTRY_COMMIT: ${{ vars.COMPUTE_CLEANUP_REGISTRY_COMMIT }}
           COMPUTE_CLEANUP_REGISTRY_PATH: ${{ vars.COMPUTE_CLEANUP_REGISTRY_PATH }}

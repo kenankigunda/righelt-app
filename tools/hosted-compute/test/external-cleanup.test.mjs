@@ -197,3 +197,43 @@ test('prearm forbids mid-run review dependencies and cleanup escalates only afte
   assert.equal(cleanupProcessResult(overdue).exitCode,1);assert.equal(cleanupProcessResult(overdue).status.usageReviewRequired,true);
   assert(usage.autonomousUntil<record.githubUsage.projection.forecastUntil);
 });
+
+async function threeOwnerFixture(){
+ const f=await setup(),owners=[f.reference],records=[f.record];
+ for(const [id,nonce] of [['retained','2'],['candidate','3']]){
+  const m=manifest();m.id=id;
+  const prepared=await prearmCampaign(m,{accountId:'account-pilot',accountEvidenceReference:'reviewed-new-account',fundedCutoff:start+3600000,workflowRevision:runtime,controlRepository:repository,githubUsage:syntheticGithubUsage(start,start+3600000,{repository}),nonce:nonce.repeat(32)},{store:f.writer,clock:()=>start});
+  owners.push(prepared.externalControl);records.push(await f.writer.readPrearm(prepared.externalControl));
+ }
+ const registry={schema:1,kind:'runpod-finite-cleanup-registry',runtimeRevision:'e'.repeat(40),references:owners},registryPath=`control/prearms/${'4'.repeat(32)}.json`;
+ const stored=await f.writer.append(registryPath,registry),rp=runpod();
+ const env={COMPUTE_CONTROL_ARMED:'true',GITHUB_REPOSITORY:repository,GITHUB_REF:'refs/heads/main',COMPUTE_CONTROL_REPOSITORY:repository,COMPUTE_CONTROL_WRITE_TOKEN:'private',COMPUTE_PREARM_COMMIT:f.reference.commit,COMPUTE_PREARM_PATH:f.reference.path,COMPUTE_PREARM_SHA256:f.reference.sha256,RUNPOD_CLEANUP_API_KEY:'private',RUNPOD_ACCOUNT_ID:'account-pilot',COMPUTE_RUNTIME_REVISION:registry.runtimeRevision,COMPUTE_CLEANUP_REGISTRY_COMMIT:stored.commit,COMPUTE_CLEANUP_REGISTRY_PATH:registryPath,COMPUTE_CLEANUP_REGISTRY_SHA256:await sha256(encode(canonical(registry)))};
+ const fetcher=async(url,options)=>{
+  if(new URL(url).hostname==='api.github.com')return f.gh.fetcher(url,options);
+  assert.notEqual(options?.method,'POST');
+  if(new URL(url).pathname==='/v2/queued-pods')return Response.json({queuedPods:[],pagination:{hasNextPage:false}});
+  return rp.fetcher(url,options);
+ };
+ return {...f,owners,records,rp,env,fetcher,run:()=>cleanupFromEnvironment(env,{fetcher,clock:()=>start+86400001})};
+}
+test('three-owner sweep remains armed after absence and later deletes only the retained owner late resource',async()=>{
+ const f=await threeOwnerFixture(),first=await f.run();
+ assert.equal(first.kind,'finite-cleanup-result');assert.equal(first.results.length,3);
+ assert(first.results.every(r=>r.cleanupObservedAbsent&&r.durableReceiptConfirmed&&r.armed&&r.requiresOperatorResolution));
+ assert.equal(cleanupProcessResult(first).status.state,'finite-cleanup');
+ f.rp.pods.set('late',{id:'late',name:f.records[1].launches[0].name});f.rp.pods.set('unrelated',{id:'unrelated',name:'unrelated'});
+ const second=await f.run();assert.equal(second.results.length,3);assert.equal(second.results[1].deleted[0].id,'late');
+ assert.equal(f.rp.pods.has('late'),false);assert.equal(f.rp.pods.has('unrelated'),true);assert(second.results.every(r=>r.armed&&r.requiresOperatorResolution));
+});
+test('a caught ownership-set error retains its hash and does not suppress either of the other two sweeps',async()=>{
+ const f=await threeOwnerFixture();let reads=0;
+ const fetcher=async(url,options)=>{
+  const u=new URL(url);
+  if(u.hostname==='api.github.com'&&u.pathname.endsWith('/contents/'+f.reference.path)&&++reads===2)throw Error('invented first-set read failure');
+  return f.fetcher(url,options);
+ };
+ const result=await cleanupFromEnvironment(f.env,{fetcher,clock:()=>start+86400001});
+ assert.equal(result.results.length,3);assert.deepEqual(result.results.map(r=>r.prearmSha256),f.owners.map(r=>r.sha256));
+ assert(result.results[0].failures.length>0);assert(result.results.slice(1).every(r=>r.durableReceiptConfirmed&&r.cleanupObservedAbsent));
+ const status=cleanupProcessResult(result);assert.equal(status.exitCode,1);assert.equal(status.status.ownershipSets.length,3);assert.equal(status.status.cleanupObservedAbsent,false);
+});
