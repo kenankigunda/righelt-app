@@ -1,12 +1,13 @@
 import {assert,canonical,encode,sha256,reserveCents,TERMINAL} from './policy.mjs';
 import {cashPlan,cloudflareCoverage} from './cash.mjs';
-import {readCleanupRegistry,readOperatorReceipt,sameReference,validateManualIntent,operatorAttemptBinding} from './manual-authority.mjs';
+import {readCleanupRegistry,readOperatorReceipt,sameReference,validateManualIntent,validateRepairAllowance,operatorAttemptBinding} from './manual-authority.mjs';
 import {validateRuntimeUpgrade} from './runtime-upgrade.mjs';
 
 const hash=value=>sha256(encode(canonical(value)));
 export async function manualAuthority(core,db,c,intent){
   assert(core.config.enabled===true&&(db.pilotReservedCents??0)<=core.config.authorizedCents,'manual compute disabled or authorization reduced');
   validateManualIntent(intent);
+  validateRepairAllowance(intent,core.config.authorizedCents);
   const now=core.now(),prior=core.campaign(db,intent.priorCampaignId),old=prior.attempts.at(-1);
   assert(c.manifest.id===intent.campaignId&&c.manifestSha256===intent.manifestSha256&&prior!==c&&prior.manifestSha256===intent.priorManifestSha256,'manual campaign binding differs');
   assert(c.manifest.sourceRevision===intent.sourceRevision,'manual source differs from intent');
@@ -44,11 +45,15 @@ export async function manualAuthority(core,db,c,intent){
     assert(ready.run.usageReviewRequired===true&&oldResult.state==='terminal'&&oldResult.usageReviewRequired===true&&newResult.usageReviewRequired===false,'cleanup failure is not solely the retained old usage warning');
   }
   const funding=await readOperatorReceipt(control.store,intent.fundingReservation),oldFunding=funding.oldAttempt,next=funding.newIntent,total=funding.aggregate;
+  // Every earlier prepared manual allocation remains committed after cleanup,
+  // cancellation or completion. The original unknown owner stays the prior.
+  const retainedManualCents=Object.values(db.campaigns).filter(other=>other!==c&&other.manual?.intent.priorCampaignId===prior.manifest.id).reduce((sum,other)=>sum+other.manifest.maxCents,0);
+  const encumberedCents=prior.manifest.maxCents+intent.priorRiskReserveCents+retainedManualCents+c.manifest.maxCents;
   assert(funding.schema===1&&funding.kind==='operator-additive-funding-freeze'&&oldFunding?.id===prior.manifest.id&&oldFunding.manifestSha256===prior.manifestSha256&&Date.parse(oldFunding.startedAt)===old.startedAt,'operator funding prior binding differs');
   assert(oldFunding.originalAllocationCents===prior.manifest.maxCents&&oldFunding.supplementalRiskHoldCents===intent.priorRiskReserveCents&&oldFunding.protectedShutdownReserveCents===reserveCents(prior.manifest.maxCents)&&oldFunding.hourlyCeilingCents===old.hourlyCents,'operator prior allocation differs');
   assert(next?.computeAllocationCents===c.manifest.maxCents&&next.protectedShutdownReserveCents===reserveCents(c.manifest.maxCents)&&next.allInHourlyCeilingCents===host.hourlyCents&&next.host===host.gpu&&next.dataCenterId===host.dataCenterId&&next.diskGb===host.diskGb&&next.gpuCount===1,'operator new funding/placement differs');
   assert(now<=Date.parse(next.latestAdmission)&&intent.expiresAt<=Date.parse(next.latestAdmission)&&intent.expiresAt-intent.createdAt<=next.maximumIntentMs&&next.maximumIntentMs===900000&&authority.cutoff<=Date.parse(next.latestWorkCutoff)&&intent.liabilityUntil<=Date.parse(next.responseUntil)&&intent.liabilityUntil>=authority.cutoff+7200000,'finite operator funding window exceeded');
-  assert(total?.runpodEncumberedCents===prior.manifest.maxCents+intent.priorRiskReserveCents+c.manifest.maxCents&&total.runpodEncumberedCents<=total.runpodCeilingCents&&total.runpodCeilingCents<=10000&&total.repairEncumberedCents<=intent.repairMaxCents&&total.repairCeilingCents===intent.repairMaxCents&&total.cloudflareEncumberedCents<=total.cloudflareCeilingCents&&total.cloudflareCeilingCents<=2000&&total.githubPaidOverageAuthorized===false,'operator aggregate funding exceeded');
+  assert(total?.runpodEncumberedCents===encumberedCents&&total.repairEncumberedCents===encumberedCents&&total.runpodEncumberedCents<=total.runpodCeilingCents&&total.runpodCeilingCents<=10000&&total.repairEncumberedCents<=intent.repairMaxCents&&total.repairCeilingCents===intent.repairMaxCents&&total.cloudflareEncumberedCents<=total.cloudflareCeilingCents&&total.cloudflareCeilingCents<=2000&&total.githubPaidOverageAuthorized===false,'operator aggregate funding exceeded');
   cloudflareCoverage(c.manifest.cash,{now,deadline:c.manifest.deadline,forecastUntil:authority.forecastUntil});
   return {prior,old,authority,registry};
 }
@@ -131,6 +136,7 @@ export async function attachManual(core,id,body){
 
 export function checkManualLiability(core,db,c){
   if(!c.manual)return;
+  validateRepairAllowance(c.manual.intent,core.config.authorizedCents);
   assert(core.config.enabled===true&&db.pilotReservedCents<=core.config.authorizedCents,'manual compute authorization revoked');
   const prior=core.campaign(db,c.manual.intent.priorCampaignId);
   assert(core.cost(prior)<=prior.manifest.maxCents+c.manual.intent.priorRiskReserveCents-reserveCents(prior.manifest.maxCents),'prior risk reserve exhausted');
