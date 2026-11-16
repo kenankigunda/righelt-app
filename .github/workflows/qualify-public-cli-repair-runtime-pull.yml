@@ -1,0 +1,56 @@
+name: Qualify anonymous repaired Python runtime pull
+on:
+  push:
+    branches: [codex/t-132-hosted-compute]
+    paths: [.github/workflows/qualify-public-cli-repair-runtime-pull.yml]
+permissions:
+  contents: read
+concurrency:
+  group: qualify-anonymous-public-cli-repair-runtime
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      IMAGE_DIGEST: sha256:e673cedb50bc07fbf764d1304763839668abc91564aa631f19162a3376069b6d
+    steps:
+      - name: Pull exact public image without registry credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          image="ghcr.io/kenankigunda/righelt-compute@$IMAGE_DIGEST"
+          auth_root=$(mktemp -d)
+          trap 'rm -rf "$auth_root"' EXIT
+          export DOCKER_CONFIG="$auth_root"
+          test ! -e "$DOCKER_CONFIG/config.json"
+          docker pull --platform linux/amd64 "$image"
+          docker image inspect "$image" --format '{{.Os}}/{{.Architecture}}' | tee /tmp/runtime-platform.txt
+          test "$(cat /tmp/runtime-platform.txt)" = linux/amd64
+          test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = ea726e0f77594dde18563a3c82a99f6ff7a96664
+          docker run --rm -i "$image" node --input-type=module <<'JS'
+          import fs from 'node:fs';
+          import {createHash} from 'node:crypto';
+          import {hashRecord,isRuntimeSourcePath,validateBuildConfig} from './tools/hosted-compute/image-identity.mjs';
+          const identity=JSON.parse(fs.readFileSync('.compute-source.json','utf8'));
+          const check=(x,message)=>{if(!x)throw new Error(message);};
+          check(identity.schema===2 && identity.sourceRevision==='ea726e0f77594dde18563a3c82a99f6ff7a96664','runtime source differs');
+          check(identity.dependencySha256==='06901c4886e8f21a5e6e4df5290d8eb63169844f858190fcf0087061bcdb939f','dependency identity differs');
+          check(identity.sourceInventorySha256==='43e42844a6c6988b004d3de7f9596a33cb9a40a4851f4abd49bc23bf5c9f6499' && hashRecord(identity.sourceInventory)===identity.sourceInventorySha256,'source inventory differs');
+          check(identity.proofInventorySha256==='c836cebc22453915032fabe917a59af0e994d9ec836ad0edb75402011efebe1b' && hashRecord(identity.proofInventory)===identity.proofInventorySha256,'proof inventory identity differs');
+          validateBuildConfig(identity.buildConfig);
+          check(identity.buildConfigSha256==='23f003635a1c0edfb3b6a998f36f78307716f477b95081aae820bfc8f0462729' && hashRecord(identity.buildConfig)===identity.buildConfigSha256,'build configuration differs');
+          const entries=Object.entries(identity.sourceInventory);
+          check(entries.length===192,'source inventory count differs');
+          for(const [name,digest] of entries){
+            check(isRuntimeSourcePath(name) && fs.lstatSync(name).isFile() && !fs.lstatSync(name).isSymbolicLink(),'invalid source entry');
+            check(createHash('sha256').update(fs.readFileSync(name)).digest('hex')===digest,'source file differs');
+          }
+          check(process.version==='v22.23.4','Node version differs');
+          await import('./tools/hosted-compute/worker.mjs');
+          console.log(JSON.stringify({anonymousFreshPull:true,sourceRevision:identity.sourceRevision,sourceFiles:entries.length,sourceInventorySha256:identity.sourceInventorySha256,buildConfigSha256:identity.buildConfigSha256,workerImport:true,gpuQualified:false}));
+          JS
+          docker run --rm "$image" python -c "import platform,torch,onnx,onnxruntime; import righelt_training.hosted_science; assert platform.machine()=='x86_64'; assert platform.python_version().startswith('3.14.'); assert torch.__version__.split('+')[0]=='2.14.1'; assert torch.version.cuda=='13.0'; print('Anonymous pulled Linux runtime imports passed. Actual GPU/driver remains unqualified.')"
+          docker run --rm -e RIGHELT_HOSTED=1 "$image" python -m righelt_training.public_timing --verify-import
+          test ! -e "$DOCKER_CONFIG/config.json"
