@@ -38,6 +38,15 @@ export async function reconcileActualSpend(core,id,reference){
   assert(keys(balance,'openingCreditCents,currentCreditCents,debitsCents,creditsCents,currentHourlyCents,autoPay,evidenceSha256')&&['openingCreditCents','currentCreditCents','debitsCents','creditsCents','currentHourlyCents'].every(k=>cents(balance[k]))&&balance.autoPay===false&&digest(balance.evidenceSha256),'actual balance evidence required');
   assert(balance.creditsCents===0&&balance.openingCreditCents===db.cashFunding?.runpod.openingCreditCents+db.cashFunding?.runpod.purchasedCreditCents&&balance.openingCreditCents-balance.debitsCents===balance.currentCreditCents&&balance.debitsCents<=authority.repairCeilingCents&&balance.debitsCents<=authority.runpodCeilingCents,'actual balance/debit arithmetic differs');
   assert(!db.actualSpendBasis||balance.debitsCents>=db.actualSpendBasis.observedDebitCents&&receipt.observedAt>=db.actualSpendBasis.observedAt,'observed debit/time cannot silently shrink');
+  if(db.actualSpendBasis){
+    let consumedThrough=db.actualSpendBasis.observedAt;
+    for(const campaignId of Object.keys(db.actualSpendBasis.admissions)){
+      const c=core.campaign(db,campaignId);
+      for(const a of c.attempts)if(a.resourceId)consumedThrough=Math.max(consumedThrough,a.endedAt??c.lastHeartbeat??a.workStartedAt??c.manual.attached?.acceptedAt??a.startedAt);
+    }
+    assert(receipt.observedAt>=consumedThrough,'balance observation predates known resource consumption');
+    assert(!db.actualSpendBasis.activeResources.length||receipt.observedAt>db.actualSpendBasis.observedAt,'fresh observation after known active resources required');
+  }
   assert(keys(receipt.inventory,'ordinary,queued')&&['ordinary','queued'].every(k=>keys(receipt.inventory[k],'complete,evidenceSha256,resourceIds')&&receipt.inventory[k].complete===true&&digest(receipt.inventory[k].evidenceSha256)&&Array.isArray(receipt.inventory[k].resourceIds)&&receipt.inventory[k].resourceIds.every(x=>typeof x==='string'&&/^[A-Za-z0-9_-]+$/.test(x))),'complete ordinary and queued observations required');
   const inventoryIds=[...receipt.inventory.ordinary.resourceIds,...receipt.inventory.queued.resourceIds];
   assert(Array.isArray(receipt.activeResources)&&new Set(inventoryIds).size===inventoryIds.length&&inventoryIds.length===receipt.activeResources.length,'actual resource inventory differs');

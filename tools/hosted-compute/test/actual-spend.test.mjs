@@ -100,6 +100,8 @@ test('after a known attempt ends, fresh observed debits replace its unused prosp
   await f.core.manualAttach('actual-next',{intentSha256:await hash(f.intent),podId:'new',acceptedAt:f.now(),accountId:f.intent.accountId});await f.core.work('actual-next',1);await f.core.heartbeat('actual-next',1);
   f.advance(1000);await f.core.finish('actual-next',1,{kind:'correctness'});await f.core.reconcile();await f.core.reconcile();
   const binding=await f.core.actualSpendBinding(),next=structuredClone(f.observation);
+  const stale={...structuredClone(f.observation),id:'b'.repeat(32),ledgerSha256:binding.ledgerSha256,priorBasisSha256:binding.priorBasisSha256};
+  const before=await f.core.load();await assert.rejects(f.core.reconcileActualSpend('pilot',await f.receipt(stale,'b')),/predates known resource consumption/);assert.deepEqual(await f.core.load(),before);assert.equal(before.actualSpendBasis.admissions['actual-next'].forecastCents,227);
   Object.assign(next,{id:'a'.repeat(32),ledgerSha256:binding.ledgerSha256,priorBasisSha256:binding.priorBasisSha256,observedAt:f.now(),validUntil:f.now()+900000});Object.assign(next.balance,{currentCreditCents:9994,debitsCents:6});
   const ref=await f.receipt(next,'a');await f.core.reconcileActualSpend('pilot',ref);
   const db=await f.core.load();assert.equal(db.pilotReservedCents,6);assert.equal(db.creditAllocatedCents,6);assert.deepEqual(db.actualSpendBasis.admissions,{});assert.equal(db.actualSpendReconciliations.length,2);assert.equal(db.campaigns['actual-next'].manifest.maxCents,300);assert.deepEqual(db.manualProgram,f.anchor);
