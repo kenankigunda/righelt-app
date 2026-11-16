@@ -185,3 +185,39 @@ The corresponding readiness kind is `finite-cleanup-readiness`; its exact three-
 The same five-minute cleanup job visits all three sets and isolates each set's error, including its prearm hash, without suppressing the others. It reports `finite-cleanup-result` and `finite-cleanup` status with the actual ownership inventory. The old two-owner result remains compatible. Installation, fresh actual all-set runner proof, job/response funding and any later admission belong to the operator. No additional worker image, scheduler or hosted agent is introduced by this controller/cleanup-only contract.
 
 A retained `cleanup-uncertain` campaign can coexist with a new manual admission only through the fresh actual-spend, exact three-owner authority above. It must still contain an uncertain historical attempt, have a validated exact reference/name and terminal fence, and have fresh terminal/zero-error/durable absence readiness. Current positive active-resource evidence or a confirmed resource without verified end/cleanup blocks this exception. The validated authority returns only these specific retained owner IDs to the global conflict check after all readiness, funding and clock checks pass. Running, provisioning, stopping, queued, repairing and manual-pending campaigns still conflict. The old two-owner path gets no new exception. No retained state, watch, financial clock or historical uncertainty is resolved or rewritten.
+
+## Reviewed capacity refusal and one recovery short
+
+The admin-only `provider-refusal-binding ID` and `provider-refusal-resolve ID --receipt PRIVATE_REFERENCE_JSON` commands apply only to `public-timing-20261116-1c3a839f`. This is an operator-attested resolution of one independently reviewed request. It is not a general HTTP-400 rule or provider-signed proof. The original and B6 requests remain unresolved and independently watched.
+
+The immutable receipt has `schema:1`, `kind:operator-attested-capacity-refusal`, random 32-hex `id`, integer `createdAt`/`expiresAt` spanning at most fifteen minutes, the fresh binding's `ledgerSha256` and `target`, unchanged `programAcceptedAt`, verified `accountId`, `actualSpendBasisSha256`, `native`, `attestation` and `contract`. Obtain the binding after other ledger changes, then adopt before expiry. The account's current complete ordinary/queued actual-spend basis must show no owned resource, and the exact prearm must remain permanently fenced. Accepted Pod, placement, attached/startup session or work evidence rejects adoption. No provider action or worker token is produced.
+
+`native` contains the retained UTF-8 strings `attemptJournalUtf8`, `outcomeJournalUtf8` and `responseBodyUtf8`. Their exact bytes must match the pinned historical journal, response journal and recovered capacity-refusal body hashes. `attestation` binds the reviewed evidence packet, helper, bootstrap, credential binding, canonical manifest and worker source through `evidenceSha256`, `helperSnapshotSha256`, `bootstrapSnapshotSha256`, `credentialBindingSha256`, `manifestSha256` and `sourceRevision`. It also requires `kind:operator-reviewed-single-native-request`, `requestBodySha256:null`, `redirectPolicy:error` and `timeoutMs:20000`. No request-body hash was captured, so none is reconstructed or claimed. `contract` pins the reviewed Runpod v2 create documentation URL, documentation revision and schema hash. These fixed commitments cannot authorize another request.
+
+Resolution appends an audit record and closes only the current ownership bookkeeping. The original uncertain attempt, terminal fence, failure events, clocks and financial evidence remain unchanged. Only the same already-applied receipt can replay after expiry. A fresh positive exact-owned observation records a lasting contradiction before provider deletion, restores the cleanup hold, and blocks admission. Later absence, accounting reconciliation or receipt replay cannot clear that contradiction. Resolution adoption expiry does not expire an otherwise valid lasting resolution.
+
+After resolution, an ordinary public short requires the existing public transition receipt's `kind:manual-capacity-recovery-public-timing-transition` variant. Keep all existing transition fields and add:
+
+```json
+{
+  "capacityRecovery": {
+    "refusalReceiptSha256": "RESOLUTION_RECEIPT_CANONICAL_SHA256",
+    "actualSpendBasisSha256": "FRESH_ACTUAL_BASIS_RECEIPT_SHA256",
+    "capacity": {
+      "observedAt": 0,
+      "validUntil": 0,
+      "gpu": "SAME_APPROVED_GPU",
+      "dataCenterId": "SAME_APPROVED_DATACENTER",
+      "priorAvailability": "LOW",
+      "availability": "MEDIUM",
+      "evidenceSha256": "ACTUAL_CATALOG_EVIDENCE_SHA256"
+    }
+  }
+}
+```
+
+This is the additional object, not a complete receipt. The actual balance/inventory observation must occur strictly after resolution adoption. Capacity evidence must be fresh for at most fifteen minutes, cover intent expiry and show MEDIUM or HIGH availability in the same approved GPU/datacenter. Catalog availability is evidence of improvement, not reserved capacity or a successful launch. The frozen model, profiles, schedule, seeds, phase duration, accounting reserve, cohort requirements and campaign cap remain bounded by the refused short. New private output paths may differ.
+
+All existing qualification, image, funding, startup, cleanup readiness, registry and absolute-clock gates still apply. The registry remains capped at three: original unresolved owner, B6 unresolved owner and the new candidate. Effective refusal excludes only 1c3 from current coverage and compute conflict. A positive contradiction restores its hold rather than evicting a watch.
+
+Preparation persists one global `capacityRecoveryShort` marker with the campaign, intent, transition, resolution and original program anchor before returning any bootstrap token. Exact pending-intent replay is idempotent. Cancellation, failure, uncertain dispatch, restart or another campaign cannot refund the allowance. Omitting the recovery variant cannot bypass it. The independently qualified diagnostic-once and productive-work routes retain their existing whole-game timing, cost, growth, cleanup and science requirements. This adds no provider retry, image rebuild, service, account or spending authority.

@@ -3,6 +3,7 @@
 import {POLICY,assert,canonical,encode,sha256} from './policy.mjs';
 import {readOperatorReceipt} from './manual-authority.mjs';
 import {runtimeUpgradeEndpoint} from './runtime-upgrade.mjs';
+import {effectiveRefusal,refusalHeld} from './refusal-state.mjs';
 import fixture from './fixture-contract.json' with {type:'json'};
 const hex=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
 const shape=(value,keys)=>value&&Object.keys(value).sort().join(',')===keys.split(',').sort().join(',');
@@ -15,7 +16,12 @@ async function object(core,c,hash){
 export async function validatePublicTimingTransition(core,db,prior,c,intent){
  assert(db.actualSpendBasis&&intent.startup&&!intent.runtimeUpgrade&&c.manifest.purpose===POLICY.publicTiming.purpose,'public timing requires explicit actual funding and startup');
  const r=await readOperatorReceipt(core.externalControl(c.manifest).store,intent.publicTimingTransition);
- assert(shape(r,'schema,kind,scope,createdAt,expiresAt,prior,next,qualification,publicInputs,review,historicalDisposition')&&r.schema===1&&r.kind==='manual-public-timing-transition'&&r.scope==='public-original-incumbent-evaluation-cost','typed public timing transition required');
+ const recovery=r.kind==='manual-capacity-recovery-public-timing-transition';
+ assert(shape(r,'schema,kind,scope,createdAt,expiresAt,prior,next,qualification,publicInputs,review,historicalDisposition'+(recovery?',capacityRecovery':''))&&r.schema===1&&(recovery||r.kind==='manual-public-timing-transition')&&r.scope==='public-original-incumbent-evaluation-cost','typed public timing transition required');
+ const resolution=db.providerRefusalResolution,marker=db.capacityRecoveryShort;
+ assert(!resolution||!refusalHeld(db,resolution),'capacity refusal contradicted: cleanup hold required');
+ assert(!recovery||resolution&&!intent.publicWorkAuthority,'capacity recovery is a short-only resolved-refusal authority');
+ assert(!resolution||intent.publicWorkAuthority||recovery,'capacity recovery short transition required');
  assert(canonical(r.prior)===canonical(runtimeUpgradeEndpoint(prior))&&canonical(r.next)===canonical(publicTimingEndpoint(c)),'public timing transition endpoint differs');
  assert(c.manifest.sourceRevision!==prior.manifest.sourceRevision&&c.manifest.phases[0].host.image!==prior.manifest.phases[0].host.image,'public timing needs its reviewed new source and image');
  assert(Number.isSafeInteger(r.createdAt)&&Number.isSafeInteger(r.expiresAt)&&r.createdAt<=intent.createdAt&&intent.createdAt-r.createdAt<=POLICY.startupMs&&r.expiresAt>=intent.expiresAt&&r.expiresAt-r.createdAt<=POLICY.startupMs&&core.now()<r.expiresAt,'public timing transition expired');
@@ -43,5 +49,17 @@ export async function validatePublicTimingTransition(core,db,prior,c,intent){
  assert(runtime.runtimeSha256===t.qualifiedRuntimeSha256&&runtime.record?.kernelPassed===true&&await sha256(encode(canonical(runtime.record)))===t.qualifiedRuntimeSha256,'qualified public runtime differs');
  for(const key of ['gpu','dataCenterId','minVcpu','minRamGb','diskGb','minCudaVersion'])assert(canonical(c.manifest.phases[0].host[key])===canonical(qm.phases[0].host[key]),'public timing cohort differs');
  assert(c.manifest.dependencySha256===qm.dependencySha256&&c.manifest.dependencySha256===prior.manifest.dependencySha256&&c.manifest.seed===prior.manifest.seed,'public timing dependencies or program seed differ');
+ if(recovery){
+  const failed=core.campaign(db,resolution.campaignId),proof=r.capacityRecovery;
+  assert(effectiveRefusal(db,failed),'capacity refusal no longer resolves ownership');
+  assert(shape(proof,'refusalReceiptSha256,actualSpendBasisSha256,capacity')&&proof.refusalReceiptSha256===resolution.receiptSha256&&proof.actualSpendBasisSha256===db.actualSpendBasis.receiptSha256&&db.actualSpendBasis.observedAt>resolution.appliedAt,'fresh actual basis after refusal resolution required');
+  assert(!marker||marker.campaignId===c.manifest.id&&marker.intentSha256===await sha256(encode(canonical(intent)))&&marker.transitionSha256===intent.publicTimingTransition.sha256&&marker.refusalReceiptSha256===resolution.receiptSha256,'global capacity recovery short already consumed');
+  const capacity=proof.capacity,host=phase.host;
+  assert(shape(capacity,'observedAt,validUntil,gpu,dataCenterId,priorAvailability,availability,evidenceSha256')&&capacity.priorAvailability==='LOW'&&['MEDIUM','HIGH'].includes(capacity.availability)&&hex(capacity.evidenceSha256)&&capacity.gpu===host.gpu&&capacity.dataCenterId===host.dataCenterId&&Number.isSafeInteger(capacity.observedAt)&&capacity.observedAt<=intent.createdAt&&intent.createdAt-capacity.observedAt<=900000&&Number.isSafeInteger(capacity.validUntil)&&capacity.validUntil>=intent.expiresAt&&capacity.validUntil<=capacity.observedAt+900000&&core.now()<capacity.validUntil,'fresh improved same-cohort catalog evidence required');
+  const oldPlan=await object(core,failed,failed.manifest.publicTiming.planSha256),oldPhase=failed.manifest.phases[0];
+  assert(!failed.manual?.publicWork&&c.manifest.seed===failed.manifest.seed&&t.modelSha256===failed.manifest.publicTiming.modelSha256&&t.profilesSha256===failed.manifest.publicTiming.profilesSha256&&canonical(plan.schedule)===canonical(oldPlan.schedule)&&canonical(plan.profiles)===canonical(oldPlan.profiles)&&plan.accountingReserveSeconds===oldPlan.accountingReserveSeconds&&phase.seconds===oldPhase.seconds&&c.manifest.maxCents<=failed.manifest.maxCents,'recovery must retain the refused short workload and reserve');
+  for(const key of ['gpu','dataCenterId','minVcpu','minRamGb','diskGb','minCudaVersion'])assert(canonical(host[key])===canonical(oldPhase.host[key]),'recovery refused cohort differs');
+  return {sha256:intent.publicTimingTransition.sha256,capacityRecovery:{refusalReceiptSha256:resolution.receiptSha256}};
+ }
  return {sha256:intent.publicTimingTransition.sha256};
 }
