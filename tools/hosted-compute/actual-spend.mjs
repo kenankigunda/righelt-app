@@ -14,11 +14,14 @@ export async function spendBinding(db){
   const state={campaigns,cashFunding:db.cashFunding??null,creditAllocatedCents:db.creditAllocatedCents??0,pilotReservedCents:db.pilotReservedCents??0,
     manualRiskHolds:db.manualRiskHolds??{},manualFundingReservations:db.manualFundingReservations??{},manualProgram:db.manualProgram??null,
     priorBasisSha256:db.actualSpendBasis?.receiptSha256??null};
-  return {schema:1,kind:'actual-spend-binding',ledgerSha256:await hash(state),priorBasisSha256:state.priorBasisSha256};
+  return {schema:1,kind:'actual-spend-binding',ledgerSha256:await hash(state),priorBasisSha256:state.priorBasisSha256,
+    financialBasis:db.actualSpendBasis?'verified-account-observation':'legacy-reservations',observedDebitCents:db.actualSpendBasis?.observedDebitCents??null,
+    creditAllocatedCents:state.creditAllocatedCents,pilotReservedCents:state.pilotReservedCents,observedActiveResourceCount:db.actualSpendBasis?.activeResources.length??null};
 }
 
 export async function reconcileActualSpend(core,id,reference){
   const db=await core.load(),prior=core.campaign(db,id),receipt=await readOperatorReceipt(core.externalControl(prior.manifest).store,reference);
+  assert(receipt.priorCampaignId===id,'actual-spend reconciliation campaign differs');
   db.actualSpendReconciliations??=[];
   const consumed=db.actualSpendReconciliations.find(r=>r.receiptSha256===reference.sha256);
   if(consumed)return {receiptSha256:consumed.receiptSha256,reconciled:true,observedDebitCents:consumed.observedDebitCents};
@@ -40,7 +43,7 @@ export async function reconcileActualSpend(core,id,reference){
   assert(Array.isArray(receipt.activeResources)&&new Set(inventoryIds).size===inventoryIds.length&&inventoryIds.length===receipt.activeResources.length,'actual resource inventory differs');
   const known=new Set();let hourly=0;
   for(const r of receipt.activeResources){
-    assert(keys(r,'id,campaignId,generation,name,hourlyCents')&&inventoryIds.includes(r.id)&&!known.has(r.id)&&cents(r.hourlyCents),'typed actual resource required');known.add(r.id);
+    assert(keys(r,'id,campaignId,generation,name,hourlyCents')&&inventoryIds.includes(r.id)&&!known.has(r.id)&&Number.isSafeInteger(r.generation)&&r.generation>0&&cents(r.hourlyCents),'typed actual resource required');known.add(r.id);
     const c=core.campaign(db,r.campaignId),a=c.attempts[r.generation-1];
     assert(a&&a.name===r.name&&(!a.resourceId||a.resourceId===r.id)&&a.hourlyCents>=r.hourlyCents,'observed resource ownership/rate differs');hourly+=r.hourlyCents;
   }
@@ -55,6 +58,7 @@ export async function reconcileActualSpend(core,id,reference){
   // Supersede financial counters only. Original attempts, receipt records,
   // unresolved create status, fences and all program/repair clocks stay intact.
   db.creditAllocatedCents=balance.debitsCents;db.pilotReservedCents=balance.debitsCents;db.manualRiskHolds={};
+  assert(core.now()<receipt.validUntil,'actual-spend observation expired during reconciliation');
   await core.save(db);
   return {receiptSha256:reference.sha256,reconciled:true,observedDebitCents:balance.debitsCents};
 }
@@ -67,9 +71,11 @@ export function actualEnvelope(core,db,c,intent){
   const ids=new Set();
   for(const r of basis.activeResources){
     const owner=core.campaign(db,r.campaignId),attempt=owner.attempts[r.generation-1];ids.add(r.id);
-    const ended=attempt?.endedAt;
-    const until=ended??intent.liabilityUntil;
-    required+=Math.ceil(r.hourlyCents*Math.max(0,until-basis.observedAt)/3600000)+(ended&&owner.cleanupVerified?0:reserveCents(owner.manifest.maxCents));
+    // A fresh positive observation supersedes an older cleanup timestamp for
+    // forecasting only. Keep the historical outcome unchanged.
+    const cleanedAfterObservation=attempt?.endedAt>basis.observedAt&&owner.cleanupVerified;
+    const until=cleanedAfterObservation?attempt.endedAt:intent.liabilityUntil;
+    required+=Math.ceil(r.hourlyCents*Math.max(0,until-basis.observedAt)/3600000)+(cleanedAfterObservation?0:reserveCents(owner.manifest.maxCents));
   }
   for(const [id,allocation] of Object.entries(basis.admissions)){
     if(id===c.manifest.id)continue;

@@ -36,10 +36,12 @@ export async function actualFixture(){
 test('explicit actual balance reconciliation releases unused allocations once without rewriting ownership, receipts or clocks',async()=>{
   const f=await actualFixture(),before=await f.core.load();assert.equal(before.pilotReservedCents,2000);assert(f.core.cost(before.campaigns.pilot)>1000);
   const result=await f.core.reconcileActualSpend('pilot',f.ref),db=await f.core.load();
+  const binding=await f.core.actualSpendBinding();assert.equal(binding.financialBasis,'verified-account-observation');assert.equal(binding.observedDebitCents,3);assert.equal(binding.pilotReservedCents,3);assert.equal(binding.creditAllocatedCents,3);
   assert.equal(result.observedDebitCents,3);assert.equal(db.pilotReservedCents,3);assert.equal(db.creditAllocatedCents,3);assert.deepEqual(db.manualRiskHolds,{});
   assert.deepEqual(db.campaigns.pilot,f.old);assert.deepEqual(db.campaigns.ui,f.ended);assert.deepEqual(db.manualProgram,f.anchor);assert.deepEqual(db.manualFundingReservations,before.manualFundingReservations);
   assert.equal(db.actualSpendReconciliations[0].releasedPilotReservationCents,1997);assert.deepEqual(db.actualSpendReconciliations[0].before.manualRiskHolds,{pilot:700});
   await f.core.reconcileActualSpend('pilot',f.ref);assert.deepEqual(await f.core.load(),db);assert.equal(f.providers.creates,1);
+  await assert.rejects(f.core.reconcileActualSpend('ui',f.ref),/campaign differs/);assert.deepEqual(await f.core.load(),db);
 });
 test('actual three-cent debit plus bounded new-resource forecast fits unchanged twenty-dollar authority despite old elapsed estimates',async()=>{
   const f=await actualFixture();await f.core.reconcileActualSpend('pilot',f.ref);await f.core.manualPrepare('actual-next',f.intent);
@@ -55,6 +57,11 @@ test('stale, changed, incomplete or invented observations cannot release allocat
     const f=await actualFixture();mutate(f.observation);const reference=await f.freeze(),before=await f.core.load();
     await assert.rejects(f.core.reconcileActualSpend('pilot',reference));assert.deepEqual(await f.core.load(),before);assert.equal(f.providers.creates,1);
   }
+});
+test('an observation expiring during asynchronous ownership lookup cannot change counters',async()=>{
+  const f=await actualFixture(),before=await f.core.load(),external=f.core.externalControl;
+  f.core.externalControl=manifest=>{const control=external(manifest),store=control.store;control.store={...store,readPrearm:async(...args)=>{const value=await store.readPrearm(...args);f.advance(900001);return value;}};return control;};
+  await assert.rejects(f.core.reconcileActualSpend('pilot',f.ref),/expired during/);assert.deepEqual(await f.core.load(),before);
 });
 test('new actual funding rejects old full-cap receipts, omitted forecasts and oversized tails before issuing authority',async()=>{
   for(const mutate of [f=>{f.funding.kind='operator-additive-funding-freeze';},f=>{f.funding.basisSha256='0'.repeat(64);},f=>{f.funding.aggregate.runpodEncumberedCents=3;},f=>{f.funding.aggregate.repairEncumberedCents=3;},f=>{f.intent.priorRiskReserveCents=700;},f=>{f.intent.actualSpendBasisSha256='0'.repeat(64);},f=>{f.intent.liabilityUntil+=24*3600000;}]){
@@ -78,6 +85,14 @@ test('observed owned resources retain their real rate and forward cleanup covera
   const db=await f.core.load();assert.equal(db.actualSpendBasis.activeResources[0].hourlyCents,100);assert.deepEqual(db.campaigns.pilot,f.old);assert.equal(db.campaigns.pilot.attempts[0].uncertain,true);
   const bad=await actualFixture();bad.observation.inventory.ordinary.resourceIds=['foreign'];bad.observation.balance.currentHourlyCents=100;bad.observation.activeResources=[{id:'foreign',campaignId:'pilot',generation:1,name:'unrelated',hourlyCents:100}];
   const before=await bad.core.load();await assert.rejects(bad.core.reconcileActualSpend('pilot',await bad.freeze()),/ownership/);assert.deepEqual(await bad.core.load(),before);
+});
+test('a freshly observed resource still needs forward coverage when an older ledger says it was cleaned up',async()=>{
+  const f=await actualFixture();f.observation.inventory.ordinary.resourceIds=['manual'];f.observation.balance.currentHourlyCents=74;
+  f.observation.activeResources=[{id:'manual',campaignId:'ui',generation:1,name:f.ended.attempts[0].name,hourlyCents:74}];
+  const ref=await f.freeze();await f.core.reconcileActualSpend('pilot',ref);f.intent.actualSpendBasisSha256=ref.sha256;f.funding.basisSha256=ref.sha256;
+  await f.freezeFunding();await assert.rejects(f.core.manualPrepare('actual-next',f.intent),/aggregate funding/);
+  Object.assign(f.funding.aggregate,{runpodEncumberedCents:457,repairEncumberedCents:457});await f.freezeFunding();await f.core.manualPrepare('actual-next',f.intent);
+  assert.deepEqual((await f.core.load()).campaigns.ui,f.ended);
 });
 test('after a known attempt ends, fresh observed debits replace its unused prospective coverage instead of consuming its full cap forever',async()=>{
   const f=await actualFixture();await f.core.reconcileActualSpend('pilot',f.ref);await f.core.manualPrepare('actual-next',f.intent);
@@ -111,6 +126,7 @@ test('actual admin routes and private CLI reconcile once while worker access sta
   const referenceFile=path.default.join(directory,'reference.json');await fs.writeFile(referenceFile,JSON.stringify(f.ref),{mode:0o600});
   const result=await main(['actual-spend-reconcile','pilot','--receipt',referenceFile],env,{fetcher});assert.deepEqual(result,{receiptSha256:f.ref.sha256,reconciled:true,observedDebitCents:3});
   const after=await(await mf.dispatchFetch('https://compute.example/fixture-ledger')).json();assert.equal(after.pilotReservedCents,3);assert.deepEqual(after.campaigns.pilot,f.old);
+  const readback=await main(['actual-spend-binding','pilot'],env,{fetcher});assert.equal(readback.financialBasis,'verified-account-observation');assert.equal(readback.pilotReservedCents,3);assert.equal(readback.creditAllocatedCents,3);assert.equal(readback.observedActiveResourceCount,0);
   await main(['actual-spend-reconcile','pilot','--receipt',referenceFile],env,{fetcher});assert.deepEqual(await(await mf.dispatchFetch('https://compute.example/fixture-ledger')).json(),after);
   const worker=new Client({url:'https://compute.example',id:'pilot',generation:1,token:createHmac('sha256',signing).update('pilot/1').digest('hex'),fetcher});
   await assert.rejects(worker.json('actual-spend-binding'),/409/);await assert.rejects(worker.json('actual-spend-reconcile',f.ref),/409/);assert.equal(outboundPosts,0);
