@@ -1,0 +1,23 @@
+name: Prospective source preparation
+on:
+  pull_request:
+    paths:
+      - 'tools/prospective-sources/**'
+      - '.github/workflows/prospective-source-preparation.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/prospective-sources/**'
+      - '.github/workflows/prospective-source-preparation.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Synthetic metadata and private-custody regressions
+        run: node --test tools/prospective-sources/preparation.test.mjs
