@@ -217,3 +217,48 @@ test('invitation choices reflect available actions without exposing rule metadat
  await page.evaluate(()=>window.renderInvite('blue',{pendingPlayerRequestSeat:'Player 2'}));
  await expect(page.getByTestId('pending-player-request-notice')).toContainText('awaiting approval');await expect(dialog.getByRole('heading',{name:'Waiting for approval',exact:true})).toBeVisible();
 });
+
+// Read the painted pseudo-element quad, rather than treating align-self:center
+// as evidence that the disclosure label was placed in the same grid row.
+test('Undo caret is painted beside its label in collapsed and expanded History',async({page},info)=>{
+ test.skip(info.project.name!=='chromium','Painted pseudo-element quads use the Chromium DOM protocol');
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await page.evaluate(()=>window.renderHistory());
+ await expect.poll(()=>page.evaluate(()=>window.historyRequests.length)).toBe(1);
+ await page.evaluate(()=>window.historyRequests[0].resolve({available:true,items:[],nextCursor:null}));
+ await page.getByRole('button',{name:'More game history',exact:true}).click();
+ await expect.poll(()=>page.evaluate(()=>window.historyRequests.length)).toBe(2);
+ await page.evaluate(()=>window.historyRequests[1].resolve({available:true,items:[
+  {id:'a',at:'2026-01-01',move:{moveId:'a',index:0,turnIndex:0,turnMoveIndex:0,actorSide:'P1',notation:'MOVE A',undone:false,snapshot:window.archiveSnapshot}},
+  {id:'b',at:'2026-01-01',move:{moveId:'b',index:1,turnIndex:1,turnMoveIndex:0,actorSide:'P2',notation:'MOVE B',undone:true,snapshot:window.archiveSnapshot}}
+ ],nextCursor:null}));
+ const session=await page.context().newCDPSession(page),measurements=[];
+ try{
+  for(const width of [390,1440])for(const scale of [100,200]){
+   await page.setViewportSize({width,height:1100});
+   await page.evaluate(scale=>{document.documentElement.style.fontSize=`${scale}%`;},scale);
+   const toggle=page.locator('.history-undone-toggle');
+   for(const expanded of [false,true]){
+    if((await toggle.getAttribute('aria-expanded')==='true')!==expanded)await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded',String(expanded));
+    const {root}=await session.send('DOM.getDocument',{depth:-1,pierce:true});
+    const {nodeId}=await session.send('DOM.querySelector',{nodeId:root.nodeId,selector:'.history-item-undone-group'});
+    const {node}=await session.send('DOM.describeNode',{nodeId,depth:1});
+    const caret=node.pseudoElements.find(pseudo=>pseudo.pseudoType==='before');
+    expect(caret,'Existing Undo disclosure must paint its caret').toBeTruthy();
+    const {model}=await session.send('DOM.getBoxModel',{backendNodeId:caret.backendNodeId});
+    const label=await toggle.locator('.history-undone-label').boundingBox();
+    const paintedCenterY=(model.border[1]+model.border[3]+model.border[5]+model.border[7])/4;
+    const labelCenterY=label.y+label.height/2;
+    const control=await toggle.boundingBox(),sample={width,scale,expanded,paintedCenterY,labelCenterY,delta:Math.abs(paintedCenterY-labelCenterY),control};
+    measurements.push(sample);
+    expect(sample.delta,JSON.stringify(sample)).toBeLessThanOrEqual(1);
+    expect(control.height).toBeGreaterThanOrEqual(44);
+    await toggle.focus();await expect(toggle).toBeFocused();
+   }
+  }
+ }finally{
+  await info.attach('undo-painted-caret-centers',{body:JSON.stringify(measurements,null,2),contentType:'application/json'});
+  await session.detach();
+ }
+});
