@@ -278,6 +278,7 @@ test("integration runtime + adapter render the push defender nudge for a lone au
       ) ?? false,
       true,
     );
-    assert.equal(String(boardPreviewLabelEl.innerHTML).includes("push piece onto"), true);
+    assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Push piece onto"), true);
+    assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Confirm"), false);
   });
 });
