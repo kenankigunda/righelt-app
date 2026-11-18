@@ -27,6 +27,7 @@ const restore = () => {
   // Those traversals dispatch popstate without a subsequent hashchange.
   if (!navigationHistory.observePop(event.state)) return;
   const visit = navigationHistory.arrive();
+  getDependencies().restoreViewingVisit?.(visit);
   const saved = visit.restore?.generation === account.snapshot().generation ? visit.restore : null;
   if (!saved) return;
   // A distinct visit can share this URL after a utility was dismissed. There

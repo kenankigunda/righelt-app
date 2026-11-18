@@ -1,3 +1,4 @@
+import {createGameVisitViewingOwner} from './game-visit-viewing.js';
 import {createPanelTransitionPreparation} from './panel-transition-preparation.js';
 import {revertRequestKey,activeRevertRequest,activePendingRevertRequest} from './undo-request-presentation.js';
 import {createDisplayedReplayStarter} from './displayed-replay-starter.js';
@@ -398,6 +399,7 @@ let activeResultGameId = null;
 let pendingResultReviewFocus = null;
 let currentRoute = parseRouteFromHash(window.location.hash);
 let completedReviewEntryGeneration = 0;
+let gameVisitViewingOwner = null;
 let mountedBoardGameId = null;
 let mountedHistoryMoveIndex = null;
 let mountedSnapshotKey = null;
@@ -489,7 +491,8 @@ const applyHomeVisitPages = (...args) => homeSectionReads.applyVisitPages(...arg
 const navigationHistory = createNavigationHistory({
   history: window.history,
   getHash: () => window.location.hash,
-  capture: () => ({ y: window.scrollY, generation: account.snapshot().generation,
+  capture: visitId => ({ y: window.scrollY, generation: account.snapshot().generation,
+    viewing: gameVisitViewingOwner?.capture(visitId,currentRoute) ?? null,
     pages: Object.fromEntries(Object.entries(homeSections).map(([key, section]) => [key, section.page])),
     focusGameId: document.activeElement?.closest?.('.mini-board-card-link-surface')?.dataset.gameId ?? null }),
 });
@@ -510,7 +513,7 @@ window.addEventListener('pagehide', () => {
 window.addEventListener('popstate', event => navigationVisitOwner.pop(event));
 const navigationVisitOwner=createNavigationVisitOwner(()=>({
   state:{get pendingRoutePosition(){return pendingRoutePosition;},set pendingRoutePosition(value){pendingRoutePosition=value;},get routeHydrated(){return routeHydrated;},get currentRoute(){return currentRoute;},get homeSectionsHydrated(){return homeSectionsHydrated;}},
-  account,window,appEl,CSS,navigationHistory,getGamePanel:(...args)=>getGamePanel(...args),advanceHomeReadVisit:(...args)=>advanceHomeReadVisit(...args),clearAccountContinuation:(...args)=>clearAccountContinuation(...args),applyHomeVisitPages:(...args)=>applyHomeVisitPages(...args),startRouteSync:(...args)=>startRouteSync(...args),render:(...args)=>render(...args),
+  account,window,appEl,CSS,navigationHistory,restoreViewingVisit:visit=>gameVisitViewingOwner?.arrive(currentRoute,{restore:visit.restore?.viewing,traversed:visit.traversed}),getGamePanel:(...args)=>getGamePanel(...args),advanceHomeReadVisit:(...args)=>advanceHomeReadVisit(...args),clearAccountContinuation:(...args)=>clearAccountContinuation(...args),applyHomeVisitPages:(...args)=>applyHomeVisitPages(...args),startRouteSync:(...args)=>startRouteSync(...args),render:(...args)=>render(...args),
 }));
 const restoreRoutePosition = () => navigationVisitOwner.restore();
 const getPersistedDebugFlyoutOpen = () => loadDebugFlyoutOpen(storage);
@@ -3388,17 +3391,19 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   return true;
 };
 const renderContent = ({ animatePanels, includeBoard }) => {
+  gameVisitViewingOwner?.sync();
   const hadResultView = Boolean(appEl.querySelector('.game-result'));
   const resultFocus = document.activeElement?.closest('.game-result') ? {action:document.activeElement.getAttribute('data-action'),href:document.activeElement.getAttribute('href')} : null;
   const currentGame=currentRoute.name==='game' && routeHydrated ? transport.getGameViewModel(currentRoute.gameId) : null;
   if(currentGame){
     const game=currentGame, confirmed=transport.getAuthoritativeGame(currentRoute.gameId);
+    const preserveVisitSelection=gameVisitViewingOwner.consumeRestored(game);
     const observed=confirmedResultOwner.observe(confirmed);
     if(observed.becameTerminal)confirmedPlayback.reset();
     if (activeResultGameId === currentRoute.gameId && confirmed?.board?.state?.outcome && !getGameResult(confirmed, transport.getIdentityId())) activeResultGameId = null;
     const resultDecision=confirmedResultOwner.evaluate(confirmed?.id,{current:true,visible:!document.hidden&&document.hasFocus(),dialogOpen:storyDialog.isOpen()||rematchDialog.isOpen()||branchDialog.isOpen()||accountDialog.isOpen(),inHistory:game?.inHistoryMode});
     if(resultDecision.present){activeResultGameId=currentRoute.gameId;resultPresentation.enter(confirmed.id,getGameResult(confirmed,transport.getIdentityId()));}
-    if(activeResultGameId!==currentRoute.gameId&&resultDecision.allowReview)completedReviewOwner.sync(game,completedReviewEntryGeneration);
+    if(activeResultGameId!==currentRoute.gameId&&resultDecision.allowReview)completedReviewOwner.sync(game,completedReviewEntryGeneration,{preserveSelection:preserveVisitSelection});
     if(storyDialog.gameId()===currentRoute.gameId && getGameResult(confirmed,transport.getIdentityId()))storyDialog.setMatchStatus('Game finished',true);
   }
   document.title = getDocumentTitle();
@@ -3875,6 +3880,7 @@ const makeAccountSyncStore = auth => createSyncStore({
 let activeStorageGeneration = account.snapshot().storageGeneration;
 let syncStore = makeAccountSyncStore(account.snapshot());
 let transport = syncStore;
+gameVisitViewingOwner=createGameVisitViewingOwner(()=>({getTransport:()=>transport,getScope:viewingScope,getRoute:()=>currentRoute,getViewGeneration:id=>viewingIntent.generation(id),advanceView:id=>{viewingIntent.navigate(id);confirmedResultOwner.live(id);},restorePersonalHistory:id=>confirmedResultOwner.deliberateHistory(id),isReady:()=>routeHydrated}));
 const completedReviewOwner=createCompletedReviewOwner({getTransport:()=>transport,onError:error=>{window.__righeltLastError=error instanceof Error?error.message:String(error);}});
 mountLoadingFeedback(document,{
   getScope:loadingContextScope,
@@ -4268,6 +4274,7 @@ window.addEventListener("hashchange", event => {
   const visit = navigationHistory.arrive();
   const saved = visit.restore?.generation === account.snapshot().generation ? visit.restore : null;
   const incoming = parseRouteFromHash(window.location.hash);
+  gameVisitViewingOwner.arrive(incoming,{restore:saved?.viewing,traversed:visit.traversed,fromHome:previousRoute.name==='home'});
   const changedPage = incoming.name !== previousRoute.name || incoming.gameId !== previousRoute.gameId;
   pendingRoutePosition = saved ? { ...saved, hash: window.location.hash, focusOrigin:document.activeElement }
     : changedPage ? { y: 0, generation: account.snapshot().generation, hash: window.location.hash, focusOrigin:document.activeElement } : null;

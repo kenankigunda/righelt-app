@@ -3275,3 +3275,30 @@ for(const [eventSeq,gameplayRevision] of [[9,3],[null,3],[null,5]])test(`weaker 
  store.applyLiveGameUpdate({game:older,eventSeq});
  assert.equal(store.getHomeListRevision(),revision);assert.deepEqual(store.getHomeGameCard(game.id),card);
 });
+
+test('opaque visit checkpoints restore personal History without canonical writes and reject foreign ownership', async () => {
+  const game=buildLiveGame(),requests=[];
+  const store=createLiveTransportStore({storage:createMemoryStorage(),commandJournal:{list:async()=>[]},fetcher:async(url,options)=>{requests.push({url,method:options?.method??'GET'});return Response.json({ok:true,protocolVersion:2,game,eventSeq:3});}});
+  await store.loadGame(game.id);
+  const canonical=clone(store.getAuthoritativeGame(game.id));
+  store.selectHistoryMove({gameId:game.id,moveIndex:0});
+  assert.equal(store.getGameViewModel(game.id).inHistoryMode,true);
+  const historical=store.captureHistoryView({gameId:game.id});
+  assert.deepEqual(JSON.parse(JSON.stringify(historical)),{});
+  store.returnToLive({gameId:game.id});
+  const live=store.captureHistoryView({gameId:game.id});
+  assert.equal(store.getGameViewModel(game.id).inHistoryMode,false);
+  assert.equal(store.restoreHistoryView({gameId:game.id,checkpoint:historical}),true);
+  assert.deepEqual(store.getGameViewModel(game.id).currentSnapshot,game.moves[0].snapshot);
+  assert.equal(store.getGameViewModel(game.id).inHistoryMode,true);
+  assert.equal(store.restoreHistoryView({gameId:'foreign',checkpoint:historical}),false);
+  assert.equal(store.restoreHistoryView({gameId:game.id,checkpoint:{}}),false);
+  const foreign=createLiveTransportStore({storage:createMemoryStorage(),commandJournal:{list:async()=>[]}});
+  assert.equal(foreign.restoreHistoryView({gameId:game.id,checkpoint:historical}),false);
+  assert.equal(store.restoreHistoryView({gameId:game.id,checkpoint:live}),true);
+  assert.equal(store.getGameViewModel(game.id).inHistoryMode,false);
+  assert.deepEqual(store.getAuthoritativeGame(game.id),canonical);
+  assert.equal(requests.some(request=>request.method!=='GET'),false);
+  store.retire();foreign.retire();
+  assert.equal(store.restoreHistoryView({gameId:game.id,checkpoint:historical}),false);
+});
