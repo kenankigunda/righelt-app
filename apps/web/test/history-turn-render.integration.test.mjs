@@ -292,3 +292,14 @@ test('selected unified archive rows retain truthful availability and never acqui
   assert.deepEqual(view,before);
  }
 });
+
+
+test('completed History offers Undo only for exact selected current-revision playable proof',()=>{
+ const completed={...game,inHistoryMode:true,historyIndex:1,gameplayRevision:7,board:{state:{outcome:{status:'p1_win'}}}};
+ const valid={gameId:'g',decisionId:'b',gameplayRevision:7,eligible:true};
+ for(const proof of [undefined,{...valid,eligible:false},{...valid,decisionId:'a'},{...valid,gameId:'foreign'},{...valid,gameplayRevision:6}]){
+  const html=context.render({...completed,completedUndoEligibility:proof});assert.doesNotMatch(html,/data-action="revert-to-move"/);assert.match(html,/data-action="launch-history-branch"/);
+ }
+ assert.match(context.render({...completed,completedUndoEligibility:valid}),/data-action="revert-to-move"/);
+ assert.doesNotMatch(context.render({...completed,completedUndoEligibility:valid,historyLoading:true}),/data-action="revert-to-move"/);
+});

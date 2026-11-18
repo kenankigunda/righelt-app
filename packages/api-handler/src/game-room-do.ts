@@ -45,6 +45,7 @@ import {
   applyServerActionWithExpectedState,
   applyServerMove,
   applyRevertToMove,
+  completedUndoTargetEligible,
   asAction,
   asCompatiblePersistedAction,
   asGameState,
@@ -591,7 +592,11 @@ export class GameRoomDO {
       if (typeof body.decisionId !== "string" || body.gameplayRevision !== game.gameplayRevision) return json({ok:false,error:"history_changed"},409);
       const move = game.moves.find(move => move.moveId === body.decisionId) ?? (await readDecision(this.env,game.id,body.decisionId))?.move;
       if (!move) return json({ok:false,error:"decision_not_found"},404);
-      return json({ok:true,gameId:game.id,gameplayRevision:game.gameplayRevision,move});
+      const undoEligibility = isTerminalOutcome(game.board.state.outcome.status) ? {
+        gameId: game.id, decisionId: move.moveId, gameplayRevision: game.gameplayRevision,
+        eligible: completedUndoTargetEligible(game, move.moveId, move),
+      } : undefined;
+      return json({ok:true,gameId:game.id,gameplayRevision:game.gameplayRevision,move,undoEligibility});
     }
 
     if (request.method === 'POST' && path === '/decision-history') {
@@ -816,6 +821,9 @@ export class GameRoomDO {
       const requesterSeat = role;
       const approverIdentityId = getApproverIdentityForSeat(game, requesterSeat);
       const autoApprove = !requiresUndoApproval(identityId, approverIdentityId);
+      if (!autoApprove && !completedUndoTargetEligible(game, targetMoveId, targetMove)) {
+        return json({ ok: false, error: "undo_target_not_playable" }, 409);
+      }
       if (autoApprove) {
         const reverted = applyRevertToMove(game, targetMoveId, identityId, targetMove);
         if (!reverted.ok) {

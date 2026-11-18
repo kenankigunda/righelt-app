@@ -93,3 +93,45 @@ test('one failed turn snapshot retires its remaining queued and active siblings'
  assert.equal(started,4,'failed optional work never opens the remaining queued reads');assert.equal(aborted,3);
  assert.equal(transport.getGameViewModel('history-lifecycle').historyLoadError,'snapshot_failed');
 });
+
+
+const completedGame=records=>{const value=game(records);value.board.state.outcome={status:'p1_win'};value.myRoles=['Player 1'];return value;};
+const offerProof=(decisionId,revision=7,eligible=true)=>({gameId:'history-lifecycle',decisionId,gameplayRevision:revision,eligible});
+test('completed cached selection hydrates only its authoritative eligibility proof',async t=>{
+ const records=[move(0),move(1)],requested=[];let release;
+ const transport=store((url,init)=>{
+  assert.match(url,/decision-snapshot$/);requested.push(JSON.parse(init.body).decisionId);
+  return new Promise(resolve=>{release=()=>resolve(Response.json({gameId:'history-lifecycle',gameplayRevision:7,move:records[1],undoEligibility:offerProof('m1')}));});
+ });t.after(()=>transport.retire());transport.applyLiveGameUpdate({game:completedGame(records),eventSeq:7});
+ const selecting=transport.selectHistoryMove({gameId:'history-lifecycle',moveIndex:1});await tick();
+ assert.deepEqual(requested,['m1'],'local snapshots cannot grant completed Undo without authority proof');
+ assert.equal(transport.getGameViewModel('history-lifecycle').completedUndoEligibility,null);
+ release();await selecting;const selected=transport.getGameViewModel('history-lifecycle');
+ assert.equal(selected.inspectedDecision.moveId,'m1');assert.deepEqual(selected.completedUndoEligibility,offerProof('m1'));
+ await transport.selectHistoryMove({gameId:'history-lifecycle',moveIndex:1});assert.deepEqual(requested,['m1'],'same exact revision proof is reusable');
+});
+
+test('late completed target proof cannot displace a newer selected target',async t=>{
+ const records=[move(0),move(1)],pending=[];
+ const transport=store((url,init)=>new Promise(resolve=>{const id=JSON.parse(init.body).decisionId;pending.push(()=>resolve(Response.json({gameId:'history-lifecycle',gameplayRevision:7,move:records.find(m=>m.moveId===id),undoEligibility:offerProof(id)})));}));
+ t.after(()=>transport.retire());transport.applyLiveGameUpdate({game:completedGame(records),eventSeq:7});
+ const first=transport.selectHistoryMove({gameId:'history-lifecycle',moveIndex:0});await tick();
+ const second=transport.selectHistoryMove({gameId:'history-lifecycle',moveIndex:1});await tick();
+ assert.equal(pending.length,2);pending[1]();await second;pending[0]();await first;
+ const selected=transport.getGameViewModel('history-lifecycle');assert.equal(selected.inspectedDecision.moveId,'m1');assert.deepEqual(selected.completedUndoEligibility,offerProof('m1'));
+});
+
+test('completed proof cannot survive a new gameplay revision or returning Live',async t=>{
+ const record=move(0),transport=store(()=>Promise.resolve(Response.json({gameId:'history-lifecycle',gameplayRevision:7,move:record,undoEligibility:offerProof('m0')})));
+ t.after(()=>transport.retire());transport.applyLiveGameUpdate({game:completedGame([record]),eventSeq:7});
+ await transport.selectHistoryMove({gameId:'history-lifecycle',moveIndex:0});assert.equal(transport.getGameViewModel('history-lifecycle').completedUndoEligibility.eligible,true);
+ const revised=completedGame([record]);revised.gameplayRevision=8;transport.applyLiveGameUpdate({game:revised,eventSeq:8});
+ assert.equal(transport.getGameViewModel('history-lifecycle').completedUndoEligibility,null);
+ transport.returnToLive({gameId:'history-lifecycle'});assert.equal(transport.getGameViewModel('history-lifecycle').completedUndoEligibility,null);
+});
+
+for(const invalid of [undefined,{...offerProof('m0'),decisionId:'other'},{...offerProof('m0'),gameplayRevision:6}])test(`completed hydration ignores missing or foreign eligibility ${JSON.stringify(invalid)}`,async t=>{
+ const record=move(0),transport=store(()=>Promise.resolve(Response.json({gameId:'history-lifecycle',gameplayRevision:7,move:record,undoEligibility:invalid})));
+ t.after(()=>transport.retire());transport.applyLiveGameUpdate({game:completedGame([record]),eventSeq:7});await transport.selectHistoryMove({gameId:'history-lifecycle',moveIndex:0});
+ assert.equal(transport.getGameViewModel('history-lifecycle').completedUndoEligibility,null);
+});
