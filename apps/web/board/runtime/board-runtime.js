@@ -664,10 +664,12 @@ export function createBoardRuntime({
       if(turnIndicator?.name && elements.boardTurnIndicatorEl.ownerDocument){
         const name=elements.boardTurnIndicatorEl.ownerDocument.createElement('span');
         name.className='board-turn-name';name.dir='auto';name.textContent=turnIndicator.name;name.title=turnIndicator.name;
+        if(turnIndicator.neutralSuffix && turnIndicator.side)setPlayerTone(name,turnIndicator.side);
         const suffix=elements.boardTurnIndicatorEl.ownerDocument.createElement('span');suffix.textContent=turnIndicator.suffix??'';
         elements.boardTurnIndicatorEl.replaceChildren(name,suffix);
       }
-      setPlayerTone(elements.boardTurnIndicatorEl, turnIndicator?.side ?? state.sideToMove);
+      if(turnIndicator?.neutralSuffix)elements.boardTurnIndicatorEl.classList.remove(...PLAYER_TONE_CLASSES);
+      else setPlayerTone(elements.boardTurnIndicatorEl, turnIndicator?.side ?? state.sideToMove);
     }
 
     const pieceSummary =

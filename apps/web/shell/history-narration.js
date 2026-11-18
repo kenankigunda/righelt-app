@@ -4,7 +4,7 @@ import {COMPUTER_PROFILES} from '../generated/packages/shared-types/src/computer
 import {historyActorLabel,recordedActorIdentity} from './perspective-labels.js';
 import {historyTurnSide} from './history-preview.js';
 import {describeRecordedMove,describeRecordedTurn,recordedMoveNumber,recordedActorSide,recordedNarrationCoordinates,recordedMoveWithClosure} from './recorded-narration.js';
-import {completedTurnTitle,isCompletedWinningTurn} from './completed-review.js';
+import {completedTurnCaption,isCompletedWinningTurn} from './completed-review.js';
 import {completedOutcomeNarration} from './completion-narration.js';
 import {BOARD_MESSAGE_STRENGTH,isMeaningfulHistoryMessage,resolveBoardMessageOwner} from '../board/message-priority.js';
 import {moveInspectionSnapshot,withCausalDestructionPresentation} from './destruction-presentation.js';
@@ -20,10 +20,10 @@ export function selectedHistoryPresentation(game,options={}){
  if(game.historyTurnIndex!=null){
   const moves=withCausalDestructionPresentation(game.historyTurnMoves??[]),turn=game.turns?.find(turn=>turn.index===game.historyTurnIndex),side=historyTurnSide(turn,moves);
   const actor=moves.find(move=>recordedActorSide(move)===side),identity=actorIdentity(game,actor,side,options),name=identity.text;
-  const completedTitle=isCompletedWinningTurn(game)?completedTurnTitle(game,options.identityId,game.historyTurnIndex):null;
-  const completion=completedTitle?completedOutcomeNarration(game,options):null;
+  const completedCaption=isCompletedWinningTurn(game)?completedTurnCaption(game,options.identityId,game.historyTurnIndex):null;
+  const completion=completedCaption?completedOutcomeNarration(game,options):null;
   const narration=describeRecordedTurn(moves,name,{owned:ownedActor(game,actor,options)});
-  return {caption:{text:completedTitle??`Turn ${game.historyTurnIndex+1}`,side},message:completion??{text:narration??'Historical turn details unavailable',actorName:name,actorToneSide:side,actorAccessibleName:identity.accessibleName,coordinates:recordedNarrationCoordinates(moves)},messageStrength:completion||narration?BOARD_MESSAGE_STRENGTH.SEMANTIC:BOARD_MESSAGE_STRENGTH.PLACEHOLDER};
+  return {caption:completedCaption??{text:`Turn ${game.historyTurnIndex+1}`,side},message:completion??{text:narration??'Historical turn details unavailable',actorName:name,actorToneSide:side,actorAccessibleName:identity.accessibleName,coordinates:recordedNarrationCoordinates(moves)},messageStrength:completion||narration?BOARD_MESSAGE_STRENGTH.SEMANTIC:BOARD_MESSAGE_STRENGTH.PLACEHOLDER};
  }
  const move=selectedHistoricalRecord(game);
  const number=recordedMoveNumber(move),side=recordedActorSide(move),identity=actorIdentity(game,move,side,options),name=identity.text;

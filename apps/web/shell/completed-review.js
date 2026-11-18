@@ -9,13 +9,17 @@ export const completedTurnIndex = game => {
   return recorded.length ? recorded.at(-1).index : null;
 };
 
-export const completedTurnTitle = (game, identityId, turnIndex = completedTurnIndex(game)) => {
+export const completedTurnCaption = (game, identityId, turnIndex = completedTurnIndex(game)) => {
   if (!Number.isSafeInteger(turnIndex)) return null;
   const result = getGameResult(game, identityId);
   if (!result) return null;
   const title = result.title.replace(/ won as (Red|Blue)$/u, ' won');
-  return `${title} on Turn ${turnIndex + 1}`;
+  const suffix = ` on Turn ${turnIndex + 1}`;
+  return {text:title+suffix,name:title,suffix,neutralSuffix:true,side:result.winner?.toUpperCase()??null};
 };
+
+export const completedTurnTitle = (game, identityId, turnIndex = completedTurnIndex(game)) =>
+  completedTurnCaption(game,identityId,turnIndex)?.text??null;
 
 export const isCompletedWinningTurn = game =>
   isCompletedGame(game) && Number.isSafeInteger(game?.historyTurnIndex) && game.historyTurnIndex === completedTurnIndex(game);
