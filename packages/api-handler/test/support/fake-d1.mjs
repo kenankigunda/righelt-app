@@ -191,7 +191,7 @@ export const createFakeD1 = () => {
         throw new Error(`Unsupported run query: ${normalized}`);
       },
       async run() { return statement.executeRun(); },
-      async first() {
+      executeFirst() {
         if (normalized.startsWith("SELECT activated_at,maintenance,canary_account_id FROM account_cutover")) return {activated_at:null,maintenance:0,canary_account_id:null};
         reads.push({ query: normalized, params: [...params] });
         if (normalized.includes("json_extract(payload_json, '$.targetDecisionId')")) return structuredClone([...archive.values()].filter(row => row.game_id === params[0] && JSON.parse(row.payload_json).kind === 'finalization' && JSON.parse(row.payload_json).targetDecisionId === params[1]).sort((a,b) => b.event_seq - a.event_seq || b.event_ordinal - a.event_ordinal)[0] ?? null);
@@ -252,6 +252,7 @@ export const createFakeD1 = () => {
 
         throw new Error(`Unsupported first query: ${normalized}`);
       },
+      async first() { return statement.executeFirst(); },
       async all() {
         if (normalized.includes('FROM live_decision_attempts')) return { results: structuredClone([...attempts.values()].filter(row => row.game_id === params[0] && row.account_id === params[1] && row.kind === params[2] && row.sequence > params[3]).sort((a,b) => a.sequence - b.sequence).slice(0,params[4])) };
 
@@ -294,7 +295,7 @@ export const createFakeD1 = () => {
       },
     };
 
-    executors.set(statement, () => statement.executeRun());
+    executors.set(statement, { read: normalized.startsWith("SELECT "), execute: () => normalized.startsWith("SELECT ") ? { success: true, results: [statement.executeFirst()].filter(row => row !== null) } : statement.executeRun() });
     return statement;
   };
 
@@ -305,21 +306,22 @@ export const createFakeD1 = () => {
       // Execute synchronously so reads cannot observe intermediate statements.
       const tables = [shellGames, shellInvites, shellEvents, receipts, tombstones, archive, checkpoints, notes, attempts, payloads];
       const snapshots = tables.map((table) => structuredClone(table));
-      const failAt = batchFailureIndex;
-      batchFailureIndex = null;
+      const writes = statements.some(statement => !executors.get(statement)?.read);
+      const failAt = writes ? batchFailureIndex : null;
+      if (writes) batchFailureIndex = null;
       let results;
       try {
         results = statements.map((statement, index) => {
           if (index === failAt) throw new Error(`Injected batch failure at statement ${index}`);
           const execute = executors.get(statement);
           if (!execute) throw new Error("Statement belongs to another database");
-          return execute();
+          return execute.execute();
         });
       } catch (error) {
         tables.forEach((table, index) => { table.clear(); for (const [key, value] of snapshots[index]) table.set(key, value); });
         throw error;
       }
-      if (loseBatchResponse) { loseBatchResponse = false; throw new Error("Lost batch response after commit"); }
+      if (writes && loseBatchResponse) { loseBatchResponse = false; throw new Error("Lost batch response after commit"); }
       return results;
     },
     getLastBatchSize() { return lastBatchSize; },

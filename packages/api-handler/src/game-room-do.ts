@@ -20,7 +20,7 @@ import { equivalentGameStates, deterministicStateHash } from "../../game-engine/
 import { resolveToStability } from "../../game-engine/src/resolve";
 import { readSyncBody, SyncBodyError } from "./sync-body";
 import { LIVE_HISTORY, SHARED_OPERATIONS, commandFingerprint, isReconcileRequest, isSyncCommand, type SyncCommand, type CommandOutcome, type CommandReceipt } from "../../shared-types/src/sync-protocol";
-import { commandReceiptStatement, loadCommandReceipt, hasLegacyCommandEvidence } from "./sync-receipts";
+import { commandReceiptStatement, loadCommandReceipt, loadCommandEvidence } from "./sync-receipts";
 import type {
   ClientSocketMessage,
   EventAppendedEvent,
@@ -1419,13 +1419,14 @@ export class GameRoomDO {
     const outcome = (status: CommandOutcome["outcome"], reason: string | null, eventSeq = this.eventSeq, gameplayRevision = game.gameplayRevision): CommandOutcome => ({
       gameId: game.id, identityId: command.identityId, clientCommandId: command.clientCommandId, fingerprint: command.fingerprint, outcome: status, reason, eventSeq, gameplayRevision,
     });
-    const receipt = await loadCommandReceipt(this.env, game.id, command.clientCommandId);
+    const evidence = await loadCommandEvidence(this.env, game.id, command.clientCommandId);
+    const receipt = evidence.receipt;
     if (receipt) {
       onReceiptFound?.();
       return receipt.identityId === command.identityId && receipt.fingerprint === command.fingerprint ? receipt : outcome("rejected", "command_id_conflict");
     }
     if (authActive(this.env) && command.authContextId !== this.requestAuthority?.contextId) return outcome("unknown", "retired_session");
-    if (await hasLegacyCommandEvidence(this.env, game.id, command.clientCommandId)) return outcome("unknown", "legacy_evidence");
+    if (await evidence.hasLegacyEvidence()) return outcome("unknown", "legacy_evidence");
     const reject = async (reason: string) => {
       const rejected = outcome("rejected", reason, this.eventSeq + 1, this.game!.gameplayRevision) as CommandReceipt;
       await this.persistCandidate(clone(this.game!), null, rejected);

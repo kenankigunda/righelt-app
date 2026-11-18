@@ -10,6 +10,8 @@ export class GameRoomDO extends ActualGameRoom {
    delete(...args){return env.ARCHIVES.delete(...args);}
   } } : {}), DB: { prepare: (...args) => {const statement=env.DB.prepare(...args);queryText.set(statement,args[0]);const bind=statement.bind.bind(statement);statement.bind=(...values)=>{const bound=bind(...values);queryText.set(bound,args[0]);return bound;};return statement;}, batch: async (...args) => {
    lastBatchSize = args[0].length;
+   // Fault controls model uncertain writes, not successful read-only preflights.
+   if(args[0].every(statement=>String(queryText.get(statement)).trimStart().startsWith('SELECT '))) return env.DB.batch(...args);
    if(failOn && args[0].some(statement=>String(queryText.get(statement)).includes(failOn))) {failAt=0;failOn=null;}
    if(loseOn && args[0].some(statement=>String(queryText.get(statement)).includes(loseOn))) {lose=true;loseOn=null;}
    if (failAt !== null) {

@@ -91,6 +91,10 @@ test("archive, read-only history, receipt recovery and staged restore preserve p
       assert.equal(result.body.accepted,true,JSON.stringify(result));
       firstCommand??=command;
     }
+    // Both archived evidence kinds can exist for one ID. Receipt authority wins.
+    const legacyCommand={...firstCommand,clientCommandId:"v2:archived-legacy"};
+    legacyCommand.fingerprint=await commandFingerprint(legacyCommand);
+    for(const command of [firstCommand,legacyCommand])await h.db.prepare("INSERT INTO live_legacy_command_tombstones(game_id,client_command_id,evidence_json) VALUES('g',?1,'{}')").bind(command.clientCommandId).run();
     const before=await h.current(),invite=before.game.inviteTokens.viewer;
     await h.db.prepare("UPDATE live_games SET retention_activity_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-8 days') WHERE game_id='g'").run();
     // A deliberately small continuation allowance stops with a durable cursor.
@@ -108,11 +112,17 @@ test("archive, read-only history, receipt recovery and staged restore preserve p
     assert.equal((await h.db.prepare("SELECT game_id FROM live_invites WHERE token=?").bind(invite).first()).game_id,"g");
     for(let i=0;i<4;i++)await h.call("_storage/tick");
     assert.equal((await h.db.prepare("SELECT COUNT(*) n FROM live_command_receipts WHERE game_id='g'").first()).n,0);
+    assert.equal((await h.db.prepare("SELECT COUNT(*) n FROM live_legacy_command_tombstones WHERE game_id='g'").first()).n,0);
     const duplicate=await h.call("apply",firstCommand);
     assert.equal(duplicate.body.duplicate,true,JSON.stringify(duplicate));
     assert.equal(duplicate.body.game.moves.length,200);
     assert.deepEqual(duplicate.body.game.board,before.game.board);
     assert.equal((await h.db.prepare("SELECT status FROM game_archives WHERE game_id='g'").first()).status,"archived","duplicate receipt does not restore or replay");
+    const legacy=await h.call("apply",legacyCommand);
+    assert.equal(legacy.body.commandOutcomes[0].outcome,"unknown",JSON.stringify(legacy));
+    assert.equal(legacy.body.commandOutcomes[0].reason,"legacy_evidence");
+    assert.equal(await h.db.prepare("SELECT * FROM live_command_receipts WHERE client_command_id=?").bind(legacyCommand.clientCommandId).first(),null);
+    assert.equal((await h.db.prepare("SELECT status FROM game_archives WHERE game_id='g'").first()).status,"archived");
     const history=await h.call("history",{moveIndex:0});
     assert.equal(history.status,200,JSON.stringify(history));
     assert.equal(history.body.game.inHistoryMode,true);

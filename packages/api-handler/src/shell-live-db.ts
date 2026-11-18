@@ -40,6 +40,7 @@ const LIVE_EVENTS_TABLE = "live_events";
 
 export type D1RunResult = {
   success: boolean;
+  results?: unknown[];
   meta?: {
     last_row_id?: number;
     size_after?: number;
