@@ -55,6 +55,40 @@ export const buildDestroyedPieceOverlays = ({ destroyedPieceRecords, preActionSn
   });
 };
 
+// Causal records explain which move cut supply. Static pending treatment belongs
+// to the selected frame, including later moves and temporarily cut survivors.
+const moveStaticDestructionRecords = move => {
+  const frame = moveInspectionSnapshot(move);
+  const pieces = Array.isArray(frame?.pieces) ? frame.pieces : [];
+  const byId = new Map(pieces.filter(piece => typeof piece?.id === 'string').map(piece => [piece.id, piece]));
+  const validPosition = piece => Number.isSafeInteger(piece?.position?.row)
+    && Number.isSafeInteger(piece?.position?.col) && piece.position.row >= 0 && piece.position.col >= 0;
+  const supplied = piece => piece?.displaySupplied ?? piece?.supplied;
+  const records = new Map();
+  for (const record of settlementRemovalRecords(move)) {
+    const id = record.pieceId ?? record.piece?.id;
+    const current = byId.get(id);
+    // Explicit restoration wins over old causal evidence. Unknown legacy
+    // frames retain their recorded treatment instead of inventing status.
+    if (current?.kind === 'commander' || supplied(current) === true) continue;
+    const piece = current && validPosition(current) ? current : record.piece;
+    records.set(id ?? record.eventId ?? record, {
+      ...record, ...(piece ? {piece, position:piece.position} : {}),
+    });
+  }
+  for (const piece of pieces) {
+    if (typeof piece?.id !== 'string' || !piece.id || piece.kind !== 'unit'
+      || !validPosition(piece) || supplied(piece) !== false) continue;
+    records.set(piece.id, {pieceId:piece.id, piece, position:piece.position,
+      ownerSeat:piece.owner === 'P1' ? 'p1' : piece.owner === 'P2' ? 'p2' : null,
+      kind:piece.kind, removalPhase:'turn_settlement', reason:'loss_of_supply'});
+  }
+  return [...records.values()].map(record => record.piece ? {...record,
+    piece:{...record.piece, supplied:supplied(record.piece),
+      commanded:record.piece.displayCommanded ?? record.piece.commanded},
+  } : record);
+};
+
 
 /** One presentation contract for desktop history, inline mobile history and replay summaries. */
 const historyRoleOverlay = (actions, context) => {
@@ -75,7 +109,7 @@ const historyRoleOverlay = (actions, context) => {
 
 export const buildMovePreview = (move, {context} = {}) => {
   const animatedDestroyedPieces = buildDestroyedPieceOverlays({destroyedPieceRecords: immediateRemovalRecords(move), preActionSnapshot: move?.selectionSnapshot});
-  const staticDestroyedPieces = buildDestroyedPieceOverlays({destroyedPieceRecords: settlementRemovalRecords(move), preActionSnapshot: move?.selectionSnapshot});
+  const staticDestroyedPieces = buildDestroyedPieceOverlays({destroyedPieceRecords: moveStaticDestructionRecords(move), preActionSnapshot: moveInspectionSnapshot(move)});
   return {
     snapshot: moveInspectionSnapshot(move),
     overlay: {
