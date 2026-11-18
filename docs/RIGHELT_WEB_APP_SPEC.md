@@ -534,6 +534,8 @@ Approved intended behavior, including the November 1 supply/commander follow-up 
 - The later finite-prompt contract adopted in PR246 supersedes D18’s earlier 450/280ms Board overflow motion. Font and text-scale corrections measure the approved finite grammar before reveal. Extended content scrolls in Board context. Preserve native press targets and the Board anchor through refresh and responsive changes.
 - Keep the actual native action node through semantically unchanged updates. Verify pointer-down/update/pointer-up, touch, Enter/Space, focus, disabled/busy state, wrapped hit areas and nonoverlap in Chromium, Firefox and WebKit. Temporary admission fences preserve selection, preview and inspection phase. Complete legal-query results, not coarse subsets or timeouts, establish move availability. Provenance: [D01, D03, D18](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
 
+Completed decisive-turn Board headings keep only the winner phrase (for example, “Babs won”) in the saved winner’s color. The suffix “on Turn N” uses normal text color. Draw stays neutral. Keep the existing wording, bounded name treatment and completed review behavior. The Board message’s colored winner/count and commander phrases follow their separate narration contract.
+
 ### Undo consent
 
 - Undo applies directly in self-play and against a computer controlled by the same human. While its durable receipt is pending, do not show an undo request, acceptance message, or approval controls. Confirm completion as “Move undone”.
