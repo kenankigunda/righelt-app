@@ -1627,7 +1627,8 @@ test("board runtime uses concise action confirmation across input modes", async 
   );
   nonHover.getOnCellClick()?.({ row: 4, col: 2 });
   nonHover.getOnCellClick()?.({ row: 4, col: 3 });
-  assert.equal(nonHover.boardPreviewLabelEl.textContent.includes("Confirm"), true);
+  assert.equal(nonHover.boardPreviewLabelEl.textContent.includes("Confirm"), false);
+  assert.equal(nonHover.boardPreviewLabelEl.textContent.includes("Move commander to"), true);
 
   const hover = createRuntime({ supportsHover: true });
   hover.runtime.bindElements({
@@ -1650,7 +1651,8 @@ test("board runtime uses concise action confirmation across input modes", async 
   );
   hover.getOnCellClick()?.({ row: 4, col: 2 });
   hover.getOnCellHoverStart()?.({ row: 4, col: 3 });
-  assert.equal(hover.boardPreviewLabelEl.textContent.includes("Confirm"), true);
+  assert.equal(hover.boardPreviewLabelEl.textContent.includes("Confirm"), false);
+  assert.equal(hover.boardPreviewLabelEl.textContent.includes("Move commander to"), true);
   assert.equal(hover.boardPreviewLabelEl.textContent.includes("Click again to"), false);
 });
 
@@ -1763,7 +1765,8 @@ test("board runtime can force click target selection even on hover-capable devic
     source: { row: 4, col: 2 },
     target: { row: 4, col: 3 },
   });
-  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Confirm"), true);
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Confirm"), false);
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Move commander to"), true);
 
   onCellClick({ row: 4, col: 3 });
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -3010,11 +3013,13 @@ test("board runtime restores hover target selection when click target selection 
     source: { row: 4, col: 2 },
     target: { row: 4, col: 3 },
   });
-  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Confirm"), true);
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Confirm"), false);
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Move commander to"), true);
 
   forceClickTargetSelection = false;
   assert.equal(runtime.syncInteractionCapabilities(), true);
-  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Confirm"), true);
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Confirm"), false);
+  assert.equal(String(boardPreviewLabelEl.innerHTML).includes("Move commander to"), true);
 
   onCellHoverStart({ row: 5, col: 2 });
   assert.deepEqual(runtime.getSelection(), {

@@ -71,7 +71,7 @@ test('sizing grammar includes native recovery controls, obligations and actual c
  const models=boardPromptSizingModels({boardSize:1000}),html=models.map(m=>renderBoardMessageHtml(m,{sizing:true})).join('');
  for(const label of ['Cancel replay','Try again','Stop replay','End turn','Obligatory','Babs is saving their move','Horus needs a hand','999'])assert(html.includes(label));
  assert(!html.includes('Dismiss'));
- assert(html.includes('Confirm <strong>move commander to'));assert(!html.includes('data-board-message-action='));
+ assert(html.includes('<strong>Move commander to'));assert(!html.includes('Confirm')); assert(!html.includes('data-board-message-action='));
 });
 
 test('bounded context storage never evicts the current dismissed acknowledgment',()=>{

@@ -39,20 +39,20 @@
   },
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",
-    "sourceSha256": "e09bcc10c87849bf9abed7bc1f86bd396b6bd46a2a687aeec5a388c601408a42",
-    "outputSha256": "5d37876fa010ee59215e654afaa5ca9c2ce828d7b22c03fff15f61329aecb035",
+    "sourceSha256": "7b5266fbcfba79f8eb8647eaf61aaa729ac5b06f54d89c0e709eed38a4cab5a5",
+    "outputSha256": "10fd97cb199a62fb75225e319266878713f1845fec4d23aedaf27ef3afe98f8c",
     "operations": [
       {
-        "start": 26835,
-        "end": 26860,
+        "start": 26753,
+        "end": 26778,
         "before": "    boardAdapter.render({",
         "after": "    try{globalThis.__righeltRemovalTraceMark?.('board-commit-entry',{removalCount:removalEffects.length,actionable:canInteract&&!mutationSurface.unavailable});}catch{}\n    boardAdapter.render({",
         "anchor": "    boardAdapter.render({",
         "anchorCount": 1
       },
       {
-        "start": 27563,
-        "end": 27613,
+        "start": 27481,
+        "end": 27531,
         "before": "    });\n    lastRenderedCanInteract = canInteract;",
         "after": "    });\n    try{globalThis.__righeltRemovalTraceMark?.('board-commit-exit',{removalCount:removalEffects.length,actionable:canInteract&&!mutationSurface.unavailable});}catch{}\n    lastRenderedCanInteract = canInteract;",
         "anchor": "    });\n    lastRenderedCanInteract = canInteract;",
