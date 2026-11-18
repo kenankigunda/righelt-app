@@ -25,7 +25,7 @@ function armDestructionWitness({key,count,signatures=null}) {
  const finish=(message,result)=>{if(settled)return;settled=true;stop();witness.outcome=message?'failed':signatures?'advanced':'observed';if(message){witness.message=message;rejectProof(Error(message));}else resolveProof(result);};
  const inspect=source=>{
   if(settled)return;
-  const nodes=[...document.querySelectorAll('#shell-board .removal-piece')];
+  const nodes=[...document.querySelectorAll('#shell-board .removal-piece:not(.pending-removal-piece)')];
   if(!signatures){if(nodes.length===count)finish(null,{count});return;}
   const entries=nodes.map(node=>{
    const animation=node.getAnimations()[0],timing=animation?.effect?.getComputedTiming(),cell=node.closest('[data-row][data-col]');
@@ -84,7 +84,7 @@ const disposeNoRemovalCommitWitness=(page,key)=>page.evaluate(key=>window.noRemo
 function armHistorySelectionClaimWitness(key){
  const record={episodes:[],samples:[]};let visible=false;
  const inspect=source=>{
-  const count=document.querySelectorAll('#shell-board .removal-piece').length;
+  const count=document.querySelectorAll('#shell-board .removal-piece:not(.pending-removal-piece)').length;
   const pending=Boolean(document.querySelector('[data-history-selection-episode-pending="true"]'));
   record.samples.push({source,count,pending});
   if(count>0&&!visible)record.episodes.push({count,pending});
@@ -98,11 +98,28 @@ function armHistorySelectionClaimWitness(key){
 const readHistorySelectionClaimWitness=(page,key)=>page.evaluate(key=>structuredClone(window.historySelectionClaimWitnesses[key].record),key);
 const disposeHistorySelectionClaimWitness=(page,key)=>page.evaluate(key=>window.historySelectionClaimWitnesses[key].dispose(),key);
 
+function armSettlementRetentionWitness(){
+ const record={samples:[],expectedPieceIds:['U1-2','U1-3']},seenFlashing=new Set();let frameId,done=false,resolve,reject;
+ const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});promise.catch(()=>{});
+ const sample=()=>{
+  if(done)return;
+  const flashing=[...document.querySelectorAll('#shell-board .removal-piece:not(.pending-removal-piece)')];
+  const visible=record.expectedPieceIds.filter(id=>[...document.querySelectorAll('#shell-board [data-piece-id]')].some(node=>node.dataset.pieceId===id&&Number(getComputedStyle(node).opacity)>0));
+  const confirmedFlashIds=flashing.map(node=>node.dataset.pieceId);
+  for(const id of confirmedFlashIds)seenFlashing.add(id);
+  const entry={at:performance.now(),visible,confirmedFlashIds};record.samples.push(entry);
+  if(record.expectedPieceIds.some(id=>!seenFlashing.has(id)&&!visible.includes(id))){done=true;reject(Error('A pending turn-settlement piece disappeared before its confirmed flash: '+JSON.stringify(entry)));return;}
+  if(record.expectedPieceIds.every(id=>seenFlashing.has(id))){done=true;resolve(record);return;}
+  frameId=requestAnimationFrame(sample);
+ };
+ window.settlementRetentionWitness={record,promise,dispose:()=>{done=true;cancelAnimationFrame(frameId);}};sample();
+}
+
 for (const mobile of [false,true]) test(`turn-end losses animate once for player and viewer and persist in history (${mobile?'phone':'desktop'})`,async({createOwnedContext,baseURL},testInfo)=>{
  const owner=await createOwnedContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1100},hasTouch:mobile});
  const observer=await createOwnedContext({viewport:{width:1440,height:1100}});
  const page=await owner.newPage(), viewer=await observer.newPage();
- let retainedMotionWitness=null;
+ let retainedMotionWitness=null,retainedSettlementWitness=null;
  try{
   const {gameId,gameHash}=await importScenarioGame(page,scenario,baseURL);
   await switchGamePanel(page,'board');
@@ -115,11 +132,13 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
   // second client's delivery first can consume the owner's entire 2400ms cue.
   await page.bringToFront();
   await page.evaluate(armDestructionWitness,{key:'owner-motion',count:2,signatures:['6,4:Red unit','7,4:Red unit']});
+  await page.evaluate(armSettlementRetentionWitness);
   await viewer.evaluate(armDestructionWitness,{key:'viewer-count',count:2});
   await end.click();
   const effects=p=>p.locator('#shell-board .removal-piece');
-  const [motion]=await Promise.all([page.evaluate(()=>window.destructionMotionProof),observedCount(viewer,'viewer-count')]);
+  const [motion]=await Promise.all([page.evaluate(()=>window.destructionMotionProof),observedCount(viewer,'viewer-count'),page.evaluate(()=>window.settlementRetentionWitness.promise)]);
   retainedMotionWitness=motion.witness;
+  retainedSettlementWitness=await page.evaluate(()=>window.settlementRetentionWitness.record);
   expect(motion.first.map(sample=>sample.signature)).toEqual(['6,4:Red unit','7,4:Red unit']);
   expect(motion.next.map(sample=>sample.signature)).toEqual(motion.first.map(sample=>sample.signature));
   expect(motion.next.every((sample,index)=>sample.duration===2400&&sample.pieceId===motion.first[index].pieceId&&sample.nodeId===motion.first[index].nodeId&&sample.animationId===motion.first[index].animationId&&sample.nativeTime>motion.first[index].nativeTime&&sample.elapsed>motion.first[index].elapsed)).toBe(true);
@@ -154,6 +173,9 @@ for (const mobile of [false,true]) test(`turn-end losses animate once for player
    await page.screenshot({path:testInfo.outputPath('history-removals.png')});
   }
  }finally{
+  await page.evaluate(()=>window.settlementRetentionWitness?.dispose()).catch(()=>{});
+  const retention=retainedSettlementWitness??await page.evaluate(()=>window.settlementRetentionWitness?.record??null).catch(error=>({readError:String(error)}));
+  fs.writeFileSync(testInfo.outputPath('settlement-retention-frames.json'),JSON.stringify(retention,null,2));
   await Promise.all([page,viewer].map(p=>disposeDestructionWitnesses(p).catch(()=>{})));
   const witness=retainedMotionWitness??await page.evaluate(()=>window.destructionMotionWitness??null).catch(error=>({readError:String(error)}));
   await testInfo.attach('destruction-motion-witness',{body:JSON.stringify(witness,null,2),contentType:'application/json'});
