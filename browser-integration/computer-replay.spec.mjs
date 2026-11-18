@@ -7,7 +7,7 @@ const rect=locator=>locator.evaluate(el=>{const r=el.getBoundingClientRect();ret
 const expectRect=(actual,expected)=>{for(const key of ['left','top','width','height'])expect(Math.abs(actual[key]-expected[key]),key).toBeLessThanOrEqual(1);};
 test.use({viewport:{width:390,height:844},video:'on'});
 
-for(const owner of [{name:'manual replay',automatic:false,reducedMotion:'reduce'},{name:'automatic confirmed replay',automatic:true,reducedMotion:'reduce'}])test(`${owner.name} preserves foundation paint, occludes live pieces, and blocks live clicks`,async({page})=>{
+for(const owner of [{name:'manual replay',automatic:false,reducedMotion:'reduce'},{name:'automatic confirmed replay',automatic:true,reducedMotion:'no-preference'}])test(`${owner.name} preserves foundation paint, occludes live pieces, and blocks live clicks`,async({page})=>{
   await page.emulateMedia({reducedMotion:owner.reducedMotion});
   await open(page,{automatic:owner.automatic});
   await page.evaluate(()=>{
@@ -126,4 +126,22 @@ test('reduced motion uses static manual steps and returns to unchanged live pres
   for(let i=0;i<3;i++)await page.getByRole('button',{name:'Next',exact:true}).click();
   await expect(page.locator('.computer-replay')).toHaveCount(0);
   expect(await page.evaluate(()=>window.replayFixture.unchanged&&window.replayFixture.writes===0&&window.replayFixture.activeAdapters===1)).toBe(true);
+});
+
+
+test('reduced-motion automatic replay completes without a transient-layer observation wait',async({page})=>{
+  await page.emulateMedia({reducedMotion:'reduce'});await open(page,{automatic:true});
+  await page.evaluate(()=>window.replayFixture.start());
+  const observed=await page.evaluate(()=>({
+    playing:window.replayFixture.controller.snapshot().playing,
+    timers:window.replayFixture.timers.size,motions:window.replayFixture.motions.length,
+  }));
+  expect(observed).toEqual({playing:false,timers:0,motions:0});
+  await page.evaluate(()=>window.replayFixture.settled());
+  await expect(page.locator('.computer-replay')).toHaveCount(0);
+  await expect(page.locator('#status')).toHaveText('Live');
+  expect(await page.evaluate(()=>({playing:window.replayFixture.controller.snapshot().playing,
+    unchanged:window.replayFixture.unchanged,timers:window.replayFixture.timers.size,
+    adapters:window.replayFixture.activeAdapters,writes:window.replayFixture.writes})))
+    .toEqual({playing:false,unchanged:true,timers:0,adapters:1,writes:0});
 });
