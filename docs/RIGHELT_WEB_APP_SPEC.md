@@ -590,6 +590,8 @@ Pagination uses Ghost arrows at every width, quiet hover and visible focus. Both
 
 ### Game start identity and participant marks
 
+Visible Home, Game summary and result matchups retain Player 1 (red), then Player 2 (blue) order. Identify the saved human owner as You even when that places You second; browser document-title ordering remains separately governed.
+
 Home cards and in-app Game titles use a transparent etched-orbit month/day inlay sourced only from the game's immutable `createdAt`. Never derive it from activity timestamps, gameplay revision or game ID, and do not backfill retained records. Visible month and day use the viewer's locale. The accessible label includes the localized start date and time plus one of seven viewer-local dayparts. Keep a fixed 3rem × 3.5rem top-aligned slot and matching loading silhouette so later data and longer names do not move the surrounding layout. Completed-game result copy and decisive-turn preview remain intact.
 
 Account, guest and computer participant marks use stable multicolor Tessera keyed respectively by canonical username, identity ID and computer profile. They are decorative and nonfocusable, and remain stable across display-name changes, seat assignment, current turn and temporary control. Visible names and accessible affiliation remain authoritative. Browser document titles and favicon/action-dot behavior are separately governed and unchanged. Provenance: [D20](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).

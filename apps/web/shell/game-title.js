@@ -16,10 +16,10 @@ export function gameTitleModel(game,{identityId}={}){
   const participant={...seats[0],shortenable:!seats[0].computer&&!genericLabels.has(seats[0].label)};
   return{kind:'watched-self',seats,text:`${participant.label} plays both sides`,participant};
  }
- const ordered=matchup.kind==='player'
-  ? [seats.find(seat=>seat.side===matchup.ownSide),seats.find(seat=>seat.side!==matchup.ownSide)]
-  : seats;
- if(matchup.kind==='player'){ordered[0]={...ordered[0],label:'You',owned:true};}
+ // Visible matchups keep saved role order even when the owning viewer is Blue.
+ const ordered=seats.map(seat=>matchup.kind==='player'&&seat.side===matchup.ownSide
+  ? {...seat,label:'You',owned:true}
+  : seat);
  const qualifiers=viewerAliasQualifiers(ordered.map(seat=>({...seat,name:seat.label})));
  for(let index=0;index<ordered.length;index++)ordered[index]={...ordered[index],qualifier:qualifiers[ordered[index].side]??null,shortenable:!ordered[index].computer&&!genericLabels.has(ordered[index].label)};
  return{kind:matchup.kind,seats:ordered,text:ordered.map(withQualifier).join(' vs. ')};
