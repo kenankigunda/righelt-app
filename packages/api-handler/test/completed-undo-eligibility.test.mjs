@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {GameRoomDO} from '../src/game-room-do.ts';
+import {createInitialGame,applyRevertToMove,completedUndoTargetEligible} from '../src/shell-live-core.ts';
 import {createFakeD1} from './support/fake-d1.mjs';
 import {commander,makeState,unit} from '../../game-engine/test/helpers/state-builders.mjs';
 import {resolveToStability} from '../../game-engine/src/resolve.ts';
@@ -86,4 +87,22 @@ test('completed Undo rejects an ongoing-labelled target that current rules immed
   const response=await h.call('revert-request',{targetMoveId:'selected-target',requestId:'current-rules'});
   assert.equal(response.ok,false,'An ongoing label does not establish playable restoration');
   assert.deepEqual(h.game(),before);
+});
+
+for(const kind of ['playable','terminal','malformed','missing'])test(`completed archived-only ${kind} target uses the same eligibility without altering source evidence`,()=>{
+ const game=createInitialGame({gameId:'archived-completed',identityId:'owner',selfPlayMode:true});
+ const selectionSnapshot=structuredClone(game.board.state);
+ if(kind==='terminal')selectionSnapshot.outcome={status:'p1_win',reason:'p2_commander_destroyed'};
+ const target={moveId:'archived-only',index:80,displayMoveNumber:81,turnIndex:4,turnMoveIndex:0,actorSide:'P1',at:game.createdAt,notation:'Pass',action:{type:'pass'},selectionSnapshot,snapshot:structuredClone(selectionSnapshot),destroyedPieces:[]};
+ if(kind==='malformed')target.selectionSnapshot={outcome:{status:'ongoing'}};
+ if(kind==='missing')delete target.selectionSnapshot;
+ game.board.state.outcome={status:'p2_win',reason:'p1_commander_destroyed'};
+ assert.equal(game.moves.length,0,'selected target exists only in the retained archive');
+ const before=structuredClone(game),original=structuredClone(target);
+ assert.equal(completedUndoTargetEligible(game,target.moveId,target),kind==='playable');
+ assert.deepEqual(game,before,'offer probe preserves original game');assert.deepEqual(target,original);
+ const restored=applyRevertToMove(game,target.moveId,'owner',target);
+ assert.equal(restored.ok,kind==='playable');assert.deepEqual(target,original,'accepted or refused restoration cannot rewrite archive evidence');
+ if(kind==='playable'){assert.equal(game.board.state.outcome.status,'ongoing');assert.equal(game.lastRestoration.decisionId,target.moveId);}
+ else assert.deepEqual(game,before,'refusal preserves the original terminal game');
 });
