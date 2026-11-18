@@ -7,6 +7,7 @@ import { COMPUTER_CAPABILITIES, COMPUTER_TIMING, createComputerControl, changeCo
 import { createInitialState } from '../generated/packages/game-engine/src/state.js';
 
 function fixture({analysisRuntime, canAnalyze = true, timers = {setInterval(){return 1;},clearInterval(){}}, onChange = () => {}} = {}) {
+  let contextReads = 0;
   let now = 100, visible = true, authenticated = true, unresolved = false, generation = 1, submitted = 0, computed = 0, blocked = false, pending;
   const cancelEvents=[];
   let progress;
@@ -18,8 +19,8 @@ function fixture({analysisRuntime, canAnalyze = true, timers = {setInterval(){re
     applyGameAction: async () => { submitted++; return { committed: Promise.resolve() }; },
   };
   const runtime = { compute: async (_, onProgress) => new Promise((resolve, reject) => { computed++; progress = onProgress; pending = { resolve, reject }; }), cancel: (reason,options) => { cancelEvents.push({reason,options}); pending?.reject(Error('cancelled')); pending = null; } };
-  const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: analysisRuntime ?? runtime, clock: () => now, timers, onChange, getContext: () => ({ game: unresolved ? null : game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }) });
-  return { session, controls, cancelEvents, relogin: () => {generation++;authContextId=`session-${generation}`;transport={...transport};}, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { unresolved=false; game = { ...game, id: 'other-game' }; }, advanceRevision:()=>{game={...game,gameplayRevision:game.gameplayRevision+1};}, unresolvedGame: () => { unresolved=true; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, show: () => {visible = true;}, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelEvents.length };
+  const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: analysisRuntime ?? runtime, clock: () => now, timers, onChange, getContext: () => { contextReads++; return { game: unresolved ? null : game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }; } });
+  return { session, controls, contextReads:()=>contextReads, cancelEvents, relogin: () => {generation++;authContextId=`session-${generation}`;transport={...transport};}, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { unresolved=false; game = { ...game, id: 'other-game' }; }, advanceRevision:()=>{game={...game,gameplayRevision:game.gameplayRevision+1};}, unresolvedGame: () => { unresolved=true; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, show: () => {visible = true;}, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelEvents.length };
 }
 
 test('successful acquisition wakes once without an interval tick and concurrent gate observers cannot duplicate work',async t=>{
@@ -686,6 +687,27 @@ function phaseDeadlineFixture() {
  const f=fixture({timers,onChange:()=>changes++});
  return {...f, deadlines, changes:()=>changes, fire(){const [id,entry]=[...deadlines][0];deadlines.delete(id);entry.callback();}};
 }
+
+test('snapshot shares its presentation context but preserves the ongoing lease authority read', t => {
+ const f=fixture();t.after(()=>f.session.destroy());
+ let reads=f.contextReads();const initial=f.session.snapshot();
+ assert.equal(f.contextReads()-reads,2,'one presentation context and one fresh lease authority check');
+ assert.equal(initial.phase,'idle');
+ f.unresolvedGame();reads=f.contextReads();const absent=f.session.snapshot();
+ assert.equal(f.contextReads()-reads,1,'an unresolved game has no lease check or duplicate presentation read');
+ assert.equal(absent.phase,'idle');
+ f.switchGame();reads=f.contextReads();f.session.snapshot();
+ assert.equal(f.contextReads()-reads,2,'the next snapshot reads the new current game instead of caching the prior context');
+});
+
+for(const change of ['changeAccount','changeTransport','hide']) test(`snapshot phase scheduling uses the fresh context after ${change}`,async t=>{
+ const f=phaseDeadlineFixture();t.after(()=>f.session.destroy());await f.session.tick();const work=f.session.tick();f.progress({phase:'checking'});
+ assert.equal(f.deadlines.size,1);f[change]();const reads=f.contextReads();const state=f.session.snapshot();
+ assert.equal(f.contextReads()-reads,2,'presentation reuse preserves the separate authority read');
+ assert.equal(f.deadlines.size,0,'the new snapshot immediately retires the old phase deadline');
+ if(change!=='hide')assert.equal(state.phase,'idle','the previous owner status is not exposed in a replacement scope');
+ if(f.pending())f.pending().resolve({result:{status:'ready',action:{type:'pass'}}});await work;
+});
 
 test('phase label deadline refreshes once at 500ms without a progress update or the five-second tick', async t => {
  const f=phaseDeadlineFixture();t.after(()=>f.session.destroy());await f.session.tick();const work=f.session.tick();
