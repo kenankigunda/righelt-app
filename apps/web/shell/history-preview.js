@@ -1,6 +1,7 @@
 import {visibleRecordedMoves} from './recorded-narration.js';
 import { getTurnOwnerSideForState } from '../generated/packages/shared-types/src/shell-live-turn.js';
 import { immediateRemovalRecords, moveInspectionSnapshot, settlementRemovalRecords, turnInspectionRemovalRecords } from './destruction-presentation.js';
+import {pendingSupplyLossPieces} from '../board/recorded-pending-pieces.js';
 
 const sameCoordinate = (left, right) => Boolean(left && right && left.row === right.row && left.col === right.col);
 
@@ -76,9 +77,7 @@ const moveStaticDestructionRecords = move => {
       ...record, ...(piece ? {piece, position:piece.position} : {}),
     });
   }
-  for (const piece of pieces) {
-    if (typeof piece?.id !== 'string' || !piece.id || piece.kind !== 'unit'
-      || !validPosition(piece) || supplied(piece) !== false) continue;
+  for (const piece of pendingSupplyLossPieces(frame)) {
     records.set(piece.id, {pieceId:piece.id, piece, position:piece.position,
       ownerSeat:piece.owner === 'P1' ? 'p1' : piece.owner === 'P2' ? 'p2' : null,
       kind:piece.kind, removalPhase:'turn_settlement', reason:'loss_of_supply'});

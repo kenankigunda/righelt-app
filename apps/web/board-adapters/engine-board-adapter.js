@@ -3,6 +3,7 @@ import {CONNECTION_STYLE,connectionStroke} from '../board/connection-styles.js';
 import { rushActionKey } from '../board/rush-supply-guidance.js';
 import { REMOVAL_EFFECT_DURATION_MS, REMOVAL_FLASH_COUNT } from "../board/removal-timing.js";
 import {createSequenceStatusProjector} from '../board/sequence-status-preview.js';
+import {pendingSupplyLossPieces} from '../board/recorded-pending-pieces.js';
 import { createBoardEventLabels } from "../board/event-label-controller.js";
 import { getPieceRenderStatus, getSelectedPieceExplanation } from "../board/piece-explanations.js";
 export { getPieceRenderStatus } from "../board/piece-explanations.js";
@@ -1190,14 +1191,19 @@ export function createEngineBoardAdapter() {
       };
       const isLiveInteractiveBoard = !["recorded-action", "recorded-turn"].includes(overlay?.mode);
       const sequenceProjection=isLiveInteractiveBoard?projectSequenceStatus(snapshot):null;
+      const recordedPendingPieceIds=effectiveInteractionMode==='static' && Array.isArray(overlay?.recordedPendingPieceIds)
+        ? new Set(overlay.recordedPendingPieceIds) : null;
+      const historyPendingPieceIds=overlay?.mode==='recorded-action' && overlay?.presentationContext==='history'
+        ? new Set(pendingSupplyLossPieces(snapshot).map(piece=>piece.id)) : null;
       const buildLivePieceToken=piece=>{
         const token=buildPieceToken(displayPiece(piece,sequenceProjection));
-        if(sequenceProjection?.destroyedPieceIds.has(piece.id)){
+        if(recordedPendingPieceIds?.has(piece.id) || sequenceProjection?.destroyedPieceIds.has(piece.id)){
           // Keep the real token and its cell available for legal sequence
           // actions. This is a forecast, never a removal event or overlay.
           token.classList.add('projected-destruction-piece');
           token.setAttribute('aria-label',`${piece.owner==='P1'?'Red':'Blue'} ${piece.kind}, will be destroyed if the turn ends now`);
         }
+        if(historyPendingPieceIds?.has(piece.id))token.setAttribute('aria-label',`${token.getAttribute('aria-label')}, pending destruction at turn end`);
         if (pendingRecordingPieceIds?.has?.(piece.id)) {
           token.classList.add('pending-recording-piece');
           token.setAttribute('aria-label', `${token.getAttribute('aria-label')}, recording move`);

@@ -8,6 +8,7 @@ import {completedTurnTitle,isCompletedWinningTurn} from './completed-review.js';
 import {completedOutcomeNarration} from './completion-narration.js';
 import {BOARD_MESSAGE_STRENGTH,isMeaningfulHistoryMessage,resolveBoardMessageOwner} from '../board/message-priority.js';
 import {moveInspectionSnapshot,withCausalDestructionPresentation} from './destruction-presentation.js';
+import {describePendingSupplyLoss} from '../board/recorded-pending-pieces.js';
 
 export const HISTORY_HIT_TARGET_CONTRACT='move-button-v1';
 
@@ -27,7 +28,8 @@ export function selectedHistoryPresentation(game,options={}){
  const move=selectedHistoricalRecord(game);
  const number=recordedMoveNumber(move),side=recordedActorSide(move),identity=actorIdentity(game,move,side,options),name=identity.text;
  const narration=describeRecordedMove(move,name,{owned:ownedActor(game,move,options)});
- return {record:move,caption:{text:number==null?'Move unavailable':`Move ${number}`,side},message:{text:narration??'Historical move details unavailable',actorName:name,actorToneSide:side,actorAccessibleName:identity.accessibleName,coordinates:recordedNarrationCoordinates(move?[move]:[])},messageStrength:narration?BOARD_MESSAGE_STRENGTH.SEMANTIC:BOARD_MESSAGE_STRENGTH.PLACEHOLDER};
+ const accessibleDescription=describePendingSupplyLoss(moveInspectionSnapshot(move));
+ return {record:move,caption:{text:number==null?'Move unavailable':`Move ${number}`,side},message:{text:narration??'Historical move details unavailable',actorName:name,actorToneSide:side,actorAccessibleName:identity.accessibleName,coordinates:recordedNarrationCoordinates(move?[move]:[]),...(accessibleDescription?{accessibleDescription}:{})},messageStrength:narration?BOARD_MESSAGE_STRENGTH.SEMANTIC:BOARD_MESSAGE_STRENGTH.PLACEHOLDER};
 }
 
 export function selectedHistoricalRecord(game){

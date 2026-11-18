@@ -62,10 +62,12 @@ const renderActorRest = (rest,coordinates,actorName,side,accessibleName) => {
   return copy+renderCopy(rest.slice(cursor),coordinates);
 };
 export function renderBoardMessageHtml(message, {sizing = false} = {}) {
-  if (message.rows) return message.rows.map(row => `<span class="board-message-row">${renderBoardMessageHtml(row,{sizing})}</span>`).join('');
+  const accessibleDescription=!sizing && typeof message.accessibleDescription==='string' && message.accessibleDescription
+    ? `<span class="sr-only"> ${escape(message.accessibleDescription)}</span>` : '';
+  if (message.rows) return message.rows.map(row => `<span class="board-message-row">${renderBoardMessageHtml(row,{sizing})}</span>`).join('')+accessibleDescription;
   if(message.confirmation){
     const confirmation=`${message.text?`${escape(message.text)} `:''}<strong>${escape(message.confirmation.text)} ${renderCoordinateChip(message.confirmation.point,message.confirmation.pointClass)}</strong>`;
-    return confirmation+(message.after?` ${renderCopy(message.after,message.coordinates)}`:'')+renderGuidanceDisclosure(message,{sizing});
+    return confirmation+(message.after?` ${renderCopy(message.after,message.coordinates)}`:'')+renderGuidanceDisclosure(message,{sizing})+accessibleDescription;
   }
   const {text,actorName,rest,actions}=boardMessagePresentation(message);
   const parts=Array.isArray(message.parts)&&message.parts.every(part=>part&&typeof part.text==='string')
@@ -74,7 +76,7 @@ export function renderBoardMessageHtml(message, {sizing = false} = {}) {
     :actorName?`${renderActorName(actorName,message.actorToneSide,message.actorAccessibleName)}${renderActorRest(rest,message.coordinates,actorName,message.actorToneSide,message.actorAccessibleName)}`:renderCopy(text,message.coordinates);
   const {inline,detached}=partitionMessageActions(actions);
   const sentence=copy+(message.badge?` <span class="board-obligatory-pill"${boardPromptPattern(message)?` data-board-prompt-pattern="${DETACHED_REQUIRED_RETRY}"`:""}>${escape(message.badge)}</span>`:'')+inline.map(action=>` ${renderBoardInlineAction(action,{sizing})}`).join('');
-  return sentence+renderGuidanceDisclosure(message,{sizing})+(detached.length?`<span class="board-message-actions">${detached.map(action=>renderBoardInlineAction(action,{sizing})).join(' ')}</span>`:'');
+  return sentence+renderGuidanceDisclosure(message,{sizing})+(detached.length?`<span class="board-message-actions">${detached.map(action=>renderBoardInlineAction(action,{sizing})).join(' ')}</span>`:'')+accessibleDescription;
 }
 
 const renderGuidanceDisclosure = (message,{sizing}) => {

@@ -1258,6 +1258,35 @@ test('stacked push tokens expose their own piece identities for visual replay',a
   });
 });
 
+test('recorded static pending presentation survives without live continuation and does not leak into live input',async()=>{
+ await withFakeDocument(()=>{
+  const {adapter,boardEl}=createMountedAdapter();
+  const snapshot={sideToMove:'P1',turnIndex:38,continuation:null,outcome:{status:'ongoing'},pieces:[{id:'A',owner:'P2',kind:'unit',position:{row:2,col:7},supplied:false,commanded:false}]};
+  const render=(ids,interactionMode)=>adapter.render({snapshot,selection:{selectedPieceId:null,source:null,target:null},overlay:{mode:'none',recordedPendingPieceIds:ids},legalActions:[],selectedPieceMoves:[],interactionMode});
+  render(['A'],'static');let token=getCell(boardEl,2,7).querySelector('.piece-token');
+  assert.equal(token.classList.contains('projected-destruction-piece'),true);
+  assert.match(token.getAttribute('aria-label'),/will be destroyed if the turn ends now/);
+  render([],'static');token=getCell(boardEl,2,7).querySelector('.piece-token');assert.equal(token.classList.contains('projected-destruction-piece'),false);
+  render(['A'],'interactive');token=getCell(boardEl,2,7).querySelector('.piece-token');assert.equal(token.classList.contains('projected-destruction-piece'),false);
+  adapter.unmount();
+ });
+});
+
+test('History piece and cell names expose pending supply loss without labelling restored, finalized or live pieces',async()=>{
+ await withFakeDocument(()=>{
+  const {adapter,boardEl}=createMountedAdapter();
+  for(const [mode,displaySupplied,pending] of [['recorded-action',false,true],['recorded-action',true,false],['recorded-turn',false,false],['interactive',false,false]]){
+   const snapshot={sideToMove:'P1',turnIndex:38,continuation:null,outcome:{status:'ongoing'},pieces:[{id:'A',owner:'P2',kind:'unit',position:{row:2,col:7},supplied:true,displaySupplied,commanded:true}]},before=structuredClone(snapshot);
+   adapter.render({snapshot,selection:{selectedPieceId:null,source:null,target:null},overlay:{mode,presentationContext:'history'},legalActions:[],selectedPieceMoves:[],interactionMode:'interactive'});
+   const cell=getCell(boardEl,2,7),name='Blue unit'+(pending?', pending destruction at turn end':'');
+   assert.equal(cell.querySelector('.piece-token').getAttribute('aria-label'),name);
+   assert.equal(cell.getAttribute('aria-label'),name+' at (2, 7)');
+   assert.deepEqual(snapshot,before);
+  }
+  adapter.unmount();
+ });
+});
+
 test('combined explicit inspection keeps overlapping supply and command strokes separately visible',async()=>{
   await withFakeDocument(()=>{
     const {adapter,overlayLinesEl}=createMountedAdapter();const path=[{row:3,col:3},{row:3,col:4}];
