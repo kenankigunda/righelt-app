@@ -1341,7 +1341,7 @@ const toSavedSelectionFromMove = (move: MoveEntry) => {
   } satisfies ScenarioSavedSelection;
 };
 
-export const applyRevertToMove = (game: LiveGame, targetMoveId: string, requesterIdentityId: string, archivedTarget?: MoveEntry) => {
+const restoreRecordedTarget = (game: LiveGame, targetMoveId: string, requesterIdentityId: string, archivedTarget?: MoveEntry) => {
   const targetIndex = game.moves.findIndex((move) => move.moveId === targetMoveId);
   if (targetIndex < 0 && !archivedTarget) {
     return { ok: false as const, error: "move_not_found" };
@@ -1372,6 +1372,36 @@ export const applyRevertToMove = (game: LiveGame, targetMoveId: string, requeste
   game.updatedAt = revertedAt;
   addNotification(game, "Undo applied");
   return { ok: true as const, targetMove };
+};
+
+/** Probe only the selected completed-game target. Use the same restoration and
+ * accepted-ending semantics as the mutation, exclusively on private copies. */
+export const completedUndoTargetEligible = (game: LiveGame, targetMoveId: string, archivedTarget?: MoveEntry): boolean => {
+  if (!isTerminalOutcome(game.board.state.outcome.status)) return true;
+  const target = game.moves.find(move => move.moveId === targetMoveId) ?? archivedTarget;
+  if (!target || target.moveId !== targetMoveId || target.undone === true || target.importedFrom) return false;
+  const state = target.selectionSnapshot;
+  if (!state || !Array.isArray(state.pieces) || !["P1", "P2"].includes(state.sideToMove)
+    || !Number.isSafeInteger(state.turnIndex) || state.outcome?.status !== "ongoing") return false;
+  try {
+    const candidate = clone(game);
+    const restored = restoreRecordedTarget(candidate, targetMoveId, "eligibility-probe", clone(target));
+    if (!restored.ok) return false;
+    applyAcceptedRestorationAutomaticEnding(candidate, {
+      clientCommandId: "eligibility-probe", eventSeq: 0, gameplayRevision: game.gameplayRevision + 1,
+    });
+    return candidate.board.state.outcome.status === "ongoing" && listLegalActions(candidate.board.state).length > 0;
+  } catch {
+    // Legacy or incomplete evidence must not grant a completed-game mutation.
+    return false;
+  }
+};
+
+export const applyRevertToMove = (game: LiveGame, targetMoveId: string, requesterIdentityId: string, archivedTarget?: MoveEntry) => {
+  if (!completedUndoTargetEligible(game, targetMoveId, archivedTarget)) {
+    return { ok: false as const, error: "undo_target_not_playable" };
+  }
+  return restoreRecordedTarget(game, targetMoveId, requesterIdentityId, archivedTarget);
 };
 
 type AcceptedGameplayResult = {
