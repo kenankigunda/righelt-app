@@ -1637,6 +1637,8 @@ export const createSyncStore = ({
       const read=transport.selectHistoryMove({gameId,moveIndex,moveId});
       return createReadSettlementHandle({id,gameId,read,pendingResult:transport.getGameViewModel(gameId)});
     },
+    captureHistoryView: options => transport.captureHistoryView(options),
+    restoreHistoryView: options => transport.restoreHistoryView(options),
     returnToLive: ({ gameId }) => operationManager.createCommitted({
       id: `live:${gameId}:${Date.now()}`, gameId,
       result: transport.returnToLive({ gameId }),

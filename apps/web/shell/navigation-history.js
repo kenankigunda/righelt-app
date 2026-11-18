@@ -9,7 +9,7 @@ export function createNavigationHistory({ history, getHash, capture, id = () => 
   const replace = () => history.replaceState({ ...history.state, [key]: current }, '');
   const remember = (overrides = {}) => {
     if (getHash() !== current.hash) return false;
-    current = { ...current, view: { ...capture(), ...overrides } };
+    current = { ...current, view: { ...capture(current.id), ...overrides } };
     visits.set(current.id, current);
     return true;
   };
@@ -27,6 +27,10 @@ export function createNavigationHistory({ history, getHash, capture, id = () => 
     observePop(state) {
       const visit = state?.[key];
       if (visit && visit.id !== current.id) {
+        // URL already points at the destination, but the departing UI still
+        // owns this visit. Remember it without replacing destination state.
+        current = { ...current, view: { ...capture(current.id) } };
+        visits.set(current.id, current);
         traversal = visits.get(visit.id) ?? visit;
         return visit.hash === current.hash;
       }

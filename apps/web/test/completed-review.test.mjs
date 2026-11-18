@@ -76,3 +76,12 @@ test('completed review preserves same-visit inspection but resets a fresh route 
  await owner.sync(earlier,2);assert.equal(calls.length,2,'fresh route entry selects the decisive turn again');
  assert.deepEqual(calls.at(-1),{gameId:'g',turnIndex:4});
 });
+
+test('native traversal adopts restored earlier completed History but a fresh entry selects the decisive turn',async()=>{
+ const calls=[],transport={selectHistoryTurn:value=>{calls.push(value);return Promise.resolve({...game(),inHistoryMode:true,historyTurnIndex:value.turnIndex});}};
+ const owner=createCompletedReviewOwner({getTransport:()=>transport});
+ const earlier={...game(),inHistoryMode:true,historyTurnIndex:2};
+ await owner.sync(earlier,1,{preserveSelection:true});await owner.sync(earlier,1);
+ assert.deepEqual(calls,[]);
+ await owner.sync(earlier,2);assert.deepEqual(calls,[{gameId:'g',turnIndex:4}]);
+});

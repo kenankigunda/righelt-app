@@ -237,6 +237,7 @@ export const createLiveTransportStore = ({
   const journalRecoveryByOwner = new WeakMap();
   const uncertainSharedAdmissions = new WeakMap();
   const historyIntentByGameId = new Map();
+  const historyCheckpointByIntent = new WeakMap(), historyCheckpointData = new WeakMap(), liveHistoryCheckpoints = new Map();
   const historyCache = new Map();
   const historyRequests = new Map();
   const historyReadQueue = [];
@@ -2341,6 +2342,27 @@ export const createLiveTransportStore = ({
     return getGameViewModel(gameId);
   };
 
+  const captureHistoryView = ({ gameId }) => {
+    if (!active) return null;
+    const intent = historyIntentByGameId.get(gameId);
+    const prior = intent ? historyCheckpointByIntent.get(intent) : liveHistoryCheckpoints.get(gameId);
+    if (prior) return prior;
+    const checkpoint = Object.freeze({});
+    historyCheckpointData.set(checkpoint, { gameId, intent: clone(intent ?? { moveId: null }) });
+    if (intent) historyCheckpointByIntent.set(intent, checkpoint);
+    else liveHistoryCheckpoints.set(gameId, checkpoint);
+    return checkpoint;
+  };
+  const restoreHistoryView = ({ gameId, checkpoint }) => {
+    const saved = checkpoint && historyCheckpointData.get(checkpoint);
+    if (!active || !saved || saved.gameId !== gameId) return false;
+    retireHistoryLoad(gameId);
+    historyIntentByGameId.set(gameId, clone(saved.intent));
+    recalculateOptimisticGame(gameId);
+    emitChange({ type: "history_mode_changed", gameId });
+    return true;
+  };
+
   const returnToLive = ({ gameId }) => {
     retireHistoryLoad(gameId);
     historyIntentByGameId.set(gameId, { moveId: null });
@@ -2631,6 +2653,8 @@ export const createLiveTransportStore = ({
     selectHistoryMove,
     selectHistoryTurn,
     loadTurnMoves,
+    captureHistoryView,
+    restoreHistoryView,
     returnToLive,
     requestRevertToMove,
     approveRevertRequest,
@@ -2676,7 +2700,7 @@ export const createLiveTransportStore = ({
       globalThis.document?.removeEventListener?.("visibilitychange", onRulesVisibility);
       globalThis.window?.removeEventListener?.("pagehide", onRulesPageHide);
       globalThis.window?.removeEventListener?.("pageshow", onRulesPageShow);
-      historyLoads.clear();historyCache.clear();
+      historyLoads.clear();historyCache.clear();liveHistoryCheckpoints.clear();
       completedReviewPreviewByKey.clear();
       for(const waiter of sharedWaiters.values())waiter.reject(Object.assign(new Error("session_changed"),{code:"session_changed"}));
       sharedWaiters.clear();

@@ -57,3 +57,18 @@ test('Back between two visits with the same URL signals restoration without hash
   assert.deepEqual(visits.arrive().restore, { y: 80 });
   assert.equal(visits.observePop(first), false);
 });
+
+test('native traversal captures the departing selection without replacing destination browser state',()=>{
+ let hash='#/game/a',selection='old',nextId=0;
+ const history={state:null,replaceState(state){this.state=structuredClone(state);}};
+ const visits=createNavigationHistory({history,getHash:()=>hash,capture:visitId=>({selection,visitId}),id:()=>String(++nextId)});
+ visits.save();const first=structuredClone(history.state);
+ hash='#/';history.state=null;visits.arrive();visits.save();const home=structuredClone(history.state);
+ hash='#/game/a';history.state=null;visits.arrive();selection='live';
+ hash='#/';history.state=home;visits.observePop(home);
+ assert.deepEqual(history.state,home,'pop never overwrites the destination entry');visits.arrive();
+ hash='#/game/a';history.state=first;visits.observePop(first);assert.equal(visits.arrive().restore.selection,'old');
+ // The newer game entry was not explicitly saved after its selection changed.
+ const newer={righeltVisit:{id:'3',index:2,hash:'#/game/a',view:null}};
+ history.state=newer;visits.observePop(newer);assert.equal(visits.arrive().restore.selection,'live');
+});
