@@ -64,7 +64,7 @@ const renderActorRest = (rest,coordinates,actorName,side,accessibleName) => {
 export function renderBoardMessageHtml(message, {sizing = false} = {}) {
   if (message.rows) return message.rows.map(row => `<span class="board-message-row">${renderBoardMessageHtml(row,{sizing})}</span>`).join('');
   if(message.confirmation){
-    const confirmation=`${escape(message.text??'Confirm')} <strong>${escape(message.confirmation.text)} ${renderCoordinateChip(message.confirmation.point,message.confirmation.pointClass)}</strong>`;
+    const confirmation=`${message.text?`${escape(message.text)} `:''}<strong>${escape(message.confirmation.text)} ${renderCoordinateChip(message.confirmation.point,message.confirmation.pointClass)}</strong>`;
     return confirmation+(message.after?` ${renderCopy(message.after,message.coordinates)}`:'')+renderGuidanceDisclosure(message,{sizing});
   }
   const {text,actorName,rest,actions}=boardMessagePresentation(message);

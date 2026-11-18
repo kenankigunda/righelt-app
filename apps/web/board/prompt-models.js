@@ -27,7 +27,7 @@ export function boardPromptSizingModels({boardSize=10}={}) {
   {text:'Preparing replay',action:{id:'replay-cancel',label:'Cancel replay'}},
   {text:'Watch replay',action:{id:'replay-stop',label:'Stop replay'}},
   {text:'Next',actions:[{id:'replay-next',label:'Next'},{id:'replay-stop',label:'Stop replay'}]},
-  ...['continue rush on','continue push on','move commander to','project new piece to','rush piece to','push piece onto','follow piece to','retreat piece to','move to'].map(text=>({text:'Confirm',confirmation:{text,point}})),
+  ...['Continue rush on','Continue push on','Move commander to','Project new piece to','Rush piece to','Push piece onto','Follow piece to','Retreat piece to','Move to'].map(text=>({confirmation:{text,point}})),
   ...['Select a retreat','Opponent’s supply and command lines','Supply and command lines','Command lines','Supply lines','No command connection','No supply connection','No connection','Waiting for the game','Waiting for your opponent','Loading play','Play could not finish loading'].map(text=>({text})),
  ];
  for(const name of new Set(['Computer',...Object.values(COMPUTER_PROFILES).map(profile=>profile.name)])){

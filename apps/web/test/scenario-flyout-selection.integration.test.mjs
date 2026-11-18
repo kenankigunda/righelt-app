@@ -220,7 +220,8 @@ test("integration shell rerender switches a mounted board into click target sele
     source: SOURCE,
     target: TARGET_A,
   });
-  assert.equal(String(harness.boardPreviewLabelEl.innerHTML).includes("Confirm"), true);
+  assert.equal(String(harness.boardPreviewLabelEl.innerHTML).includes("Confirm"), false);
+  assert.equal(String(harness.boardPreviewLabelEl.innerHTML).includes("Move commander to"), true);
 
   harness.currentRoute.scenarios = true;
   const rerenderResult = await harness.rerenderMountedBoard();
@@ -245,7 +246,8 @@ test("integration shell rerender switches a mounted board into click target sele
     source: SOURCE,
     target: TARGET_A,
   });
-  assert.equal(String(harness.boardPreviewLabelEl.innerHTML).includes("Confirm"), true);
+  assert.equal(String(harness.boardPreviewLabelEl.innerHTML).includes("Confirm"), false);
+  assert.equal(String(harness.boardPreviewLabelEl.innerHTML).includes("Move commander to"), true);
 });
 
 test("integration shell rerender restores hover target selection when scenarios close on a mounted board", async () => {
@@ -271,5 +273,6 @@ test("integration shell rerender restores hover target selection when scenarios 
     source: SOURCE,
     target: TARGET_B,
   });
-  assert.equal(String(harness.boardPreviewLabelEl.innerHTML).includes("Confirm"), true);
+  assert.equal(String(harness.boardPreviewLabelEl.innerHTML).includes("Confirm"), false);
+  assert.equal(String(harness.boardPreviewLabelEl.innerHTML).includes("Move commander to"), true);
 });

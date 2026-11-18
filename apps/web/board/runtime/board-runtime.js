@@ -398,26 +398,26 @@ export function createBoardRuntime({
   const actionPreviewLabel = (actionType, snapshot, destination) => {
     const suffix = destination ? ` (${destination.row},${destination.col})` : "";
     if (snapshot?.continuation?.type === "rush" && actionType === "rush") {
-      return `continue rush on${suffix}`;
+      return `Continue rush on${suffix}`;
     }
     if (snapshot?.continuation?.type === "push" && actionType === "follow") {
-      return `continue push on${suffix}`;
+      return `Continue push on${suffix}`;
     }
     switch (actionType) {
       case "move":
-        return `move commander to${suffix}`;
+        return `Move commander to${suffix}`;
       case "project":
-        return `project new piece to${suffix}`;
+        return `Project new piece to${suffix}`;
       case "rush":
-        return `rush piece to${suffix}`;
+        return `Rush piece to${suffix}`;
       case "push":
-        return `push piece onto${suffix}`;
+        return `Push piece onto${suffix}`;
       case "follow":
-        return `follow piece to${suffix}`;
+        return `Follow piece to${suffix}`;
       case "retreat":
-        return `retreat piece to${suffix}`;
+        return `Retreat piece to${suffix}`;
       default:
-        return `move to${suffix}`;
+        return `Move to${suffix}`;
     }
   };
 
@@ -538,15 +538,14 @@ export function createBoardRuntime({
     if (!elements.boardPreviewLabelEl) {
       return;
     }
-    const clickInstruction = "Confirm";
     const coordinateMatch = text.match(/\(\d+,\d+\)$/);
     if (!coordinateMatch || !selectedTarget) {
-      setBoardPreviewPromptHtml(`${clickInstruction} <strong>${escapeHtml(text)}</strong>`);
+      setBoardPreviewPromptHtml(`<strong>${escapeHtml(text)}</strong>`);
       return;
     }
 
     const labelWithoutCoordinate = text.slice(0, coordinateMatch.index).trimEnd();
-    const message={text:clickInstruction,confirmation:{text:labelWithoutCoordinate,point:selectedTarget,pointClass:getBoardPreviewCoordinateChipClass(selectedTarget)}};
+    const message={confirmation:{text:labelWithoutCoordinate,point:selectedTarget,pointClass:getBoardPreviewCoordinateChipClass(selectedTarget)}};
     if(state?.continuation?.type==='rush'&&!hasInspection()){
       const action=selectedPieceMoves.find(value=>value.type==='rush'&&sameCoordinate(value.to,selectedTarget));
       const entry=action&&rushGuidance?.actions.find(value=>rushActionKey(value.action)===rushActionKey(action));

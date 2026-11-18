@@ -119,7 +119,7 @@ test('a success-publication exception is attributed to presentation rather than 
  await baseline.runtime.loadSnapshot(state,{legalActions:legal});await flush();baseline.complete();await flush();
  assert.equal(f.html,baseline.html,'observation must preserve the original selected confirmation after publication fails');
  assert.equal(f.contextHtml,baseline.contextHtml,'observation preserves the current finite Board context');
- assert.deepEqual(f.runtime.getSelection(),baseline.runtime.getSelection());assert.match(f.html,/Confirm/);
+ assert.deepEqual(f.runtime.getSelection(),baseline.runtime.getSelection());assert.match(f.html,/<strong>Continue rush on /);assert.match(f.html,/board-preview-coordinate-chip/);assert.doesNotMatch(f.html,/Confirm/);
  assert.deepEqual(f.runtime.getLegalActions(),legal);f.runtime.destroy();baseline.runtime.destroy();
 });
 
