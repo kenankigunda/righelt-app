@@ -24,7 +24,7 @@ async function setup({audioState='running',muted=false,motionPreference=null}={}
  const host=createShellBoardHost({gameId:'g',canInteract:()=>true,getGameView:()=>view,transport:{getGameViewModel:()=>view,getAuthoritativeGame:()=>baseline,applyGameAction:async()=>({accepted:true,state:real.after,removedPieces:real.records})}});
  const runtime=createBoardRuntime({host,motionPreference,boardAdapter:{mount(){},unmount(){unmounted=true;},render(payload){assert.equal(unmounted,false,'retirement never renders an unmounted adapter');events.push({kind:'render',time:now,effects:structuredClone(payload.removalEffects)});},getSelectedPieceSummary:()=>null}});
  runtime.bindElements({boardEl:{},overlayLinesEl:{}});await runtime.loadSnapshot(real.before,{legalActions:[real.action]});
- const owner=createConfirmedRemovalPresentation({getScope:()=> 'account1:g',eligible:()=>visible,present:effects=>runtime.showRemovalEffects(effects,real.before),pending:effects=>runtime.setPendingRemovalEffects(effects,real.before),clear:()=>runtime.clearRemovalEffects(),consume:(game,options)=>sound.presentedRemovals(game,{...options,silent:true}),cue:(game,options)=>sound.presentedRemovals(game,options),cancelSound:sound.cancelDestruction});
+ const owner=createConfirmedRemovalPresentation({getScope:()=> 'account1:g',eligible:()=>visible,present:(effects,options)=>runtime.showRemovalEffects(effects,real.before,options),pending:effects=>runtime.setPendingRemovalEffects(effects,real.before),clear:()=>runtime.clearRemovalEffects(),consume:(game,options)=>sound.presentedRemovals(game,{...options,silent:true}),cue:(game,options)=>sound.presentedRemovals(game,options),cancelSound:sound.cancelDestruction});
  const baseline={id:'g',moves:[],board:{state:real.before}};owner.update(baseline);
  return{real,runtime,owner,events,sources,sound,audio,baseline,host,setTime:t=>now=t,setEligible:value=>visible=value,setView:value=>view=value,async dispose(){owner.dispose();const old=Object.getOwnPropertyDescriptor(globalThis,'document');try{Object.defineProperty(globalThis,'document',{configurable:true,value:{removeEventListener(){}}});runtime.destroy();}finally{if(old)Object.defineProperty(globalThis,'document',old);else delete globalThis.document;}}};
 }
@@ -39,6 +39,27 @@ test('actual engine to shell pending result stays static and silent, then confir
   f.setTime(527);await f.runtime.loadSnapshot(f.real.after,{legalActions:[]});f.owner.update(accepted,{sequence:2});
   const crack=f.events.findIndex(event=>event.kind==='crack');assert(crack>0);assert.equal(f.events[crack].time,527);assert.equal(f.events[crack-1].kind,'render');assert.equal(f.events[crack-1].time,527);assert(f.events[crack-1].effects.some(effect=>effect.pieceId==='C2'&&!effect.pending));
   f.owner.update(accepted,{sequence:3});assert.equal(f.events.filter(event=>event.kind==='crack').length,1);assert.equal(JSON.stringify(f.baseline),before);
+ }finally{await f.dispose();}
+});
+
+for(const additionalPending of [false,true])test('confirmation replaces pending and confirmed effects in one Board commit'+(additionalPending?' while retaining another pending command':''),async()=>{
+ const f=await setup();try{
+  const pending={id:'g',currentSnapshot:f.real.after,pendingMoves:[{clientCommandId:'accepted-operation',destroyedPieces:f.real.records}],legalActions:[],currentTurn:{playerSeat:'Player 1'}};
+  f.setView(pending);await f.runtime.submitCurrentAction(f.real.action);f.owner.update(f.baseline,{view:pending});
+  // submitCurrentAction already published the accepted snapshot. The live
+  // authoritative subscriber refreshes admission without reloading it.
+  f.runtime.refreshStatus();
+  const accepted={id:'g',moves:[{clientCommandId:'accepted-operation',destroyedPieces:f.real.records}],board:{state:f.real.after}};
+  const otherPiece=f.real.after.pieces.find(piece=>piece.id==='B1');assert(otherPiece);
+  const other={eventId:'later:B1',pieceId:'B1',piece:otherPiece,position:otherPiece.position,reason:'loss_of_supply'};
+  const view={...accepted,currentSnapshot:f.real.after,pendingMoves:additionalPending?[{clientCommandId:'later',destroyedPieces:[other]}]:[]};
+  const start=f.events.length;f.setTime(527);f.owner.update(accepted,{view,sequence:2});
+  const events=f.events.slice(start),renders=events.filter(event=>event.kind==='render');
+  assert.equal(renders.length,1,'pending retirement and confirmed flash publish atomically');
+  assert.deepEqual(renders[0].effects.filter(effect=>effect.pending).map(effect=>effect.pieceId),additionalPending?['B1']:[]);
+  assert(renders[0].effects.some(effect=>effect.pieceId==='C2'&&!effect.pending));
+  assert.equal(events.filter(event=>event.kind==='crack').length,1);
+  assert.equal(events.findIndex(event=>event.kind==='render')<events.findIndex(event=>event.kind==='crack'),true);
  }finally{await f.dispose();}
 });
 
@@ -104,11 +125,11 @@ test('pending turn settlement from the real projector preserves both lost-supply
  const host=createShellBoardHost({gameId:'settlement',transport:{getGameViewModel:()=>settlement.game,getAuthoritativeGame:()=>acknowledged}});
  assert.deepEqual(host.getPendingRemovalEffects().map(record=>record.pieceId),['U1-2','U1-3']);
  const pending=[],presented=[],cues=[];
- const owner=createConfirmedRemovalPresentation({getScope:game=>game.id,eligible:()=>true,present:effects=>presented.push(effects),pending:effects=>pending.push(effects),clear(){},consume(){},cue:()=>cues.push('crack'),cancelSound(){}});
+ const owner=createConfirmedRemovalPresentation({getScope:game=>game.id,eligible:()=>true,present:(effects,options)=>presented.push({effects,pendingEffects:options.pendingEffects}),pending:effects=>pending.push(effects),clear(){},consume(){},cue:()=>cues.push('crack'),cancelSound(){}});
  owner.update(acknowledged);owner.update(acknowledged,{view:settlement.game});
  assert.deepEqual(pending.at(-1).map(record=>record.pieceId),['U1-2','U1-3']);assert.equal(presented.length,0);assert.equal(cues.length,0);
  const accepted={...settlement.game,pendingCommandCount:0};owner.update(accepted,{sequence:2});
- assert.deepEqual(pending.at(-1),[]);assert.equal(presented.length,1);assert.deepEqual(presented[0].map(record=>record.pieceId),['U1-2','U1-3']);assert.equal(cues.length,1);
+ assert.equal(presented.length,1);assert.deepEqual(presented[0].pendingEffects,[]);assert.deepEqual(presented[0].effects.map(record=>record.pieceId),['U1-2','U1-3']);assert.equal(cues.length,1);
  owner.update(accepted,{sequence:3});assert.equal(presented.length,1);assert.equal(cues.length,1);assert.equal(JSON.stringify(acknowledged),before);owner.dispose();
 });
 

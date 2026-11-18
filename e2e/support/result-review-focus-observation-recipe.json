@@ -1,8 +1,8 @@
 {
   "version": 1,
   "modulePath": "/shell/app.js",
-  "sourceSha256": "1d02f753990cf91217d60b3ceb23f7b1a8e2fbd0f036c64be35b513d99442e32",
-  "outputSha256": "b7b20c01b6172767f0441b0b6a7fc1afa5785435dd546e28092f121953705d80",
+  "sourceSha256": "65e4ffa7bebdf7d3c6b87458323c67b6fe9a02e868617ad8b7bc7525a322fb02",
+  "outputSha256": "ecee8ef3b4d604220c1ee6c001fa373c0a3305af0589654d3c8487f36f673b2f",
   "prefix": "const __righeltResultReviewFocusProbe = (kind, refs = {}) => { try { globalThis.__RIGHELT_RESULT_REVIEW_FOCUS_PROBE__?.(kind, refs); } catch {} };\n",
   "operations": [
     {
@@ -42,8 +42,8 @@
     },
     {
       "label": "explicit-analysis",
-      "start": 253420,
-      "end": 253551,
+      "start": 253438,
+      "end": 253569,
       "before": "if (action === \"analysis\") { confirmedResultOwner.review(actionGameId);completedReviewEntryGeneration++;resultPresentation.clear();",
       "after": "if (action === \"analysis\") { __righeltResultReviewFocusProbe(\"analysis-entry\"); confirmedResultOwner.review(actionGameId);completedReviewEntryGeneration++;resultPresentation.clear();"
     }

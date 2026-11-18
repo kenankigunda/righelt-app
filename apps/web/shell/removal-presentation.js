@@ -27,11 +27,11 @@ export function createConfirmedRemovalPresentation({getScope,eligible,present,pe
    // Retire live sound/pending state without erasing that settled surface.
    if(transition.clear&&!history||frozen||!authoritative)clear();
    if(transition.clear||blocked)cancelSound();
-   pending(blocked?[]:getPendingRemovalEffects(view,game));
-   if(blocked||reset||changed||baseline||!transition.effects.length){consume(game,{sequence});return;}
+   const pendingEffects=blocked?[]:getPendingRemovalEffects(view,game);
+   if(blocked||reset||changed||baseline||!transition.effects.length){pending(pendingEffects);consume(game,{sequence});return;}
    const own=scope;
    const current=()=>!disposed&&scope===own&&getScope(game)===own&&eligible(game)&&isCurrent(game);
-   const committed=commitRemovalOnset({isCurrent:current,visual:()=>present(transition.effects),cue:()=>cue(game,{sequence})});
+   const committed=commitRemovalOnset({isCurrent:current,visual:()=>present(transition.effects,{pendingEffects}),cue:()=>cue(game,{sequence})});
    if(!committed){clear();cancelSound();consume(game,{sequence});}
   },
   retire,

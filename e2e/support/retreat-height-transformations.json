@@ -25,7 +25,7 @@
   },
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",
-    "sourceSha256": "7b5266fbcfba79f8eb8647eaf61aaa729ac5b06f54d89c0e709eed38a4cab5a5",
+    "sourceSha256": "4f1f4f1889daae65c7332a4cfd86e7e467daa19216553ed5898bde3ca19d4919",
     "prefix": "const __retreatHeightProbe=(event,data,owner)=>{try{const sink=globalThis.__retreatHeightRecord;if(typeof sink==='function')sink(event,typeof data==='function'?data():data,owner);}catch{}};\nconst __retreatHeightValue=(event,value,data=null,owner=null)=>{__retreatHeightProbe(event,data??(()=>({value})),owner);return value;};\n",
     "operations": [
       {
@@ -53,23 +53,23 @@
         "anchorCount": 1
       },
       {
-        "start": 71512,
-        "end": 71567,
+        "start": 71782,
+        "end": 71837,
         "before": "  const handleBoardCellHoverStart = (hoveredCoord) => {",
         "after": "  const handleBoardCellHoverStart = (hoveredCoord) => {\n    __retreatHeightProbe('runtime-hover-start',()=>({coord:hoveredCoord}));",
         "anchor": "  const handleBoardCellHoverStart = (hoveredCoord) => {",
         "anchorCount": 1
       },
       {
-        "start": 71912,
-        "end": 71965,
+        "start": 72182,
+        "end": 72235,
         "before": "  const handleBoardCellHoverEnd = (hoveredCoord) => {",
         "after": "  const handleBoardCellHoverEnd = (hoveredCoord) => {\n    __retreatHeightProbe('runtime-hover-end',()=>({coord:hoveredCoord}));",
         "anchor": "  const handleBoardCellHoverEnd = (hoveredCoord) => {",
         "anchorCount": 1
       }
     ],
-    "outputSha256": "3e72cd7016573b97c792c377fab3850483f610ec39afe0a411fffc70726983ce"
+    "outputSha256": "f8c0b0f9bc7c1b58f7f567f857c91b9a86ec355beca9b941ad9b76b057113deb"
   },
   "/board/message-height.js": {
     "file": "apps/web/board/message-height.js",

@@ -4108,7 +4108,7 @@ removalPresentation=createConfirmedRemovalPresentation({
   getScope:game=>`${viewingScope()}:${game?.id??''}`,
   eligible:game=>routeHydrated&&mountedBoardGameId===game?.id&&getCurrentViewedGameId()===game?.id&&!document.hidden&&document.hasFocus()&&liveBoardVisible()&&!confirmedPlayback?.snapshot().playing&&!replayController?.snapshot().playing&&!currentRoute.scenarios,
   isCurrent:game=>{const current=transport.getAuthoritativeGame(game?.id);return Boolean(current&&current.gameplayRevision===game.gameplayRevision&&activeRemovalHead(current)===activeRemovalHead(game));},
-  present:effects=>boardRuntime?.showRemovalEffects(effects,null),
+  present:(effects,options)=>boardRuntime?.showRemovalEffects(effects,null,options),
   pending:effects=>boardRuntime?.setPendingRemovalEffects(effects),
   clear:()=>boardRuntime?.clearRemovalEffects(),
   consume:(game,options)=>gameSound.presentedRemovals(game,{...options,silent:true}),
