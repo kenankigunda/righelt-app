@@ -1,9 +1,9 @@
 {
   "/shell/app.js": {
     "file": "apps/web/shell/app.js",
-    "rawSourceSha256": "1d02f753990cf91217d60b3ceb23f7b1a8e2fbd0f036c64be35b513d99442e32",
-    "sourceSha256": "8941f30fd64293a40ae47a9b04b47ca0f2e2e63ba5a194c7179c223629f52cfa",
-    "outputSha256": "8d49784234175e9a51084e466e3b4682ae042995cd715ff6ccb22954e9d60f5d",
+    "rawSourceSha256": "65e4ffa7bebdf7d3c6b87458323c67b6fe9a02e868617ad8b7bc7525a322fb02",
+    "sourceSha256": "b325f5e67c43057f3885f9dc9c2c1d5f11ec111223053931650e5978513e2250",
+    "outputSha256": "56ae724803a241a0e9042f556aa6943826c38356dc6279d61ce207cdadfa078b",
     "prefix": "",
     "operations": [
       {
@@ -18,14 +18,14 @@
   },
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",
-    "rawSourceSha256": "7b5266fbcfba79f8eb8647eaf61aaa729ac5b06f54d89c0e709eed38a4cab5a5",
-    "sourceSha256": "8ac7aa782f7c4eeb69c602c4479c0c945707e761f1c2f9190379a6235ef380c4",
-    "outputSha256": "fb74430b0d3ffb04b6d5a10dc03c5392e4548db4159b422c9884449b3152e190",
+    "rawSourceSha256": "4f1f4f1889daae65c7332a4cfd86e7e467daa19216553ed5898bde3ca19d4919",
+    "sourceSha256": "6bccbedf6470d4d351ec94354796a8a91eaefe3a07d94bebde3813f27bad7ed8",
+    "outputSha256": "5587a4bfb6a85c3101d58f82faba7314d2c53cd5cf2af6ec3679671c440d14dc",
     "prefix": "",
     "operations": [
       {
-        "start": 83020,
-        "end": 83255,
+        "start": 83290,
+        "end": 83525,
         "before": "    elements = {\n      boardEl: nextElements.boardEl,\n      overlayLinesEl: nextElements.overlayLinesEl,\n      boardPreviewLabelEl: nextElements.boardPreviewLabelEl,\n      boardTurnIndicatorEl: nextElements.boardTurnIndicatorEl,\n    };",
         "after": "    elements = {\n      boardEl: nextElements.boardEl,\n      overlayLinesEl: nextElements.overlayLinesEl,\n      boardPreviewLabelEl: nextElements.boardPreviewLabelEl,\n      boardTurnIndicatorEl: nextElements.boardTurnIndicatorEl,\n    };\n    try { globalThis.__retreatClientSettlement?.bind(host.canInteract, elements.boardEl); } catch { try { globalThis.__retreatClientSettlement?.invalidate(); } catch {} }",
         "anchor": "    elements = {\n      boardEl: nextElements.boardEl,\n      overlayLinesEl: nextElements.overlayLinesEl,\n      boardPreviewLabelEl: nextElements.boardPreviewLabelEl,\n      boardTurnIndicatorEl: nextElements.boardTurnIndicatorEl,\n    };",

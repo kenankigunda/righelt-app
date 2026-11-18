@@ -1195,14 +1195,17 @@ export function createBoardRuntime({
     if (motionPreference?.matches) settleConfirmedRemovalEffects();
   };
 
+  const normalizePendingRemovalEffects = (effects, previousState) => (effects ?? []).filter(effect => !effect.eventId || !playedRemovalEvents.has(effect.eventId)).map(effect => ({...effect,pending:true,piece:effect.piece ?? previousState?.pieces?.find(piece => piece.id === effect.pieceId) ?? null}));
+
   const setPendingRemovalEffects = (effects, previousState = state) => {
-    const nextPendingRemovalEffects = (effects ?? []).filter(effect => !effect.eventId || !playedRemovalEvents.has(effect.eventId)).map(effect => ({...effect,pending:true,piece:effect.piece ?? previousState?.pieces?.find(piece => piece.id === effect.pieceId) ?? null}));
+    const nextPendingRemovalEffects = normalizePendingRemovalEffects(effects,previousState);
     if (!pendingRemovalEffects.length && !nextPendingRemovalEffects.length) return;
     pendingRemovalEffects = nextPendingRemovalEffects;
     renderBoard();
   };
 
-  const showRemovalEffects = (effects, previousState, { onComplete = null } = {}) => {
+  const showRemovalEffects = (effects, previousState, { onComplete = null, pendingEffects = null } = {}) => {
+    if(pendingEffects!==null)pendingRemovalEffects=normalizePendingRemovalEffects(pendingEffects,previousState ?? state);
     const startedAt = Date.now();
     const ids = new Set((effects ?? []).map(effect => effect.eventId).filter(Boolean));
     pendingRemovalEffects = pendingRemovalEffects.filter(effect => !effect.eventId || !ids.has(effect.eventId));
