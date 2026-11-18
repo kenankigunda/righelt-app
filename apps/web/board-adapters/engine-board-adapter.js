@@ -1190,9 +1190,11 @@ export function createEngineBoardAdapter() {
       };
       const isLiveInteractiveBoard = !["recorded-action", "recorded-turn"].includes(overlay?.mode);
       const sequenceProjection=isLiveInteractiveBoard?projectSequenceStatus(snapshot):null;
+      const recordedPendingPieceIds=effectiveInteractionMode==='static' && Array.isArray(overlay?.recordedPendingPieceIds)
+        ? new Set(overlay.recordedPendingPieceIds) : null;
       const buildLivePieceToken=piece=>{
         const token=buildPieceToken(displayPiece(piece,sequenceProjection));
-        if(sequenceProjection?.destroyedPieceIds.has(piece.id)){
+        if(recordedPendingPieceIds?.has(piece.id) || sequenceProjection?.destroyedPieceIds.has(piece.id)){
           // Keep the real token and its cell available for legal sequence
           // actions. This is a forecast, never a removal event or overlay.
           token.classList.add('projected-destruction-piece');

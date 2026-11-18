@@ -57,6 +57,31 @@ function fixture({manual=true,throwRender=false,withTokens=false,baseTransform='
   return {replay,rootEl,doc,handlers,events,renders,timers,motions,ghosts,displayed,get destroyed(){return destroyed;},tick(){const [id,timer]=timers.entries().next().value;timers.delete(id);timer.fn();}};
 }
 
+test('recorded replay keeps final pre-settlement supply loss pending without a live continuation',async()=>{
+ const piece={id:'A',kind:'unit',owner:'P2',position:{row:4,col:3},supplied:false,commanded:false};
+ const after={...state(4),continuation:null,outcome:{status:'ongoing'},pieces:[piece]};
+ const input={gameId:'game',frames:[{before:state(3),after,settledAfter:{...after,pieces:[]},action:{type:'rush'}}]};
+ const original=structuredClone(input),f=fixture();await f.replay.play(input);
+ const pending=f.renders.find(render=>render.snapshot.pieces.some(p=>p.id==='A'&&p.position.row===4));
+ assert.deepEqual(pending.overlay.recordedPendingPieceIds,['A']);
+ assert.equal(f.renders.at(-1).snapshot.pieces.length,0);
+ assert.equal(f.renders.at(-1).overlay.recordedPendingPieceIds?.includes('A')??false,false);
+ assert.deepEqual(input,original);f.replay.destroy();
+});
+
+test('recorded closing frames use effective supply for restoration and re-cut without guessing commander losses',async()=>{
+ const expected=[['A'],[],['A']];
+ for(const [index,displaySupplied] of [false,true,false].entries()){
+  const pieces=[{id:'A',kind:'unit',owner:'P2',position:{row:4,col:3},supplied:true,displaySupplied},
+    {id:'C',kind:'commander',owner:'P2',position:{row:0,col:0},supplied:false},
+    {id:'unknown',kind:'unit',owner:'P2',position:{row:0,col:1}}];
+  const after={continuation:null,pieces},f=fixture();
+  await f.replay.play({frames:[{before:{pieces:[]},after,settledAfter:{pieces:[]},action:{type:'rush'}}]});
+  const rendered=f.renders.find(render=>render.snapshot.pieces.some(p=>p.id==='A'));
+  assert.deepEqual(rendered.overlay.recordedPendingPieceIds,expected[index]);f.replay.destroy();
+ }
+});
+
 test('reduced motion advances manually and owns no gameplay interfaces',async()=>{
   const f=fixture(); const input=payload(),original=structuredClone(input);
   await f.replay.play(input);

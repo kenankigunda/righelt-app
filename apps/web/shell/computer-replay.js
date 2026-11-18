@@ -72,14 +72,23 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
     notify(); onFinish({reason});
   };
   const findToken = piece => Array.from(layer.querySelectorAll?.(".piece-token[data-piece-id]") ?? []).find(token => token.getAttribute("data-piece-id") === piece.id && !token.classList.contains("ghost"));
-  const render = (state, key, frame = null) => preview.update({snapshot: state, previewKey: key, overlay: {mode: 'none'}});
+  const render = (state, key, frame = null) => preview.update({snapshot: state, previewKey: key, overlay: {
+    mode: 'none',
+    // Recorded closing actions can retain a pre-settlement inspection after
+    // the live continuation has ended. Keep its known supply losses pending
+    // until the separately recorded settlement frame, without forecasting it.
+    ...(frame?.settledAfter && state !== frame.settledAfter && !state.continuation ? {
+      recordedPendingPieceIds:(state.pieces ?? []).filter(piece => piece.kind === 'unit'
+        && (piece.displaySupplied ?? piece.supplied) === false).map(piece => piece.id),
+    } : {}),
+  }});
   const showFrame = (displayFrame = null) => {
     if (!replay || index < 0) return false;
     clearMotion();
     const frame = displayFrame ?? replay.frames[index];
     // Capture source geometry while before-state tokens are still mounted.
     const sources = new Map((frame.before.pieces ?? []).map(piece => [piece.id, {piece, token: findToken(piece), rect: findToken(piece)?.getBoundingClientRect?.()}]));
-    render(frame.after, `${generation}:${index}:after`);
+    render(frame.after, `${generation}:${index}:after`, frame);
     const manual = reducedMotion();
     for (const piece of frame.after.pieces ?? []) {
       const source = sources.get(piece.id), token = findToken(piece);
