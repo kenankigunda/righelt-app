@@ -1,3 +1,4 @@
+import {createGameVisitViewingOwner} from '../shell/game-visit-viewing.js';
 import {createDestinationRouteOwner,destinationReadScope,destinationLiveGameId} from '../shell/destination-route-owner.js';
 import {createDestinationRecovery} from '../shell/destination-recovery.js';
 import {createNavigationHistory} from '../shell/navigation-history.js';
@@ -172,6 +173,7 @@ async function fixture(t,{journalAdapter,seed=true,authEnabled=true}={}) {
   });
   browser.history={state:null,replaceState(state,_title,hash){this.state=state;if(hash!==undefined)location.hash=hash;}};
   context.navigationHistory=createNavigationHistory({history:browser.history,getHash:()=>location.hash,capture:()=>({y:0,generation}),id:()=>String(++frameId)});
+  context.gameVisitViewingOwner=createGameVisitViewingOwner(()=>({getTransport:()=>context.transport,getScope:()=>context.account.snapshot().generation,getViewGeneration:()=>0}));
   script.runInContext(context);
   const h=context.home;
   h.seed({my:section('My games','my-cached'),completed:section('Your completed games','completed-cached'),other:section('Other games','other-cached'),smoke:section('Deploy smoke player','smoke-cached')});

@@ -1,3 +1,4 @@
+import {createGameVisitViewingOwner} from '../shell/game-visit-viewing.js';
 import {createDestinationRouteOwner,destinationReadScope,destinationLiveGameId} from '../shell/destination-route-owner.js';
 import {createDestinationRecovery} from '../shell/destination-recovery.js';
 import {createNavigationHistory} from '../shell/navigation-history.js';
@@ -67,6 +68,7 @@ function fixture({staleInvite=false}={}) {
 
   });
   context.navigationHistory=createNavigationHistory({history:context.window.history,getHash:()=>context.window.location.hash,capture:()=>({y:0,generation}),id:()=>String(Math.random())});
+  context.gameVisitViewingOwner=createGameVisitViewingOwner(()=>({getTransport:()=>context.transport,getScope:()=>context.account.snapshot().generation,getViewGeneration:()=>0}));
   const api=new vm.Script(`
     let inviteLoadState=null,resolvedInvite=${staleInvite?"{gameId:'stale-game'}":'null'},routeSyncRequestId=0,routeHydrated=false;
     let hostInvite=null,inviteVisit=0,activeResultGameId=null,pendingResultReviewFocus=null,completedReviewEntryGeneration=0,routeTransition=null,pendingRoutePosition=null,homeSectionsHydrated=false,destinationLoadPresentation=null,flyoutRenderOrder=[];
