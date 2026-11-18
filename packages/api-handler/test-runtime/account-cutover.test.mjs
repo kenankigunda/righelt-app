@@ -22,8 +22,13 @@ test(
         contents: `import {handleApiRequest,GameRoomDO as Base} from './packages/api-handler/src/index.ts';
 export class GameRoomDO extends Base {
  constructor(state,env){
-  let pause=false,activate=false,archiveId=null;
-  super(state,{...env,DB:{prepare:(...args)=>env.DB.prepare(...args),batch:async statements=>{
+  let pause=false,activate=false,archiveId=null;const queries=new WeakMap();
+  super(state,{...env,DB:{prepare:(...args)=>{
+   const statement=env.DB.prepare(...args);queries.set(statement,args[0]);const bind=statement.bind.bind(statement);
+   statement.bind=(...values)=>{const bound=bind(...values);queries.set(bound,args[0]);return bound;};return statement;
+  },batch:async statements=>{
+   // Commit-race controls must not fire during independent read preflights.
+   if(statements.every(statement=>String(queries.get(statement)).trimStart().startsWith('SELECT ')))return env.DB.batch(statements);
    if(activate){activate=false;await env.DB.prepare("UPDATE account_cutover SET activated_at=1,maintenance=1,canary_account_id='canary'").run();}
    if(pause){pause=false;await env.DB.prepare('UPDATE account_cutover SET maintenance=1').run();}
    if(archiveId){const id=archiveId;archiveId=null;await env.DB.prepare("INSERT INTO game_archives(game_id,status,generation,event_seq,gameplay_revision,manifest_key,activity_at,updated_at) SELECT game_id,'archiving','test',event_seq,gameplay_revision,'test',created_at,updated_at FROM live_games WHERE game_id=?").bind(id).run();}
