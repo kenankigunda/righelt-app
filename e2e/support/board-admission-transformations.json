@@ -265,52 +265,52 @@
   },
   "/shell/live-transport.js": {
     "file": "apps/web/shell/live-transport.js",
-    "sourceSha256": "38213f45d71f7cf38dfb10b0179fa6ab2d2474d23b61dc08cd60dddd22c435ee",
-    "outputSha256": "db363dfc739a89f8e1f7bcf2125a52527c86357aceac3fab648140bc2cb6e973",
+    "sourceSha256": "24eacd839f4ce97adce2fb1bebb5827cd2e74545ec8d01523d80efca1fbddd36",
+    "outputSha256": "92b5fe6f3f43ee9d8a32491646de6c929f043931607ab5a4438c3574e97b1534",
     "operations": [
       {
-        "start": 66344,
-        "end": 66344,
+        "start": 66747,
+        "end": 66747,
         "before": "",
         "after": "    boardAdmissionProbe(\"transport-send-entry\", () => ({retryAttempt,reconcileFirst}));\n",
         "anchor": "const sendNextPendingCommand = async (gameId, { retryAttempt = 0, reconcileFirst = false } = {}) => {\n    if (!active) return;",
         "anchorCount": 1
       },
       {
-        "start": 79050,
-        "end": 79050,
+        "start": 79453,
+        "end": 79453,
         "before": "",
         "after": "    boardAdmissionProbe(\"transport-enqueue\", () => ({ kind: command.kind, type: command.action?.type ?? null }));\n",
         "anchor": "const enqueueOptimisticCommand = async ({ gameId, command }) => {\n    const contextEpoch = rulesEpoch;",
         "anchorCount": 1
       },
       {
-        "start": 79216,
-        "end": 79216,
+        "start": 79619,
+        "end": 79619,
         "before": "",
         "after": "      boardAdmissionProbe(\"transport-admission-entry\");\n",
         "anchor": "const admission = optimistic.admission.catch(() => {}).then(async () => {\n      assertActive();\n      assertRulesContext(contextEpoch, gameId);",
         "anchorCount": 1
       },
       {
-        "start": 79632,
-        "end": 79768,
+        "start": 80035,
+        "end": 80171,
         "before": "      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) {\n",
         "after": "      if (boardAdmissionValue(\"transport-position-only\", current?.positionOnly === true) || (boardAdmissionValue(\"transport-computer\", command.computer) ? boardAdmissionValue(\"transport-shared-blocked\", current?.sharedMutationsBlocked) : boardAdmissionValue(\"transport-gameplay-blocked\", current?.gameplayMutationsBlocked))) {\n",
         "anchor": "k_in_progress'),{code:'playback_in_progress'});\n      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) {\n        reportRecoveryDiagnostic(gameId, 'admiss",
         "anchorCount": 1
       },
       {
-        "start": 83682,
-        "end": 83729,
+        "start": 84085,
+        "end": 84132,
         "before": "        if (!projection.ok) return projection;\n",
         "after": "        if (!boardAdmissionValue(\"transport-admission-projection-ok\", projection.ok)) return projection;\n",
         "anchor": "overing'), {code:'sync_recovering'});\n        }\n        if (!projection.ok) return projection;\n        if (latest !== base) projection = rebase",
         "anchorCount": 1
       },
       {
-        "start": 83816,
-        "end": 83870,
+        "start": 84219,
+        "end": 84273,
         "before": "        try { await commandJournal.admit(envelope); }\n",
         "after": "        try { boardAdmissionProbe(\"transport-before-journal\"); await commandJournal.admit(envelope); boardAdmissionProbe(\"transport-after-journal\"); }\n",
         "anchor": "on = rebaseProjectedMetadata(projection, latest);\n        try { await commandJournal.admit(envelope); }\n        catch (error) { optimistic.unsavedCommand ",
