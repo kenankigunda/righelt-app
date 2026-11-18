@@ -783,7 +783,7 @@ html[data-page-active="false"] .home-refresh button.opponent-choice::before {bac
 /* Full artwork survives the reverse6% anticipation inside a fixed8% envelope;
    only later travel crosses that boundary. Copy and native controls stay still. */
 .story-art img {filter:drop-shadow(0 2px 1px rgb(36 50 70 / 15%));}
-.story-art-wrap {--story-caret-outset:16px;}
+.story-art-wrap {--story-caret-outset:12px;}
 .story-art-wrap [data-story-step] {z-index:1;transform:none;animation:none;}
 .story-art-wrap [data-story-step="-1"] {translate:calc(-1 * var(--story-caret-outset)) 0;}
 .story-art-wrap [data-story-step="1"] {translate:var(--story-caret-outset) 0;}
