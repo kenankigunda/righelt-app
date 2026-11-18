@@ -1,0 +1,42 @@
+import {test,expect} from '@playwright/test';
+import {readFileSync} from 'node:fs';
+import {importScenarioGame,switchGamePanel} from '../support/app.mjs';
+import {readUndoGame} from '../support/direct-undo.mjs';
+const terminal=JSON.parse(readFileSync(new URL('../../apps/web/scenarios/catalog.json',import.meta.url))).scenarios.find(item=>item.title==='Capture supply point to win by unsupplying the commander');
+for(const width of [390,1440])test(`completed Undo requires selected authority proof at ${width}px`,async({page,baseURL},info)=>{
+ await page.setViewportSize({width,height:1100});
+ const {gameId}=await importScenarioGame(page,terminal,baseURL);
+ const before=await readUndoGame(page,gameId,true);expect(before.board.state.outcome.status).toBe('p1_win');
+ const target=before.moves.find(move=>!move.undone&&!move.importedFrom);expect(target).toBeTruthy();
+ let deny=true,reads=0;
+ await page.route(`**/api/shell/games/${gameId}/decision-snapshot`,async route=>{
+  const response=await route.fetch(),body=await response.json();
+  expect(body.undoEligibility).toEqual({gameId,decisionId:target.moveId,gameplayRevision:before.gameplayRevision,eligible:true});reads++;
+  if(deny)body.undoEligibility.eligible=false;
+  await route.fulfill({response,json:body});
+ });
+ const select=async()=>{
+  await switchGamePanel(page,'history');
+  const row=page.locator(`[data-testid="history-move-item"][data-move-id="${target.moveId}"]`);
+  const hit=row.locator(':scope > .history-move-hit');await hit.focus();await hit.press('Enter');
+  await expect(row).toHaveAttribute('aria-current','true');
+  await expect(row).not.toHaveAttribute('aria-busy','true');return row;
+ };
+ const rejected=await select();expect(reads).toBe(1);
+ await expect(rejected.getByRole('button',{name:'Undo before this move',exact:true})).toHaveCount(0);
+ await expect(rejected.getByRole('button',{name:'New game before this move',exact:true})).toBeVisible();
+ await page.screenshot({path:info.outputPath('completed-target-no-offer.png'),fullPage:true});
+ const retained=await readUndoGame(page,gameId,true);
+ expect({board:retained.board,moves:retained.moves,turns:retained.turns,revision:retained.gameplayRevision}).toEqual({board:before.board,moves:before.moves,turns:before.turns,revision:before.gameplayRevision});
+ deny=false;await page.reload();
+ const accepted=await select();expect(reads).toBe(2);
+ const undo=accepted.getByRole('button',{name:'Undo before this move',exact:true});await expect(undo).toBeVisible();
+ await expect(accepted).toBeFocused();
+ await page.screenshot({path:info.outputPath('completed-target-playable-offer.png'),fullPage:true});
+ await undo.click();
+ await expect.poll(async()=>(await readUndoGame(page,gameId,true)).board.state.outcome.status).toBe('ongoing');
+ const after=await readUndoGame(page,gameId,true);expect(after.id).toBe(gameId);expect(after.gameplayRevision).toBe(before.gameplayRevision+1);
+ expect(after.moves.find(move=>move.moveId===target.moveId).undone).toBe(true);
+ expect(after.moves.find(move=>move.moveId===target.moveId).selectionSnapshot).toEqual(target.selectionSnapshot);
+ await info.attach('selected-target-authority',{body:JSON.stringify({width,reads,deniedProjection:'controlled local response metadata only, authoritative invalid-target refusal proven separately',beforeRevision:before.gameplayRevision,afterRevision:after.gameplayRevision,sameGame:true}),contentType:'application/json'});
+});

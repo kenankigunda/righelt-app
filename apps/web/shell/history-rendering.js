@@ -46,7 +46,10 @@ const renderTurnHistory = (game) => {
     const actionable=selected&&!move.undone&&(!archiveEntry||Boolean(move.importedFrom));
     const number=recordedMoveNumber(move),moveLabel=number==null?'Move unavailable':`Move ${number}:`;
     const availability=archiveEntry?.historyStatus==='unknown'?' · Status unavailable':'';
-    const revertButton = actionable && !move.importedFrom && game.myRoles?.some(role=>role==='Player 1'||role==='Player 2')
+    const proof = game.completedUndoEligibility;
+    const completedTargetPlayable = !isCompletedGame(game) || (!game.historyLoading && proof?.eligible === true
+      && proof.gameId === game.id && proof.decisionId === move.moveId && proof.gameplayRevision === game.gameplayRevision);
+    const revertButton = actionable && completedTargetPlayable && !move.importedFrom && game.myRoles?.some(role=>role==='Player 1'||role==='Player 2')
       ? `<button class="secondary mini-button history-branch-button" data-action="revert-to-move" data-game-id="${escapeHtml(game.id)}" data-move-id="${escapeHtml(move.moveId || '')}">${icon('back')}Undo before this move</button>` : '';
     const branchButton = actionable
       ? `<button class="secondary mini-button history-branch-button" data-action="launch-history-branch" data-game-id="${escapeHtml(game.id)}" data-move-index="${move.index}"${archiveEntry?` data-decision-id="${escapeHtml(archiveEntry.id)}"`:''}>${icon('play')}New game before this move</button>` : '';

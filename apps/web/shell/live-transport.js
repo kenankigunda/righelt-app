@@ -1,5 +1,6 @@
 import {isObsoleteComputerRejection} from './computer-recovery.js';
 import { activeDecisionLineage } from './decision-history.js';
+import {isCompletedGame} from './game-lifecycle.js';
 import { createRulesExecutor } from '../board/rules-runtime.js';
 import { CURRENT_COMPUTER_MODEL, computerProfileFor } from '../generated/packages/shared-types/src/computer-play.js';
 import { STORAGE_GENERATION_HEADER } from "../generated/packages/shared-types/src/storage-policy.js";
@@ -239,6 +240,7 @@ export const createLiveTransportStore = ({
   const historyIntentByGameId = new Map();
   const historyCheckpointByIntent = new WeakMap(), historyCheckpointData = new WeakMap(), liveHistoryCheckpoints = new Map();
   const historyCache = new Map();
+  const completedUndoEligibility = new Map();
   const historyRequests = new Map();
   const historyReadQueue = [];
   let activeHistoryReads = 0;
@@ -425,6 +427,9 @@ export const createLiveTransportStore = ({
     next.gameplayMutationsBlocked = humanPermissionWithdrawn || optimistic.socketAuthorityRequired
       || next.sharedMutationsBlocked && !(!next.rulesChecking && hasOnlySafeHumanRenewal(game, optimistic));
     applyHistoryIntent(next, historyIntentByGameId.get(gameId), identityId);
+    const selectedProof = next.inHistoryMode && !next.historyLoading && isCompletedGame(authoritative)
+      ? completedUndoEligibility.get(historyKey(gameId, next.gameplayRevision, next.inspectedDecision?.moveId)) : null;
+    next.completedUndoEligibility = selectedProof ? clone(selectedProof) : null;
     if (next.gameplayMutationsBlocked) {
       next.canRecordMove = false;
       next.canEndTurn = false;
@@ -2246,16 +2251,22 @@ export const createLiveTransportStore = ({
     if(owner)retireHistoryConsumer(owner);
     historyLoads.delete(gameId);
   };
-  const loadHistoricalMove = (gameId, revision, moveId, consumer = {}) => {
+  const loadHistoricalMove = (gameId, revision, moveId, consumer = {}, requireUndoEligibility = false) => {
     const key = historyKey(gameId, revision, moveId);
-    if (historyCache.has(key)) return Promise.resolve(clone(historyCache.get(key)));
+    if (historyCache.has(key) && (!requireUndoEligibility || completedUndoEligibility.has(key))) return Promise.resolve(clone(historyCache.get(key)));
     return optionalHistoryRead({key:`snapshot:${key}`,consumer,url:`/api/shell/games/${encodeURIComponent(gameId)}/decision-snapshot`,init:{
       method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({identityId,decisionId:moveId,gameplayRevision:revision}),
     },transform:body => {
       const move = body.move;
       if (body.gameId !== gameId || body.gameplayRevision !== revision || move?.moveId !== moveId || !move.snapshot || !Array.isArray(move.snapshot.pieces) || !["P1","P2"].includes(move.snapshot.sideToMove)) throw new Error("invalid_history_snapshot");
       historyCache.set(key,clone(move));
-      while(historyCache.size > SYNC_LIMITS.historyCacheEntries) historyCache.delete(historyCache.keys().next().value);
+      const proof = body.undoEligibility;
+      if (active && proof?.gameId === gameId && proof.decisionId === moveId && proof.gameplayRevision === revision
+        && typeof proof.eligible === "boolean") completedUndoEligibility.set(key, clone(proof));
+      while(historyCache.size > SYNC_LIMITS.historyCacheEntries) {
+        const oldest = historyCache.keys().next().value;
+        historyCache.delete(oldest); completedUndoEligibility.delete(oldest);
+      }
       return move;
     }});
   };
@@ -2272,12 +2283,14 @@ export const createLiveTransportStore = ({
     const summary = frozen ?? moves.find(move => moveId ? move.moveId === moveId : move.index === moveIndex);
     if (!summary) throw new Error("move_not_found");
     const selected = summary.snapshot ? summary : historyCache.get(historyKey(gameId,game.gameplayRevision,summary.moveId));
-    if (selected) applyHistorySelection(gameId,frozen ? {...game,gameplayRevision:game.inspectedAtRevision} : game,moves,selected);
+    const requireUndoEligibility = isCompletedGame(game) && !summary.importedFrom && !summary.undone;
+    const proofAvailable = completedUndoEligibility.has(historyKey(gameId, game.gameplayRevision, summary.moveId));
+    if (selected && (!requireUndoEligibility || proofAvailable)) applyHistorySelection(gameId,frozen ? {...game,gameplayRevision:game.inspectedAtRevision} : game,moves,selected);
     else {
       const previousOwner=historyLoads.get(gameId);
       const owner = {loading:true,index:moveIndex,error:null};historyLoads.set(gameId,owner);
       recalculateOptimisticGame(gameId);emitChange({type:"history_loading",gameId});
-      const request=loadHistoricalMove(gameId,game.gameplayRevision,summary.moveId,owner);
+      const request=loadHistoricalMove(gameId,game.gameplayRevision,summary.moveId,owner,requireUndoEligibility);
       retireHistoryConsumer(previousOwner);
       return request.then(move=>{
         if (!active || historyLoads.get(gameId) !== owner) return getGameViewModel(gameId);
@@ -2700,7 +2713,7 @@ export const createLiveTransportStore = ({
       globalThis.document?.removeEventListener?.("visibilitychange", onRulesVisibility);
       globalThis.window?.removeEventListener?.("pagehide", onRulesPageHide);
       globalThis.window?.removeEventListener?.("pageshow", onRulesPageShow);
-      historyLoads.clear();historyCache.clear();liveHistoryCheckpoints.clear();
+      historyLoads.clear();historyCache.clear();completedUndoEligibility.clear();liveHistoryCheckpoints.clear();
       completedReviewPreviewByKey.clear();
       for(const waiter of sharedWaiters.values())waiter.reject(Object.assign(new Error("session_changed"),{code:"session_changed"}));
       sharedWaiters.clear();
