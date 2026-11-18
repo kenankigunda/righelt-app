@@ -62,8 +62,8 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     a.startedAt === b.startedAt && a.attemptId === b.attemptId && sameOwnerScope(a.scope, {
       game: {id: b.scope.gameId}, transport: b.scope.transport, accountGeneration: b.scope.accountGeneration,
     }));
-  const schedulePhaseLabel = () => {
-    const identity = phaseLabelIdentity(current());
+  const schedulePhaseLabel = (context = current()) => {
+    const identity = phaseLabelIdentity(context);
     if (samePhaseLabel(phaseDeadline, identity)) return;
     cancelPhaseDeadline();
     if (!identity || clock() - identity.startedAt >= COMPUTER_TIMING.phaseLabelAfterMs || !timers.setTimeout) return;
@@ -536,8 +536,8 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       });
     },
     snapshot: () => {
-      schedulePhaseLabel();
       const context = current();
+      schedulePhaseLabel(context);
       const scopedAnalysis = context.authenticated && analysis?.gameId === context.game?.id && analysisContext?.accountGeneration === context.accountGeneration && analysisContext?.transport === context.transport ? analysis : null;
       const scopedStatus = sameOwnerScope(statusScope, context) ? status : {phase:'idle'};
       const retrying = Boolean(decisionRetry && context.key === decisionRetry.key && sameOwnerScope(decisionRetry.scope, context));
