@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Story opener focus</title><link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"></head><body><main id="app"><h1 tabindex="-1">Home</h1><section id="choices"></section></main><script type="module">
+import {createModal} from '/apps/web/shell/modal.js';
+import {createOpponentStoryDialog} from '/apps/web/shell/opponent-stories.js';
+let starts=0;
+const story=createOpponentStoryDialog({createModal,getReadiness:()=>({state:'ready'}),onPlay:async()=>{starts++;return {state:'started'};}});
+const render=()=>{
+ document.querySelector('#choices').innerHTML='<button data-action="create-game">Friend</button><button data-opponent="babs">Babs</button>';
+ for(const button of document.querySelectorAll('#choices button'))button.addEventListener('click',()=>story.open(button.dataset.opponent||'friend',{trigger:button}));
+};
+render();window.storyFocusFixture={render,get starts(){return starts;}};window.fixtureReady=true;
+</script></body></html>
