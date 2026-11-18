@@ -1,12 +1,36 @@
-import { archiveRow, readArchivedEvidence } from "./storage-archive";
+import { archiveRow, readArchivedEvidence, type ArchiveRow } from "./storage-archive";
 import type { CommandReceipt } from "../../shared-types/src/sync-protocol";
 import type { LiveGameEnv } from "./shell-live-db";
 
 type ReceiptRow = { game_id: string; client_command_id: string; actor_identity_id: string; fingerprint: string; outcome: "accepted" | "rejected"; reason: string | null; event_seq: number; gameplay_revision: number; result_json?: string | null };
+const decodeReceipt = (row: ReceiptRow | null): (CommandReceipt & { result?: Record<string, unknown> }) | null => row ? { gameId: row.game_id, clientCommandId: row.client_command_id, identityId: row.actor_identity_id, fingerprint: row.fingerprint, outcome: row.outcome, reason: row.reason, eventSeq: row.event_seq, gameplayRevision: row.gameplay_revision, ...(row.result_json ? { result: JSON.parse(row.result_json) as Record<string, unknown> } : {}) } : null;
 export const loadCommandReceipt = async (env: LiveGameEnv, gameId: string, commandId: string): Promise<(CommandReceipt & { result?: Record<string, unknown> }) | null> => {
   let row = await env.DB.prepare("SELECT * FROM live_command_receipts WHERE game_id = ?1 AND client_command_id = ?2").bind(gameId, commandId).first<ReceiptRow>();
   if (!row) { const archived=await archiveRow(env,gameId); if(archived && archived.status!=="archiving") row=await readArchivedEvidence(env,archived,"receipt",commandId) as ReceiptRow|null; }
-  return row ? { gameId: row.game_id, clientCommandId: row.client_command_id, identityId: row.actor_identity_id, fingerprint: row.fingerprint, outcome: row.outcome, reason: row.reason, eventSeq: row.event_seq, gameplayRevision: row.gameplay_revision, ...(row.result_json ? { result: JSON.parse(row.result_json) as Record<string, unknown> } : {}) } : null;
+  return decodeReceipt(row);
+};
+/** Fresh evidence for one resolver call. The room queue also owns archive transitions. */
+export const loadCommandEvidence = async (env: LiveGameEnv, gameId: string, commandId: string) => {
+  let rows;
+  try {
+    rows = await env.DB.batch([
+      env.DB.prepare("SELECT * FROM live_command_receipts WHERE game_id = ?1 AND client_command_id = ?2").bind(gameId, commandId),
+      env.DB.prepare("SELECT * FROM live_legacy_command_tombstones WHERE game_id = ?1 AND client_command_id = ?2").bind(gameId, commandId),
+      env.DB.prepare("SELECT * FROM game_archives WHERE game_id=?1").bind(gameId),
+    ]);
+    if (rows.length !== 3 || rows.some(row => !row.success || !Array.isArray(row.results))) throw new Error("invalid_command_evidence_batch");
+  } catch {
+    // A retry with an authoritative receipt must not depend on unrelated reads.
+    return { receipt: await loadCommandReceipt(env, gameId, commandId), hasLegacyEvidence: () => hasLegacyCommandEvidence(env, gameId, commandId) };
+  }
+  let row = (rows[0].results![0] ?? null) as ReceiptRow | null;
+  const archived = (rows[2].results![0] ?? null) as ArchiveRow | null;
+  if (!row && archived && archived.status !== "archiving") row = await readArchivedEvidence(env, archived, "receipt", commandId) as ReceiptRow | null;
+  return {
+    receipt: decodeReceipt(row),
+    // Keep archive IO lazy: receipt authority and retired-session checks go first.
+    hasLegacyEvidence: async () => Boolean(rows[1].results!.length || archived && archived.status !== "archiving" && await readArchivedEvidence(env, archived, "tombstone", commandId)),
+  };
 };
 export const commandReceiptStatement = (env: LiveGameEnv, receipt: CommandReceipt & { result?: Record<string, unknown> }) => env.DB.prepare(
   "INSERT INTO live_command_receipts (game_id, client_command_id, actor_identity_id, fingerprint, outcome, reason, event_seq, gameplay_revision, result_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
