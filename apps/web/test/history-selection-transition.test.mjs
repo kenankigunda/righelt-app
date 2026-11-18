@@ -4,26 +4,28 @@ import { createHistorySelectionTransition } from '../shell/history-selection-tra
 
 const fixture = ({ reduced = false } = {}) => {
   let height = 100;
+  let prefersReduced = reduced;
+  let renderedHeight = null;
   const classes = new Set();
   const animations = [];
   const scrolls = [];
   const element = {
     isConnected: true,
     classList: { add: value => classes.add(value), remove: value => classes.delete(value) },
-    getBoundingClientRect: () => ({ height }),
+    getBoundingClientRect: () => ({ height: renderedHeight ?? height }),
     animate(keyframes, options) {
-      const animation = { keyframes, options, cancelled: false, cancel() { this.cancelled = true; this.oncancel?.(); } };
+      const animation = { keyframes, options, cancelled: false, paused: false, pause() { this.paused = true; }, cancel() { this.cancelled = true; renderedHeight = null; this.oncancel?.(); } };
       animations.push(animation);
       return animation;
     },
   };
   const owner = createHistorySelectionTransition({
-    reducedMotion: () => reduced,
+    reducedMotion: () => prefersReduced,
     isElement: value => value === element,
     readScroll: () => ({ x: 4, y: 28 }),
     restoreScroll: position => scrolls.push(position),
   });
-  return { element, owner, animations, classes, scrolls, setHeight: value => { height = value; } };
+  return { element, owner, animations, classes, scrolls, setHeight: value => { height = value; }, setRenderedHeight: value => { renderedHeight = value; }, setReduced: value => { prefersReduced = value; } };
 };
 
 test('selection updates synchronously and presents one measured height transition', async () => {
@@ -51,7 +53,7 @@ test('rapid selection retargets from rendered geometry and rejects stale owners'
   const firstCapture = view.owner.capture(view.element);
   view.setHeight(240);
   view.owner.present(firstCapture);
-  view.setHeight(165);
+  view.setRenderedHeight(165);
 
   const second = view.owner.begin('turn:second');
   const secondCapture = view.owner.capture(view.element);
@@ -91,7 +93,7 @@ test('selection settlement waits for its measured motion and unrelated replaceme
     view.owner.present(captured);
   });
   assert.equal(view.classes.has('history-selection-transitioning'), true);
-  view.owner.begin('unrelated');
+  view.owner.cancel();
   await selection;
   assert.equal(view.animations[0].cancelled, true);
   assert.equal(view.classes.has('history-selection-transitioning'), false);
@@ -163,4 +165,44 @@ test('one owner measures Board and History together after the complete shell upd
   animations[1].onfinish();
   assert.equal(classes.get('history').has('history-selection-transitioning'), false);
   assert.equal(owner.finish(token), true);
+});
+
+
+test('superseded motion retires its waiter but holds geometry through repeated selections', async () => {
+  const view=fixture(),first=view.owner.begin('first');
+  const captured=view.owner.capture(view.element);view.setHeight(240);view.owner.present(captured);
+  view.setRenderedHeight(165);const firstWait=view.owner.waitForSettled(first);
+  const second=view.owner.begin('second');
+  assert.equal(await firstWait,false);assert.equal(view.animations[0].paused,true);
+  assert.equal(view.animations[0].cancelled,false);
+  view.animations[0].onfinish();
+  assert.equal(view.classes.has('history-selection-transitioning'),true,'stale finish cannot release held geometry');
+  const third=view.owner.begin('third');
+  assert.equal(view.owner.finish(first),false);assert.equal(view.owner.finish(second),false);
+  assert.equal(view.element.getBoundingClientRect().height,165);
+  assert.equal(view.owner.capture(view.element).heights[0],165);
+  assert.equal(view.animations[0].cancelled,true);assert.equal(view.element.getBoundingClientRect().height,240);
+  view.owner.finish(third);
+});
+
+test('failed replacement releases held geometry without running stale reveal', async () => {
+  const view=fixture(),first=view.owner.begin('first');let reveals=0;
+  const captured=view.owner.capture(view.element);view.setHeight(240);view.owner.present(captured,()=>{reveals++;});
+  view.setRenderedHeight(165);const firstWait=view.owner.waitForSettled(first);
+  await assert.rejects(view.owner.run('failed',()=>{throw Error('selection unavailable');}),/selection unavailable/);
+  assert.equal(await firstWait,false);assert.equal(view.animations[0].cancelled,true);
+  assert.equal(view.classes.has('history-selection-transitioning'),false);assert.equal(reveals,0);
+  assert.equal(view.element.getBoundingClientRect().height,240);
+});
+
+
+test('a reduced-motion replacement releases previous native geometry immediately',()=>{
+ const view=fixture();view.owner.begin('first');const captured=view.owner.capture(view.element);
+ view.setHeight(240);view.owner.present(captured);view.setRenderedHeight(165);view.setReduced(true);
+ const second=view.owner.begin('reduced');
+ assert.equal(view.animations[0].cancelled,true);assert.equal(view.animations[0].paused,false);
+ assert.equal(view.classes.has('history-selection-transitioning'),false);
+ const next=view.owner.capture(view.element);assert.equal(next.heights[0],240);
+ view.setHeight(80);assert.equal(view.owner.present(next),false);assert.equal(view.animations.length,1);
+ view.owner.finish(second);
 });

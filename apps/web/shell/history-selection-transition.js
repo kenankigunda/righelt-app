@@ -24,7 +24,7 @@ export function createHistorySelectionTransition({
   };
 
   const clearMotion = animation => {
-    if (!motion?.animations.includes(animation)) return;
+    if (!motion?.animations.includes(animation) || motion.owner.generation !== generation) return;
     motion.animations = motion.animations.filter(active => active !== animation);
     if (motion.animations.length) return;
     const settled = motion;
@@ -44,8 +44,14 @@ export function createHistorySelectionTransition({
   };
 
   const begin = scope => {
-    cancelMotion();
     owner = { generation: ++generation, scope };
+    if (motion) {
+      // Retire the old waiter immediately, but hold its rendered geometry until
+      // capture measures it. Native cancellation restores the natural height.
+      motion.resolve(false);
+      if (reducedMotion()) cancelMotion();
+      else for (const animation of motion.animations) animation.pause?.();
+    }
     return owner;
   };
 
@@ -101,6 +107,9 @@ export function createHistorySelectionTransition({
   const finish = token => {
     if (owner !== token) return false;
     owner = null;
+    // A failed/no-render selection must not leave superseded geometry paused.
+    // A motion presented by this token retains its normal settlement lifecycle.
+    if (motion && motion.owner !== token) cancelMotion();
     return true;
   };
 
