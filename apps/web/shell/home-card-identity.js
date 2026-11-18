@@ -57,9 +57,10 @@ export function renderHomeCardIdentity(game, options) {
   const qualifiers=viewerAliasQualifiers(matchup.seats.map(seat=>({...seat,owned:matchup.kind==='player'&&seat.side===matchup.ownSide})));
   if (matchup.kind === 'self') return '<span class="home-card-matchup"><strong class="player-tone-both">You play both sides</strong></span>';
   if (matchup.kind === 'player') {
-    const own = matchup.seats.find(seat => seat.side === matchup.ownSide);
-    const other = matchup.seats.find(seat => seat !== own);
-    return `<span class="home-card-matchup">${renderName(own,'You',{owned:true,qualifier:qualifiers[own.side]})} <span>vs.</span> ${renderParticipant(other, options?.quiet,qualifiers[other.side])}</span>`;
+    const names=matchup.seats.map(seat=>seat.side===matchup.ownSide
+      ? renderName(seat,'You',{owned:true,qualifier:qualifiers[seat.side]})
+      : renderParticipant(seat,options?.quiet,qualifiers[seat.side]));
+    return `<span class="home-card-matchup">${names.join(' <span>vs.</span> ')}</span>`;
   }
   return `<span class="home-card-matchup">${renderParticipant(matchup.seats[0], options?.quiet)} <span>${matchup.kind === 'watched-self' ? '/' : 'vs.'}</span> ${renderParticipant(matchup.seats[1], options?.quiet)}${matchup.kind === 'watched-self' ? ' <span>· Both sides</span>' : ''}</span>`;
 }

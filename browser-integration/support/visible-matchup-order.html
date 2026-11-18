@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css">
+<style>body{margin:0;padding:12px}.fixture{display:grid;gap:16px;max-width:1200px;margin:auto}.fixture>section{min-width:0}.fixture .mini-board-card{max-width:100%}@media(min-width:1000px){.fixture{grid-template-columns:repeat(3,minmax(0,1fr))}}</style>
+</head><body><main class="fixture" id="fixture"></main><script type="module">
+import {createHomeCardRendering} from '/apps/web/shell/home-card-rendering.js';
+import {renderGameSummaryPanel} from '/apps/web/shell/game-summary-panel.js';
+import {renderResultPanel} from '/apps/web/shell/result-panel.js';
+import {documentTitleForRoute} from '/apps/web/shell/document-title.js';
+const person=(identityId,displayName)=>({identityId,profile:{displayName},connected:true});
+window.renderMatchup=({computer=false,longName=false,scale=100}={})=>{
+ const game={id:'local-role-order',createdAt:'2026-11-17T20:15:00Z',myRole:'Player 2',myRoles:['Player 2'],player1:person('red',longName?'Alexandria Longparticipantnamewithoutbreaks אבגדהוזחטיכלמנסעפצקרשת':'Maya'),player2:person('blue','Ada'),notifications:[],moves:[],turns:[],currentTurn:{index:0,playerSeat:'Player 1',moveIndexes:[]},previewSnapshot:{sideToMove:'P1',pieces:[],outcome:{status:'ongoing'}},confirmedOutcomeStatus:'ongoing',eventSeq:1,gameplayRevision:1,moveCount:0};
+ if(computer){game.player1={...person('blue','Owner'),computerProfile:'babs'};game.computer={manual:true,seats:{p1:'babs',p2:null}};game.myRole='Both Players';game.myRoles=['Player 1','Player 2'];}
+ const before=JSON.stringify(game),transport={getIdentityId:()=> 'blue',getAuthoritativeGame:()=>game};
+ const home=createHomeCardRendering({getTransport:()=>transport,toStableKey:JSON.stringify,escapeHtml:String,renderMiniBoardPreviewRoot:()=>'<div></div>',buildGameHash:id=>`#/game/${id}`,getCurrentFlyoutState:()=>({}),formatClientDateTime:String});
+ const completed={...game,board:{state:{outcome:{status:'p1_win',reason:'p2_commander_destroyed'}}}};
+ document.documentElement.style.fontSize=scale+'%';
+ document.querySelector('#fixture').innerHTML=`<section id="home">${home.renderHomeGameCard(game)}</section><section class="panel" id="summary">${renderGameSummaryPanel(game,{identityId:'blue'})}</section><section id="result">${renderResultPanel({id:game.id},{transport:{...transport,getAuthoritativeGame:()=>completed},escapeHtml:String})}</section>`;
+ window.matchupInputUnchanged=before===JSON.stringify(game);
+ document.title=documentTitleForRoute({routeName:'game',game,identityId:'blue',timeZone:'UTC'});
+};
+window.renderMatchup();await document.fonts.ready;window.fixtureReady=true;
+</script></body></html>

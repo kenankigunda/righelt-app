@@ -14,8 +14,8 @@ test('matchup identity follows the saved viewer perspective rather than turn or 
  assert.equal(red.text,'You vs. Blue name');
  assert.deepEqual(red.seats.map(seat=>[seat.side,seat.label,seat.owned]),[['p1','You',true],['p2','Blue name',false]]);
  const blue=gameTitleModel(game({myRole:'Player 2'}),{identityId:'blue'});
- assert.equal(blue.text,'You vs. Red name');
- assert.deepEqual(blue.seats.map(seat=>seat.side),['p2','p1']);
+ assert.equal(blue.text,'Red name vs. You');
+ assert.deepEqual(blue.seats.map(seat=>seat.side),['p1','p2']);
  const viewer=gameTitleModel(game({myRole:'Viewer'}),{identityId:'viewer'});
  assert.equal(viewer.text,'Red name vs. Blue name');
  assert.deepEqual(viewer.seats.map(seat=>seat.side),['p1','p2']);
