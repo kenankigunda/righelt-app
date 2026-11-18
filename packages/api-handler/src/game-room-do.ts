@@ -10,6 +10,7 @@ import { STORAGE_POLICY, STORAGE_GENERATION_HEADER } from "../../shared-types/sr
 import { storageRoomName } from "./storage-generation";
 import { archiveRow, beginArchive, captureArchiveStep, pruneArchivedEvidence, restoreArchiveStep, saveArchivedView } from "./storage-archive";
 import { withCutoverPolicy, maintenanceAllowed, cutoverWritePermit } from './account-cutover';
+import { beginPersistencePreflight } from './persistence-preflight';
 import { assertStorageGeneration } from './storage-generation';
 import { enrichAccountNames } from './account-profiles';
 import type { AuthDatabase } from './auth-db';
@@ -1604,12 +1605,15 @@ export class GameRoomDO {
   }
 
   private async persistCandidate(game: LiveGame, event: (ServerEvent & { eventSeq: number }) | null, receipt?: CommandReceipt, systemPresence = false, additionalStatements: D1Statement[] = [], presenceIdentity?:string, restoration?: AcceptedRestoration) {
-    this.env = await withCutoverPolicy(this.env);
+    const preflight = await beginPersistencePreflight(this.env, game.id);
+    this.env = preflight.env;
     if (authActive(this.env) && (this.env.AUTH_ENABLED !== "true" || !maintenanceAllowed(this.env,this.requestAuthority?.accountId))) throw new AuthProblem("temporarily_unavailable",503);
     const permit = cutoverWritePermit(this.env,game.id,this.requestAuthority,systemPresence);
     if (!authActive(this.env) && game.ownershipMode === "account_v1") throw new AuthProblem("temporarily_unavailable", 503);
     if (authActive(this.env) && !this.requestAuthority && !systemPresence) throw new AuthProblem("invalid_credentials", 401);
-    const archived=await archiveRow(this.env,game.id);
+    const archiveResult = await preflight.archive;
+    if (archiveResult.status === "rejected") throw archiveResult.reason;
+    const archived = archiveResult.value;
     if(archived && archived.status!=="archiving" && (systemPresence || ["/history","/live"].includes(this.requestOperation))) {
       const actor=presenceIdentity ?? this.requestAuthority?.accountId ?? this.requestIdentity;
       if(actor){
