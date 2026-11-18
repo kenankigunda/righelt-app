@@ -55,7 +55,7 @@ test('causal move inspection keeps the casualty present while completed turn ins
  const cut=move(0,'project',{row:1,col:1},{row:1,col:2});
  const close=move(1,'move',{row:2,col:1},{row:2,col:2});
  const casualty=piece('casualty','P2',4,4);
- cut.snapshot=snapshot([...cut.snapshot.pieces,casualty]);
+ cut.snapshot=snapshot([...cut.snapshot.pieces,{...casualty,supplied:false,displaySupplied:false}]);
  close.inspectionSnapshot=snapshot([...close.snapshot.pieces,{...casualty,supplied:false,displaySupplied:false}]);
  close.snapshot=snapshot([],1);
  close.destroyedPieces=[{pieceId:'casualty',position:{row:4,col:4},ownerSeat:'p2',reason:'loss_of_supply',
