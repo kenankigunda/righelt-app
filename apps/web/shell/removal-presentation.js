@@ -1,3 +1,4 @@
+import {getPendingRemovalEffects} from './pending-removal-effects.js';
 import {createDestructionTransitions} from './destruction-transitions.js';
 
 // The visual commit and optional cue share one synchronous presentation onset.
@@ -8,10 +9,6 @@ export function commitRemovalOnset({visual,cue,isCurrent=()=>true}){
  if(!isCurrent())return false;
  cue();return true;
 }
-
-const pendingRecords=view=>(view?.pendingMoves??[])
- .filter(move=>!move.undone)
- .flatMap(move=>move.destroyedPieces??[]);
 
 export function createConfirmedRemovalPresentation({getScope,eligible,present,pending,clear,consume,cue,cancelSound,isCurrent=()=>true}){
  const transitions=createDestructionTransitions();let scope=null,disposed=false,needsBaseline=true;
@@ -30,7 +27,7 @@ export function createConfirmedRemovalPresentation({getScope,eligible,present,pe
    // Retire live sound/pending state without erasing that settled surface.
    if(transition.clear&&!history||frozen||!authoritative)clear();
    if(transition.clear||blocked)cancelSound();
-   pending(blocked?[]:pendingRecords(view));
+   pending(blocked?[]:getPendingRemovalEffects(view,game));
    if(blocked||reset||changed||baseline||!transition.effects.length){consume(game,{sequence});return;}
    const own=scope;
    const current=()=>!disposed&&scope===own&&getScope(game)===own&&eligible(game)&&isCurrent(game);

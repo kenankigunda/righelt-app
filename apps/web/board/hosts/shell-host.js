@@ -1,3 +1,4 @@
+import {getPendingRemovalEffects} from '../../shell/pending-removal-effects.js';
 import { createRulesExecutor } from "../rules-runtime.js";
 
 const getControlLabel = ({ state, currentTurn }) => {
@@ -41,7 +42,7 @@ export const getPendingRecordingPieceIds = (game) => {
 
 export const createShellBoardHost = ({ transport, gameId, canInteract, canPresentActions, canSelect, getMutationSurface, getInspectionSnapshot = () => null, getGameView = () => transport.getGameViewModel(gameId), rulesExecutor = createRulesExecutor() }) => ({
   confirmedRemovalsOnly: true,
-  getPendingRemovalEffects: () => (getGameView()?.pendingMoves ?? []).filter(move => !move.undone).flatMap(move => move.destroyedPieces ?? []),
+  getPendingRemovalEffects: () => getPendingRemovalEffects(getGameView(),transport.getAuthoritativeGame?.(gameId)),
   getPendingRecordingPieceIds: () => getPendingRecordingPieceIds(getGameView()),
   asyncPieceMoves: rulesExecutor.asynchronous,
   cancelPieceMoves: () => rulesExecutor.cancelAll(),

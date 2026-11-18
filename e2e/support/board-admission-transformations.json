@@ -321,12 +321,12 @@
   },
   "/board/hosts/shell-host.js": {
     "file": "apps/web/board/hosts/shell-host.js",
-    "sourceSha256": "9788efeddb473a155562e9ce76941d6f0fb5368113fb5ddbaf94d39455cc86af",
-    "outputSha256": "a9ee6366102a65e1b379dac86328d51f6c35e75fef40c5210e9041a9061c49b6",
+    "sourceSha256": "90504a4ed73351c6348190358a05370a981b0937cfb3e1ecc8bacc5bcf2d5993",
+    "outputSha256": "9ba6653f1706ae9a197ceceafa920f5317fc6d201c3f1bd1c273dc9f6932f322",
     "operations": [
       {
-        "start": 3092,
-        "end": 3092,
+        "start": 3145,
+        "end": 3145,
         "before": "",
         "after": "    boardAdmissionProbe(\"host-apply-entry\", () => ({type:action.type}));\n",
         "anchor": "eId });\n  },\n  async applyAction(state, action) {\n    if (getInspectionSnapshot()) return { accepted",
