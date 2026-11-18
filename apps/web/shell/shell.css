@@ -2513,5 +2513,5 @@ textarea:focus-visible {
 
 .app-root :is(.history-turn,.history-item-undone-group) button.history-undone-toggle.secondary,
 .app-root .history-item-imported-group button.history-imported-toggle.secondary {position:relative;z-index:3;pointer-events:auto;min-height:44px;border:0;border-radius:0;padding:0;background:transparent;color:inherit;font:inherit;text-align:left;}
-.app-root .history-item.history-item-undone-group > button.history-undone-toggle.secondary {grid-column:1 / -1;display:flex;align-items:center;justify-content:flex-start;width:100%;padding-inline-start:calc(var(--history-turn-rail-margin) + var(--history-turn-rail-width) + var(--history-turn-content-padding));}
+.app-root .history-item.history-item-undone-group > button.history-undone-toggle.secondary {grid-column:1 / -1;grid-row:1;display:flex;align-items:center;justify-content:flex-start;width:100%;padding-inline-start:calc(var(--history-turn-rail-margin) + var(--history-turn-rail-width) + var(--history-turn-content-padding));}
 .history-selection-transitioning {overflow:hidden;}
