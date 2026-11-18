@@ -21,6 +21,11 @@ for(const width of [390,1440])for(const example of examples)test(`${example.name
   await expect.poll(()=>narration.evaluate(node=>{const copy=node.cloneNode(true);for(const chip of copy.querySelectorAll('.board-preview-coordinate-chip'))chip.textContent=`(${chip.textContent})`;return copy.textContent;})).toContain(actionCopy(move.action));
   const actorName=narration.locator('.board-message-name').first(),tone=move.actorSide==='P1'?'p1':'p2';
   await expect(actorName).toHaveClass(new RegExp(`player-tone-${tone}`));
+  if(width<900){
+   const neutral=await page.locator('body').evaluate(node=>getComputedStyle(node).color);
+   await expect(narration).toHaveCSS('color',neutral);
+   await expect(actorName).toHaveCSS('color',tone==='p1'?'rgb(194, 69, 47)':'rgb(45, 103, 199)');
+  }
   if(game.selfPlayMode){
    await expect(actorName.locator(':scope > [aria-hidden="true"]')).toHaveText('You');
    await expect(actorName.locator(':scope > .sr-only')).toHaveText(`You, ${tone==='p1'?'Red':'Blue'}`);
@@ -40,9 +45,20 @@ for(const width of [390,1440])for(const example of examples)test(`${example.name
  await last.locator('xpath=ancestor::li[contains(@class,"history-turn")]/button[contains(@class,"history-turn-hit")]').click({position:{x:12,y:12}});
  const narration=width<900?page.locator('.history-inline-narration'):page.getByRole('region',{name:'Board context'}).locator('.board-context-content');
  await expect(narration).toBeVisible();
+ if(width<900){
+  const neutral=await page.locator('body').evaluate(node=>getComputedStyle(node).color);
+  await expect(narration).toHaveCSS('color',neutral);
+  const turnSide=moves.at(-1).actorSide;
+  await expect(narration.locator('.board-message-name').first()).toHaveCSS('color',turnSide==='P1'?'rgb(194, 69, 47)':'rgb(45, 103, 199)');
+ }
  const plain=()=>narration.evaluate(node=>{const copy=node.cloneNode(true);for(const chip of copy.querySelectorAll('.board-preview-coordinate-chip'))chip.textContent=`(${chip.textContent})`;return copy.textContent;});
  if(example.name==='Three rushes')await expect.poll(plain).toContain('rushed 3 pieces to (5, 5), (6, 4), and (5, 3)');
  if(example.name==='Push, retreat and followers')await expect.poll(plain).toContain('pushed onto (7, 0) and had 4 pieces follow');
+ const after=await page.evaluate(readProjectedGame,{id:gameId,guest:true});
+ expect(Number.isSafeInteger(game.gameplayRevision)).toBe(true);
+ expect(Number.isSafeInteger(after.gameplayRevision)).toBe(true);
+ const canonical=value=>({board:value.board,moves:value.moves,turns:value.turns,gameplayRevision:value.gameplayRevision});
+ expect(canonical(after)).toEqual(canonical(game));
  await page.screenshot({path:info.outputPath('acknowledged-turn-narration.png'),fullPage:true});
  await info.attach('recorded-narration-contract',{body:JSON.stringify({gameId,moves:moves.map(move=>({moveId:move.moveId,index:move.index,actorSide:move.actorSide,action:move.action}))}),contentType:'application/json'});
 });

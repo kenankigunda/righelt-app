@@ -142,6 +142,7 @@ html[data-hover-capability="hover"] .previous-turn-key:not([data-hover-retired="
 .previous-turn-key:is(:focus-visible,[aria-pressed="true"]) .previous-turn-key-swatch {outline:2px solid var(--previous-turn-color);outline-offset:-3px;}
 @media(forced-colors:active){.previous-turn-key{color:ButtonText;}.previous-turn-key:focus-visible{outline-color:Highlight;}html[data-hover-capability="hover"] .previous-turn-key:not([data-hover-retired="true"]):hover,.previous-turn-key:is(:focus-visible,[aria-pressed="true"]){color:LinkText;}.previous-turn-key-swatch{outline-color:Highlight!important;}}
 .history-inline-preview { width:min(100%, 360px); margin:8px auto; pointer-events:none; }
+.history-inline-narration { color:var(--ink); }
 .history-inline-preview .mini-board-preview-surface { width:100%; }
 .computer-recovery-area:empty { display:none; }
 .computer-play:empty { display:none; }
