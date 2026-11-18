@@ -3,6 +3,13 @@ import assert from 'node:assert/strict';
 import {icon} from '../icons.js';
 import {icon as shellIcon} from '../shell/ui.js';
 import {boardMessagePresentation,renderBoardMessageHtml,renderBoardInlineAction,updateBoardInlineActionLabel} from '../board/message-presentation.js';
+test('accessible descriptions remain escaped text and do not enter visual sizing copies',()=>{
+ const message={text:'Recorded move',accessibleDescription:'Blue unit <pending> at (2, 7).'};
+ const html=renderBoardMessageHtml(message);
+ assert.match(html,/<span class="sr-only"> Blue unit &lt;pending&gt; at \(2, 7\)\.<\/span>/);
+ assert.doesNotMatch(html,/<pending>/);
+ assert.doesNotMatch(renderBoardMessageHtml(message,{sizing:true}),/pending/);
+});
 
 test('verified actor prefixes retain full escaped names, coordinates and action labels',()=>{
  const actorName='משחק <星> "&',text=`${actorName} moved a piece from (9, 9) to (0, 0)`;

@@ -1,27 +1,27 @@
 {
   "/board-adapters/engine-board-adapter.js": {
     "file": "apps/web/board-adapters/engine-board-adapter.js",
-    "sourceSha256": "8f33f5f94fdca76f76faa19dfbd458584b1b6625687ad0dca765d32a92835e55",
+    "sourceSha256": "93f638f59868a35ed5ae1a1a2731b8e6c937a885eae0160871114a3c55106f21",
     "prefix": "const __retreatHeightProbe=(event,data,owner)=>{try{const sink=globalThis.__retreatHeightRecord;if(typeof sink==='function')sink(event,typeof data==='function'?data():data,owner);}catch{}};\nconst __retreatHeightValue=(event,value,data=null,owner=null)=>{__retreatHeightProbe(event,data??(()=>({value})),owner);return value;};\n",
     "operations": [
       {
-        "start": 35032,
-        "end": 35081,
+        "start": 35109,
+        "end": 35158,
         "before": "onCellHoverStart(readCoordFromCell(currentCell));",
         "after": "onCellHoverStart(__retreatHeightValue('hover-start',readCoordFromCell(currentCell),null,currentCell));",
         "anchor": "onCellHoverStart(readCoordFromCell(currentCell));",
         "anchorCount": 1
       },
       {
-        "start": 35350,
-        "end": 35397,
+        "start": 35427,
+        "end": 35474,
         "before": "onCellHoverEnd(readCoordFromCell(currentCell));",
         "after": "onCellHoverEnd(__retreatHeightValue('hover-end',readCoordFromCell(currentCell),null,currentCell));",
         "anchor": "onCellHoverEnd(readCoordFromCell(currentCell));",
         "anchorCount": 1
       }
     ],
-    "outputSha256": "540ab855d8739704e4314c527524d5d123b81ce3a2736bd198501eefa2d76db1"
+    "outputSha256": "3ab84faf3f32f2ea4564919f4d435b0c67b8360449659e1836af448b10136b35"
   },
   "/board/runtime/board-runtime.js": {
     "file": "apps/web/board/runtime/board-runtime.js",

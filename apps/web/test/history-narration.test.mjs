@@ -5,6 +5,15 @@ import {renderBoardMessageHtml} from '../board/message-presentation.js';
 const from={row:4,col:3},to={row:4,col:4};
 const move=(type,actorSide='P1')=>({moveId:type,index:40,displayMoveNumber:41,turnIndex:4,turnMoveIndex:0,actorSide,action:{type,actorId:actorSide,from,to},selectionSnapshot:{sideToMove:actorSide,pieces:[]},snapshot:{pieces:[]}});
 const game={inHistoryMode:true,historyIndex:40,player1:{identityId:'a',profile:{displayName:'Maya <(8, 8)>'}},player2:{identityId:'b',profile:{displayName:'Kenan'}}};
+test('selected History exposes pending ownership and coordinates, then clears restored meaning and reinstates a re-cut',()=>{
+ const expected='Pending destruction at turn end: Blue unit at (2, 7).';
+ for(const displaySupplied of [false,true,false]){
+  const record=move('rush');record.snapshot={pieces:[{id:'pending',owner:'P2',kind:'unit',position:{row:2,col:7},supplied:true,displaySupplied}]};
+  const before=structuredClone(record),selected=selectedHistoryPresentation({...game,inspectedDecision:record});
+  assert.equal(selected.message.accessibleDescription,displaySupplied?undefined:expected);
+  assert.deepEqual(record,before);
+ }
+});
 test('exact historical move keeps board-wide number, recorded defender name and safe coordinate rendering',()=>{
  const record=move('retreat','P2');record.displayMoveNumber=71;
  const selected=selectedHistoryPresentation({...game,inspectedDecision:record});

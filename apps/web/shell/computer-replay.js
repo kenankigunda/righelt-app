@@ -1,4 +1,5 @@
 import {visibleRecordedMoves,recordedMoveNumber} from './recorded-narration.js';
+import {pendingSupplyLossPieces} from '../board/recorded-pending-pieces.js';
 import {immediateRemovalRecords,moveInspectionSnapshot,settlementRemovalRecords,withCausalDestructionPresentation} from './destruction-presentation.js';
 const createReplayPreview = ({rootEl, createAdapter, preview}) => {
   const doc = rootEl.ownerDocument;
@@ -78,8 +79,7 @@ export function createComputerReplay({rootEl, createAdapter, onChange = () => {}
     // the live continuation has ended. Keep its known supply losses pending
     // until the separately recorded settlement frame, without forecasting it.
     ...(frame?.settledAfter && state !== frame.settledAfter && !state.continuation ? {
-      recordedPendingPieceIds:(state.pieces ?? []).filter(piece => piece.kind === 'unit'
-        && (piece.displaySupplied ?? piece.supplied) === false).map(piece => piece.id),
+      recordedPendingPieceIds:pendingSupplyLossPieces(state).map(piece => piece.id),
     } : {}),
   }});
   const showFrame = (displayFrame = null) => {
