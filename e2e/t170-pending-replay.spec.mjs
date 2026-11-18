@@ -3,7 +3,7 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {importScenarioGame,submitPlayableAction,switchGamePanel,openDirectGameLink,joinAsViewer} from './support/app.mjs';
 import {readProjectedGame} from './support/computer-projection.mjs';
 const fixture=JSON.parse(readFileSync(new URL('./fixtures/t170-turn39-pending.json',import.meta.url)));
-const input={scenario:{initialState:fixture.initialState},moves:fixture.actions.map(action=>({action}))};
+const input={scenario:{title:'T170 recorded replay pending chronology',description:'Fresh test-owned five-rush replay acceptance',initialState:fixture.initialState},moves:fixture.actions.map(action=>({action}))};
 test('exact Turn39 native causal rows and incoming replay preserve pending chronology',async({page,browser,baseURL},info)=>{
  const out=info.outputPath('proof');await import('node:fs/promises').then(fs=>fs.mkdir(out,{recursive:true}));
  test.setTimeout(65000);await page.setViewportSize({width:1440,height:1100});const ctx=await browser.newContext({viewport:{width:1440,height:1100}}),viewer=await ctx.newPage();try{
