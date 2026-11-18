@@ -1187,3 +1187,24 @@ test('an acknowledged owner never automatically takes a newer lease held by anot
  await f.session.tick();assert.equal(f.controls.length,1);assert.equal(f.session.snapshot().phase,'other-device');
  assert.equal(f.game().computer.lease.deviceId,'different-device');assert.equal(f.computations(),0);assert.equal(f.submissions(),0);
 });
+
+
+for(const outcome of ['ongoing','p1_win'])test(`human-only ${outcome} snapshot has no computer projection or redundant lease read`,t=>{
+ const f=fixture();t.after(()=>f.session.destroy());f.game().computer=null;f.game().board.state.outcome={status:outcome};
+ let projections=0;const original=f.transport.getGameViewModel;f.transport.getGameViewModel=(...args)=>{projections++;return original(...args);};
+ const before=f.contextReads(),status=f.session.snapshot();
+ assert.equal(status.activity,null);assert.equal(projections,0,'No computer activity can consume this game projection');
+ assert.equal(f.contextReads()-before,1,'One fresh presentation context, no computer lease to check');
+ f.switchGame();const next=f.session.snapshot();assert.equal(next.activity,null);assert.equal(f.contextReads()-before,2,'Next snapshot still reads its fresh context');
+});
+
+test('unresolved and human-to-computer transitions do not cache absence of computer control',t=>{
+ const f=fixture();t.after(()=>f.session.destroy());f.unresolvedGame();assert.equal(f.session.snapshot().activity,null);
+ f.switchGame();f.game().computer=null;assert.equal(f.session.snapshot().activity,null);
+ f.game().computer=createComputerControl('owner',{p1:'babs',p2:null});
+ let projections=0;const original=f.transport.getGameViewModel;f.transport.getGameViewModel=(...args)=>{projections++;return original(...args);};
+ const before=f.contextReads(),status=f.session.snapshot();
+ assert.notEqual(status.activity,null);assert.equal(projections,1,'Actual computer activity gets its live projection');
+ assert.equal(f.contextReads()-before,2,'Actual computer activity retains its independent lease-authority read');
+ f.game().computer=null;assert.equal(f.session.snapshot().activity,null);assert.equal(projections,1,'Removing computer control does not retain the previous projection consumer');
+});

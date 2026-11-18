@@ -111,6 +111,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
   };
   const activity = (context, scopedStatus) => {
     updateActivity(context);
+    if (!context.game?.computer) return null;
     const work = workFor(context);
     return computerActivity({ game: context.game, identityId: context.transport.getIdentityId(), deviceId, authenticated: context.authenticated, visible: context.visible, status: scopedStatus, projection: context.game ? context.transport.getGameViewModel(context.game.id) : {}, now: clock(), resuming: Boolean(work.resumeWork || (work.leaseWork && work.leaseWorkAction === 'acquire')), waitingMs: waitingSince === null ? 0 : Math.max(0, clock() - waitingSince), lastAcquisitionFailure, resumeSupported: resumeSupported(context.game), controlAcknowledged: ownLease(context.game), renewing: Boolean(work.leaseWork && work.leaseWorkAction === 'renew' && !work.controlWork && !work.resumeWork) });
   };
