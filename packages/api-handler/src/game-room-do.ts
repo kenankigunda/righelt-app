@@ -1391,14 +1391,14 @@ export class GameRoomDO {
       const routeKind = path === "/moves" ? "move" : path === "/apply" ? "action" : path === "/shared" ? "shared" : "end_turn";
       if (!reconcile && command.kind !== routeKind) return json({ ok: false, error: "invalid_command_kind" }, 400);
     }
-    const existing = !reconcile ? await loadCommandReceipt(this.env, game.id, commands[0].clientCommandId) : null;
+    let existingReceipt = false;
     const outcomes = new Map<string, CommandOutcome>();
     const batch = new Map(commands.map((command) => [command.clientCommandId, command]));
     const resolve = async (command: SyncCommand): Promise<CommandOutcome> => {
       const resolved = outcomes.get(command.clientCommandId);
       if (resolved) return resolved;
       if (command.predecessor && batch.has(command.predecessor.clientCommandId)) await resolve(batch.get(command.predecessor.clientCommandId)!);
-      const outcome = await this.resolveCommand(command, !reconcile);
+      const outcome = await this.resolveCommand(command, !reconcile, !reconcile ? () => { existingReceipt = true; } : undefined);
       outcomes.set(command.clientCommandId, outcome);
       return outcome;
     };
@@ -1410,17 +1410,20 @@ export class GameRoomDO {
     const move = !reconcile ? current.moves.find((move) => move.clientCommandId === commands[0].clientCommandId) : undefined;
     return json({ ok: true, protocolVersion: 2, gameId: game.id, eventSeq: this.eventSeq, gameplayRevision: current.gameplayRevision, commandOutcomes,
       ...(!reconcile || body.knownSnapshotEventSeq !== this.eventSeq ? { game: withViewModel(current, String(body.identityId)) } : {}),
-      ...(!reconcile ? { accepted: result.outcome === "accepted", clientCommandId: commands[0].clientCommandId, move, state: current.board.state, destroyedPieces: move?.destroyedPieces ?? [], removedPieces: [], ...(stored?.result ?? {}), duplicate: Boolean(existing && result.outcome === "accepted"), ...(result.outcome === "rejected" ? { validation: { ok: false, code: result.reason } } : {}) } : {}),
+      ...(!reconcile ? { accepted: result.outcome === "accepted", clientCommandId: commands[0].clientCommandId, move, state: current.board.state, destroyedPieces: move?.destroyedPieces ?? [], removedPieces: [], ...(stored?.result ?? {}), duplicate: existingReceipt && result.outcome === "accepted", ...(result.outcome === "rejected" ? { validation: { ok: false, code: result.reason } } : {}) } : {}),
     });
   }
 
-  private async resolveCommand(command: SyncCommand, execute: boolean): Promise<CommandOutcome> {
+  private async resolveCommand(command: SyncCommand, execute: boolean, onReceiptFound?: () => void): Promise<CommandOutcome> {
     const game = clone(this.game!);
     const outcome = (status: CommandOutcome["outcome"], reason: string | null, eventSeq = this.eventSeq, gameplayRevision = game.gameplayRevision): CommandOutcome => ({
       gameId: game.id, identityId: command.identityId, clientCommandId: command.clientCommandId, fingerprint: command.fingerprint, outcome: status, reason, eventSeq, gameplayRevision,
     });
     const receipt = await loadCommandReceipt(this.env, game.id, command.clientCommandId);
-    if (receipt) return receipt.identityId === command.identityId && receipt.fingerprint === command.fingerprint ? receipt : outcome("rejected", "command_id_conflict");
+    if (receipt) {
+      onReceiptFound?.();
+      return receipt.identityId === command.identityId && receipt.fingerprint === command.fingerprint ? receipt : outcome("rejected", "command_id_conflict");
+    }
     if (authActive(this.env) && command.authContextId !== this.requestAuthority?.contextId) return outcome("unknown", "retired_session");
     if (await hasLegacyCommandEvidence(this.env, game.id, command.clientCommandId)) return outcome("unknown", "legacy_evidence");
     const reject = async (reason: string) => {

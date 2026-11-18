@@ -203,3 +203,40 @@ test('an accepted Undo ignores forged group claims and reuses its real boundary 
  const previous=structuredClone(game);await h.call('shared',command);assert.deepEqual(h.DB.getGameState('g'),previous);assert.equal(h.DB.getWrites().filter(x=>x.query.startsWith('INSERT INTO live_decision_archive')&&JSON.parse(x.params.at(-1)).kind==='restoration').length,1);
  const changed=await h.command({clientCommandId:command.clientCommandId,kind:'shared',payload:{operation:'revert-request',values:{targetMoveId:'different'}}});assert.equal((await h.call('shared',changed)).commandOutcomes[0].reason,'command_id_conflict');assert.deepEqual(h.DB.getGameState('g').moves,previous.moves);
 });
+
+// A request should resolve its own immutable receipt once; duplicate response
+// metadata uses that same read. Parent/dependency and archive safety stay separate.
+const ownReceiptReads = (h,command,offset) => h.DB.getReads().slice(offset).filter(row => row.query.startsWith('SELECT * FROM live_command_receipts WHERE') && row.params[0]===command.gameId && row.params[1]===command.clientCommandId).length;
+test('direct receipt delivery reads each own durable receipt once and preserves accepted deduplication',async()=>{
+ const h=await harness(),{listLegalActions}=await import('../../game-engine/src/index.ts');
+ const action=listLegalActions(h.DB.getGameState('g').board.state).find(action=>action.type==='move');assert.ok(action);
+ const command=await h.command({kind:'action',payload:{action},actionContractVersion:3});
+ let offset=h.DB.getReads().length;const accepted=await h.call('apply',command);
+ assert.equal(accepted.accepted,true);assert.equal(accepted.duplicate,false);
+ assert.equal(ownReceiptReads(h,command,offset),1);
+ const saved=structuredClone(h.DB.getGameState('g')),receipt=h.DB.getReceipt('g',command.clientCommandId);
+ offset=h.DB.getReads().length;const duplicate=await h.call('apply',command);
+ assert.equal(duplicate.accepted,true);assert.equal(duplicate.duplicate,true);
+ assert.equal(ownReceiptReads(h,command,offset),1);assert.deepEqual(h.DB.getGameState('g'),saved);
+ assert.deepEqual(h.DB.getReceipt('g',command.clientCommandId),receipt);
+});
+
+test('direct receipt lookup preserves rejected duplicate, conflict and legacy outcomes',async()=>{
+ const h=await harness(),rejected=await h.command({kind:'action',payload:{}});
+ const initial=await h.call('apply',rejected);assert.equal(initial.accepted,false);
+ const savedRejected=structuredClone(h.DB.getGameState('g'));
+ let offset=h.DB.getReads().length;const retry=await h.call('apply',rejected);
+ assert.equal(retry.commandOutcomes[0].outcome,'rejected');assert.equal(retry.duplicate,false);
+ assert.equal(ownReceiptReads(h,rejected,offset),1);assert.deepEqual(h.DB.getGameState('g'),savedRejected);
+ const accepted=await h.command();assert.equal((await h.call('moves',accepted)).accepted,true);
+ const saved=structuredClone(h.DB.getGameState('g')),original=h.DB.getReceipt('g',accepted.clientCommandId);
+ const conflict=await h.command({clientCommandId:accepted.clientCommandId,payload:{notation:'different intent'}});
+ offset=h.DB.getReads().length;const conflicting=await h.call('moves',conflict);
+ assert.equal(conflicting.commandOutcomes[0].reason,'command_id_conflict');assert.equal(conflicting.duplicate,false);
+ assert.equal(ownReceiptReads(h,conflict,offset),1);assert.deepEqual(h.DB.getGameState('g'),saved);
+ assert.deepEqual(h.DB.getReceipt('g',accepted.clientCommandId),original);
+ const legacy=await h.command();await h.DB.prepare('INSERT INTO live_legacy_command_tombstones').bind('g',legacy.clientCommandId,'{}').run();
+ offset=h.DB.getReads().length;const unknown=await h.call('moves',legacy);
+ assert.equal(unknown.commandOutcomes[0].outcome,'unknown');assert.equal(unknown.commandOutcomes[0].reason,'legacy_evidence');assert.equal(unknown.duplicate,false);
+ assert.equal(ownReceiptReads(h,legacy,offset),1);assert.equal(h.DB.getReceipt('g',legacy.clientCommandId),null);assert.deepEqual(h.DB.getGameState('g'),saved);
+});
