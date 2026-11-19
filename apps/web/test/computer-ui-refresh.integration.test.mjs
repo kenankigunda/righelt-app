@@ -9,6 +9,7 @@ import {createFramePresentation,COMPUTER_UI_FRAME_MEASURE} from '../shell/frame-
 import {COMPUTER_PRESENTATION} from '../shell/computer-session.js';
 import {createForegroundRecoveryWait} from '../shell/foreground-recovery.js';
 import {createRecoveryPresentation} from '../shell/recovery-presentation.js';
+import {refreshComputerUi} from '../shell/computer-ui-refresh.js';
 
 const source=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const slice=(start,end)=>{
@@ -19,8 +20,7 @@ const slice=(start,end)=>{
 const script=new vm.Script([
  slice('const quietComputerRenewal =','const applySharedMutationGates ='),
  slice('let reconnectPresentationTimer;','const mountBoardForGame ='),
- slice('const updateComputerUi =','const computerUiPresentation ='),
- 'updateComputerUi',
+ '({updateReconnectPresentation,updateRecoveryAnnouncement})',
 ].join('\n'));
 
 test('quiet renewal mounted UI refresh clears stale loading and announcement only for the current game',()=>{
@@ -46,11 +46,21 @@ test('quiet renewal mounted UI refresh clears stale loading and announcement onl
   createRecoveryPresentation,recoveryMessage,needsRecoveryAction,isBoardRecoveryPending,Date,SYNC_TIMING,LOADING_CUE_DELAY_MS:500,
   clearTimeout(){},setTimeout(){return 1;},updateMountedHeader(){},
  });
- const update=script.runInContext(context);update();
+ const recovery=script.runInContext(context),update=()=>refreshComputerUi({...context,...recovery});update();
  assert.equal(wrap.dataset.reconnecting,'false');assert.equal(attrs.get('aria-busy'),'false');assert.equal(announcement.textContent,'');
  assert.equal(view.sharedMutationsBlocked,true);assert.equal(view.pendingCommandCount,1);
  const reads=wrapReads;viewedId=null;update();assert.equal(wrapReads,reads,'Home must not refresh a stale game wrap');
  viewedId=game.id;mountedId='other-mounted-game';update();assert.equal(wrapReads,reads,'route replacement must not touch another mounted game');
+});
+
+test('computer-only refresh updates the current revisited story and ignores a different match',()=>{
+ let current='match',status='Active here';const updates=[],game={id:'match'};
+ const deps={getCurrentViewedGameId:()=>current,transport:{getGameViewModel:()=>game},appEl:{querySelector:()=>null},updateParticipantCards(){},
+  storyDialog:{gameId:()=> 'match',refresh:()=>updates.push('refresh')},syncRevisitedStory:value=>updates.push([value.id,status])};
+ refreshComputerUi(deps);status='Active in another tab';refreshComputerUi(deps);
+ assert.deepEqual(updates,['refresh',['match','Active here'],'refresh',['match','Active in another tab']]);
+ current=null;refreshComputerUi(deps);assert.equal(updates.length,4);
+ deps.storyDialog.gameId=()=> 'old-match';current='match';refreshComputerUi(deps);assert.equal(updates.length,4);
 });
 
 test('actual app wiring batches only raw progress and renders control notifications synchronously',()=>{

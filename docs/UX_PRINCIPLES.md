@@ -256,6 +256,8 @@ Keep exact approved story copy and three scenes per opponent. Plain artwork area
 
 Show each opponent on first play even when ready. Never force watching all images. Play stays disabled until actual runtime readiness. Retry on preparation failure. Close before Play creates no match. Guest seen-state is local; optional account integration supplies account persistence. Player clicks open computer stories or minimal human profiles. Reopened stories do not pause games.
 
+In Players, the computer name opens its story and the separate status badge opens computer controls. Revisited stories stay with the captured match, return focus to their opener, and show the match status rather than new-game preparation. They offer Return to game and, after confirmed completion, View result; they never start another match or pause the current one.
+
 ## Sound
 Wooden-tabletop palette; sound defaults ON unless explicitly muted. Visible lightweight shared-header toggle, independent of login. Remember the device choice, respect browser restrictions and any available explicit no-sound preference. Reduced motion is not mute.
 

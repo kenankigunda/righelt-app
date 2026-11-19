@@ -11,10 +11,14 @@ export function renderComputerPlayerCard(person, { gameId, side, expanded = fals
   const key = `computer:${gameId}:${side}`, id = `computer-details-${gameId}-${side}`, reasonId = `${id}-reason`;
   const resume = current.showResume ? `<button class="secondary" data-key="${escape(key)}:resume" data-action="computer-control" data-control="resume-here" data-computer-side="${escape(side)}" ${current.disabledReason ? `disabled aria-describedby="${escape(reasonId)}"` : ''}>Resume here</button>` : '';
   return `<span class="participant-identity" data-tooltip-boundary data-key="${escape(key)}" data-player-side="${escape(side.toLowerCase())}">
-    <button class="participant-profile participant-computer" data-key="${escape(key)}:toggle" data-action="toggle-computer-card" data-game-id="${escape(gameId)}" data-computer-side="${escape(side)}" aria-label="${escape(description)}" data-tooltip="${escape(description)}" aria-expanded="${expanded}" aria-controls="${escape(id)}">
+    <span class="computer-player-heading">
+    <button class="participant-profile participant-computer" data-key="${escape(key)}:story" data-action="computer-story" data-game-id="${escape(gameId)}" data-computer-side="${escape(side)}" aria-label="About ${escape(name)}, ${side === 'P1' ? 'Red' : 'Blue'}" aria-haspopup="dialog">
       ${renderPlayerEmblem(`computer:${person.computerProfile}`)}<span class="player-name-stack"><span class="player-name">${escape(name)}</span></span>
+    </button>
+    <button class="participant-profile computer-status-control" data-key="${escape(key)}:toggle" data-action="toggle-computer-card" data-game-id="${escape(gameId)}" data-computer-side="${escape(side)}" aria-label="${escape(description)}" data-tooltip="${escape(description)}" aria-expanded="${expanded}" aria-controls="${escape(id)}">
       ${renderComputerStatusBadge(current.state)}
     </button>
+    </span>
     <span class="player-profile-details computer-player-details" data-key="${escape(key)}:details" id="${escape(id)}" ${expanded ? '' : 'hidden'}>${expanded ? `${current.disabledReason && current.showResume ? `<span${current.state==='resuming'?' class="sr-only"':''} id="${escape(reasonId)}">${escape(current.disabledReason)}</span>` : ''}${resume}` : ''}</span>
   </span>`;
 }

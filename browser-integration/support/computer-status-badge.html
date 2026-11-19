@@ -4,6 +4,6 @@ import {mountHoverTooltips} from '/apps/web/shell/hover-tooltip.js';
 const root=document.querySelector('#fixture');let activity,expanded=false,side='P2';
 const render=()=>{root.innerHTML=`<ul class="participant-list" data-testid="participants-list"><li>${renderComputerPlayerCard({computerProfile:'horus'},{gameId:'badge',side,expanded,activity})}</li></ul>`;};
 window.showState=(state,label,options={})=>{activity={state,label,showResume:options.showResume??false,disabledReason:options.disabledReason};side=options.side??'P2';expanded=false;render();};
-root.addEventListener('click',event=>{if(event.target.closest('[data-action="toggle-computer-card"]')){expanded=!expanded;render();root.querySelector('.participant-computer').focus();}else if(event.target.closest('[data-control="resume-here"]'))window.resumeClicks=(window.resumeClicks??0)+1;});
+root.addEventListener('click',event=>{if(event.target.closest('[data-action="toggle-computer-card"]')){expanded=!expanded;render();root.querySelector('[data-action="toggle-computer-card"]').focus();}else if(event.target.closest('[data-control="resume-here"]'))window.resumeClicks=(window.resumeClicks??0)+1;});
 mountHoverTooltips(root);window.showState('here','Active here');await document.fonts.ready;window.fixtureReady=true;
 </script></body></html>
