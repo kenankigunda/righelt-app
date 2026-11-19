@@ -6,3 +6,12 @@
 .computer-replay .computer-replay-changed-piece {
   filter: drop-shadow(0 1px 2px color-mix(in srgb, currentColor 45%, transparent));
 }
+
+/* Recorded frames own the visible position. Retain live inspection intent,
+   but do not paint its connections through the replay's transparent gaps. */
+#app [data-shell-panel="board"] .board-wrap:has(> .computer-replay) > .overlay-lines {
+  visibility: hidden;
+}
+#app [data-shell-panel="board"]:has(.board-wrap > .computer-replay) .overlay-key :is([data-legend-entry="command"], [data-legend-entry="supply"]) {
+  display: none;
+}
