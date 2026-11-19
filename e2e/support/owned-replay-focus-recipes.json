@@ -94,8 +94,8 @@
   {
     "file": "apps/web/shell/displayed-replay-starter.js",
     "servedPath": "/shell/displayed-replay-starter.js",
-    "sourceSha256": "27983282e6b78d6b19f37d18a14f55c4b79b0b40cc9603aacddaae3581e78bb7",
-    "outputSha256": "f58e99a6d1d554e53fc6df0c5c588ec8fc77b1558599185a416ccf5c32cb85e5",
+    "sourceSha256": "a15769e6103cd2905543e54fac988069a04c24c79229e8da493f7ebbdad988e8",
+    "outputSha256": "4f5669d449bbf35193888d27c7ddf4c5ef8f433900a59817794e2ac3abe5a31e",
     "operations": [
       {
         "start": 287,
@@ -104,20 +104,20 @@
         "after": "const __ownedFocusValue=(kind,value,scope)=>{try{globalThis.__ownedFocusProbe?.record(kind,value,scope);}catch{}return value;};\n"
       },
       {
-        "start": 1993,
-        "end": 2137,
+        "start": 2070,
+        "end": 2214,
         "before": "focusReturn=p.focus.begin(trigger,{allows:displayedReplayFocusTarget,allowRemoval:liveFocusTarget,allowDeferredRemoval:liveFocusTarget,onRetire:",
         "after": "focusReturn=p.focus.begin(__ownedFocusValue(\"replay-trigger\",(trigger),null),{allows:displayedReplayFocusTarget,allowRemoval:liveFocusTarget,allowDeferredRemoval:liveFocusTarget,onRetire:"
       },
       {
-        "start": 4958,
-        "end": 5028,
+        "start": 5184,
+        "end": 5254,
         "before": "const finish=()=>{\n   refresh(false);state.activeDisplayedReplay=null;",
         "after": "const finish=()=>{\n   __ownedFocusValue(\"finish-enter\",(trigger),focusReturn);\n   refresh(false);__ownedFocusValue(\"finish-after-render\",(trigger),focusReturn);state.activeDisplayedReplay=null;"
       },
       {
-        "start": 5931,
-        "end": 6053,
+        "start": 6157,
+        "end": 6279,
         "before": "if(replay.playing)refresh(true);else{state.activeDisplayedReplay=null;focusReturn.renderOwnedRemoval(()=>refresh(false));}",
         "after": "const playing=__ownedFocusValue(\"change-playing\",(replay.playing),focusReturn);\n   const refreshObserved=value=>{refresh(value);__ownedFocusValue(\"change-after-render\",(trigger),focusReturn);};\n   if(playing)refreshObserved(true);else{state.activeDisplayedReplay=null;focusReturn.renderOwnedRemoval(()=>refreshObserved(false));}"
       }
