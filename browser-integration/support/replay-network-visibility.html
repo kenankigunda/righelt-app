@@ -1,0 +1,16 @@
+<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Recorded replay network visibility</title>
+<link rel="stylesheet" href="/apps/web/styles.css"><link rel="stylesheet" href="/apps/web/shell/shell.css"><link rel="stylesheet" href="/apps/web/shell/refresh.css"><link rel="stylesheet" href="/apps/web/shell/board-ux.css"><link rel="stylesheet" href="/apps/web/shell/computer-replay.css">
+<main id="app" class="app-root" data-shell-layout-mode="wide" data-shell-route="game" style="display:block;width:100%;max-width:620px;margin:auto;padding:8px"><div class="game-shell-frame"><section class="panel" data-shell-panel="board" data-turn-side="red"><div class="board-wrap" data-testid="game-board-wrap"><div id="shell-board" class="board"></div><svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg></div><div id="legend-host"></div></section></div><section data-shell-panel="history"><span id="other-key" data-legend-entry="command">Other view command line</span></section></main>
+<script type="module">
+import{createEngineBoardAdapter}from'/apps/web/board-adapters/engine-board-adapter.js';
+import{createComputerReplay}from'/apps/web/shell/computer-replay.js';
+import{renderBoardLegend}from'/apps/web/shell/board-legend.js';
+import{updateLegendVisibility,updateInspectionLegend}from'/apps/web/legend.js';
+const data=await(await fetch('/browser-integration/support/replay-network-visibility.json')).json();
+const root=document.querySelector('[data-testid="game-board-wrap"]'),adapter=createEngineBoardAdapter();
+adapter.mount({boardEl:document.getElementById('shell-board'),overlayLinesEl:document.getElementById('shell-overlay-lines'),onCellClick(){}});
+const command={kind:'command',owner:'P2'},supply={kind:'supply',owner:'P1'};
+adapter.render({snapshot:data.live,overlay:{mode:'static',inspection:{kind:'networks',command,supply}},selection:{selectedPieceId:null,source:null,target:null},legalActions:[],selectedPieceMoves:[],selectedPieceMovePreviews:[],removalEffects:[],interactionMode:'static'});
+document.getElementById('legend-host').innerHTML=renderBoardLegend(data.live);const legend=document.querySelector('.overlay-key');updateLegendVisibility(legend,{command:true,supply:true,group:false},true);updateInspectionLegend(legend,data.live,{networkInspections:{command,supply}});
+let replay;window.fixture={async start(mode){replay?.destroy();replay=createComputerReplay({rootEl:root,createAdapter:createEngineBoardAdapter,automatic:mode==='automatic',holdFinal:mode==='automatic'});return replay.play({gameId:'fixture',frames:[data.frame]});},next(){return replay.next();},stop(){replay.stop('navigation');}};window.fixtureReady=true;
+</script>

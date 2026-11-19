@@ -476,6 +476,8 @@ The confirmed November 11 viewer-relative naming decision scopes D04 further: us
 
 Identity color does not define every semantic role. Supply and command paths, action endpoints, activity states and owner emblems each have their own documented meaning. Preserve non-color distinctions, accessible attribution and independent inspector selections. See [legend inspection](RIGHELT_WEB_APP_SPEC.md#independent-board-legend-inspection) and [Players](ai/PLAYERS_CARD_CONTRACT.md). Provenance: [D02, D04, D11](UX_FEEDBACK_AUDIT.md#october-29-to-november-1-decision-index).
 
+Recorded playback owns the visible Board position. While its layer is present, hide the underlying live command and supply graphics together with their passive legend keys. Inspector buttons retain their selections, affiliation and focus; completion or cancellation restores the normal inspection without reserving blank child rows.
+
 When a structured player identity has a known role, color the player name to that role everywhere it appears, including within History and replay sentences. Keep role meaning available without color and in the accessible name. In self-play, the visible actor name is simply You; put Red or Blue in the screen-reader label unless the color is independently necessary to understand the sentence. Do not color arbitrary proper nouns or infer a role by matching user-authored text.
 
 ## Keep feedback above decoration and below modal decisions
