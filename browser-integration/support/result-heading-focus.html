@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Result heading focus</title></head><body>
+<button id="outside">Outside the result</button><main id="result"></main>
+<script type="module">
+import {createHistoryHeadingFocus} from '/apps/web/shell/history-heading-focus.js';
+let scope='account1/game1/finish1',token=null;
+const root=document.querySelector('#result');
+const owner=createHistoryHeadingFocus({doc:document,selector:'.game-result h1',getScope:()=>scope});
+const mount=()=>{root.innerHTML='<section class="game-result" aria-label="Game result"><h1 tabindex="-1">You won as Red</h1><button>Review game</button><a href="#home">Home</a></section>';};
+mount();
+window.resultFocusFixture={
+ begin(){token=owner.capture();},
+ commit(nextScope=scope){scope=nextScope;mount();return owner.restore(token,()=>root.querySelector('h1'));},
+ replace(nextScope=scope){this.begin();return this.commit(nextScope);},
+ setScope(value){scope=value;},
+};
+window.fixtureReady=true;
+</script></body></html>

@@ -1,8 +1,8 @@
-// Preserve an already focused History heading through one synchronous shell
+// Preserve an already focused heading through one synchronous shell
 // replacement. Native input and account/route scope retire the old ownership.
-export function createHistoryHeadingFocus({doc,getScope}) {
+export function createHistoryHeadingFocus({doc,getScope,selector='[data-game-panel="history"] h2'}) {
  const win=doc.defaultView;let current=null,disposed=false;
- const heading=node=>Boolean(node?.matches?.('[data-game-panel="history"] h2'));
+ const heading=node=>Boolean(node?.matches?.(selector));
  const usable=node=>node?.isConnected&&!node.closest?.('[inert]')&&!doc.hidden&&doc.hasFocus?.()!==false;
  const retire=()=>{current=null;};
  const onFocus=event=>{
