@@ -9,6 +9,12 @@ const renderHistoryPreview = (game, preview, key) => {
   return getShellLayoutMode() === "narrow"
   ? `<div class="history-inline-preview" data-testid="history-inline-preview"><p class="history-inline-narration">${renderBoardMessageHtml(selectedHistoryPresentation(game,{identityId:transport.getIdentityId()})?.message??{text:'Historical details unavailable'})}</p>${preview.snapshot ? renderMiniBoardPreviewRoot({previewId:key,...preview,previewKey:toStableKey(preview)}) : '<p role="status">Preview unavailable</p>'}</div>` : "";
 };
+const renderImportedTurnReplay = game => {
+  const {importedTurnReplayDescriptor,contextReplayEnabled,escapeHtml}=getDependencies();
+  const descriptor=importedTurnReplayDescriptor?.(game.id);
+  if(!descriptor)return '';
+  return `<div class="history-imported-turn-replay"><button type="button" class="secondary" data-action="replay-board-context" data-replay-source="imported-turn" data-board-context-key="${escapeHtml(descriptor.key)}"${contextReplayEnabled(descriptor)?'':' disabled'}>Show me again</button></div>`;
+};
 const renderTurnHistory = (game) => {
   const {renderIncomingHistory, getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, mobilePreviousTurnReplaySupplies=()=>false, historySelectionEpisode=()=>null, undoHistory, expandedUndoneGroups, expandedImportedHistory, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView} = getDependencies();
   const selectionEpisode=historySelectionEpisode();
@@ -77,7 +83,7 @@ const renderTurnHistory = (game) => {
     const selectable=!selected&&active&&!selectableTurns.has(turn.index);
     if(active)selectableTurns.add(turn.index);
     return `<li class="history-turn ${playerToneClassForSide(side)}${selected&&selectionPending?' history-selection-pending':''}" data-key="${escapeHtml(key)}" data-testid="history-turn" aria-label="Turn ${turn.index+1} · ${escapeHtml(name)}"${selected?pendingAttributes(selectionPending,episodePending):''}>${selectable?`<button type="button" class="history-turn-hit secondary${selectionPending?' history-selection-pending':''}" data-action="jump-history-turn" data-game-id="${escapeHtml(game.id)}" data-turn-index="${turn.index}" aria-label="Inspect Turn ${turn.index+1} · ${escapeHtml(name)}"${pendingAttributes(selectionPending,episodePending)}></button>`:''}<div class="history-turn-heading${selected?' is-selected':''}" data-key="turn:${escapeHtml(game.id)}:${turn.index}:${escapeHtml(key)}" ${selected?'aria-current="true"':''}>Turn ${turn.index+1}</div>
-      ${selected?renderHistoryPreview(game,buildTurnPreview(game.historyTurnMoves,{context:'history'}),`turn:${game.id}:${turn.index}`):''}
+      ${selected?renderHistoryPreview(game,buildTurnPreview(game.historyTurnMoves,{context:'history'}),`turn:${game.id}:${turn.index}`):''}${selected&&records.length?renderImportedTurnReplay(game):''}
       <ol class="history-list history-list-nested">${records.map(record=>row(record.move,record.entry)).join('')}</ol></li>`;
   };
   const undoGroups=timeline.groups;
@@ -183,7 +189,7 @@ const renderAdditionalHistory = game => {
       const canonical=!portions.has(index);portions.add(index);
       const key=canonical?`archive-history-turn:${game.id}:${index}`:`archive-history-turn:${game.id}:${index}:portion:${node.records[0].id}`;
       const heading=`<div class="history-turn-heading${selectedTurn?' is-selected':''}" data-key="${escapeHtml(key)}:heading" ${selectedTurn?'aria-current="true"':''}>Turn ${index+1}</div>`;
-      return `<li class="history-turn ${playerToneClassForSide(side)}" data-key="${escapeHtml(key)}" aria-label="Turn ${index+1} · ${escapeHtml(turnName)}">${turnHit}${heading}${selectedTurn?renderHistoryPreview(game,buildTurnPreview(game.historyTurnMoves,{context:'history'}),`archive-turn:${game.id}:${index}`):''}<ol class="history-list history-list-nested">${entries.map(archiveRow).join('')}</ol></li>`;
+      return `<li class="history-turn ${playerToneClassForSide(side)}" data-key="${escapeHtml(key)}" aria-label="Turn ${index+1} · ${escapeHtml(turnName)}">${turnHit}${heading}${selectedTurn?renderHistoryPreview(game,buildTurnPreview(game.historyTurnMoves,{context:'history'}),`archive-turn:${game.id}:${index}`):''}${selectedTurn?renderImportedTurnReplay(game):''}<ol class="history-list history-list-nested">${entries.map(archiveRow).join('')}</ol></li>`;
     }).join('');
   }
   const action=state.error?`<p role="status">We couldn’t load more history</p><button class="secondary" data-action="retry-history-archive" data-game-id="${escapeHtml(game.id)}">${icon('rematch')}Retry</button>`

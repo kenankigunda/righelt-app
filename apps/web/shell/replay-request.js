@@ -1,4 +1,4 @@
-const sameContext = (a, b) => b?.visible !== false && ['owner', 'scope', 'gameId', 'revision', 'lineageHead'].every(key => a?.[key] === b?.[key]);
+const sameContext = (a, b) => b?.visible !== false && ['owner', 'scope', 'gameId', 'revision', 'lineageHead', 'viewGeneration'].every(key => a?.[key] === b?.[key]);
 
 // Archive reads may outlive the user's intent. Only the current request may
 // publish loading/error state or start playback, including after a failed read.
