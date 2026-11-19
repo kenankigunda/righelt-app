@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { createAccountController, safeAccountIntent } from '../shell/account-controller.js';
-import { createOpponentStoryDialog } from '../shell/opponent-stories.js';
+import { createShellStoryDialog } from '../shell/shell-story-dialog.js';
 
 // An explicit immutable source copy permits failing-first proof without
 // replacing the candidate's working tree. CI always uses its actual app source.
@@ -78,7 +78,7 @@ function fixture() {
   });
   let committed;
   context = {
-    account, safeAccountIntent, createOpponentStoryDialog: options => createOpponentStoryDialog({ ...options, document }), createModal, document,
+    account, safeAccountIntent, createModal, document,
     window: { location: { hash: '#/' }, sessionStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) } },
     navigator: { onLine: true }, setTimeout, clearTimeout,
     preparation: { cancel() {} }, opponentSession: { cancel() {} },
@@ -100,9 +100,12 @@ function fixture() {
   };
   // Keep the VM's exported bindings, including the same modal instance.
   const vmContext = { ...context, trigger };
+  vmContext.storyDialog = createShellStoryDialog({...context,
+    getHomeReadRecovery:()=>false,getAccount:()=>account,getTransport:()=>context.transport,
+    getCurrentRoute:()=>context.currentRoute,presentGameResult() {},
+  });
   runInNewContext(`
     ${source.includes("let homeReadJob = null;") ? extract("let homeReadJob = null;", "const hydrateRoute =") : ""}
-    ${extract('const storyDialog = createOpponentStoryDialog', "\n\ndocument.addEventListener('visibilitychange'")}
     ${extract('const waitForAccountGate = async', 'const openBoardAccountGate = async')}
     ${extract('let startupFlight = false', 'window.addEventListener("offline", () => clearTimeout(startupRetryTimer))')}
     globalThis.story = storyDialog; globalThis.startup = initialRender;

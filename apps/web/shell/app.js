@@ -56,7 +56,7 @@ import {createLiveTurnOverview,liveTurnOverviewOverlay} from './live-turn-overvi
 import {mountHoverTooltips} from './hover-tooltip.js';
 import {captureHomeFocus,refreshHomeFocus,restoreHomeFocus,restoreHomeReadingPosition} from './home-focus.js';
 import {homeCardResult} from './home-card-result.js';
-import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName} from './perspective-labels.js';
+import {boardTurnCaption,liveHistoryLabel,historyActorLabel,sideColorName,playerDisplayName,humanControlledSides} from './perspective-labels.js';
 import {renderSummaryLoading,renderPlayersLoading,renderHistorySlots,renderHistoryLoading,renderInvitationLoading} from './panel-loading.js';
 import {renderGameSummaryPanel as renderGameSummaryPanelContent} from './game-summary-panel.js';
 import {renderConnectionStatusIcon} from './participant-status.js';
@@ -79,6 +79,7 @@ import { beginScenarioCapture, scenarioCapturePosition, canLoadScenarioInPlace }
 import { createComputerPreparation } from './computer-preparation.js';
 import { createComputerSession, COMPUTER_PRESENTATION } from './computer-session.js';
 import { createFramePresentation, COMPUTER_UI_FRAME_MEASURE } from './frame-presentation.js';
+import {refreshComputerUi} from './computer-ui-refresh.js';
 import { renderComputerProgress, renderDecisionDebug } from './computer-view.js';
 import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
 let computerSession = null;
@@ -137,7 +138,8 @@ import {actionAwaitsPlayer,createDocumentIconOwner,gameDocumentStartedAt} from '
 import { icon, soundToggle, headerActionContent } from './ui.js';
 import { createGameSound } from './sound.js';
 import { createModal } from './modal.js';
-import { createOpponentStoryDialog, OPPONENT_STORIES } from './opponent-stories.js';
+import { OPPONENT_STORIES } from './opponent-stories.js';
+import { createShellStoryDialog } from './shell-story-dialog.js';
 import { recoveryMessage, needsRecoveryAction, sharedMutationActions, isBoardRecoveryPending } from "./recovery-view.js";
 import { createForegroundRecoveryWait } from './foreground-recovery.js';
 import { renderGameAlertCard } from "./game-alert.js";
@@ -353,6 +355,7 @@ const account = createAccountController({ storage,
   onChange: () => { document.documentElement.dataset.viewPreference = account.snapshot().session.account?.preferences?.view || "focused"; if (account.snapshot().ready) accountStartupError = ""; if (accountInitialized) { accountDialog.refreshSession(); render({ animatePanels: false, includeBoard: false }); if(storageResetPending && account.snapshot().ready){storageResetPending=false;queueMicrotask(()=>{navigateTo("#/");startRouteSync();});} } },
 });
 let accountDialog=null;
+let storyDialog=null;
 accountDialog = createAccountDialog({ controller: account, onSound:kind=>gameSound.play(kind), onTutorial: () => { tutorial.reset(); navigateTo(buildTutorialHash()); }, getSiteKey: () => account.snapshot().siteKey,
   onComplete: intent => { void completeAccountContinuation(intent); },
   onLayoutChange: () => {const update=()=>render({animatePanels:false,includeBoard:false});if(accountDialog?.isOpen())update();else resumeAfterDialogFocusRestore(update);},
@@ -396,6 +399,12 @@ const toStableKey = (value) => {
 const confirmedResultOwner = createConfirmedResultOwner();
 const resultPresentation = createResultPresentation({onEnter:kind=>gameSound.play(kind)});
 const resumePendingResult=()=>{if(currentRoute.name==='game'&&confirmedResultOwner.snapshot(currentRoute.gameId)?.mode==='pending')queueMicrotask(()=>render({animatePanels:false,includeBoard:false}));};
+const presentGameResult = gameId => {
+  if (gameId !== getCurrentViewedGameId()) return;
+  const result=getGameResult(transport.getAuthoritativeGame(gameId),transport.getIdentityId());
+  if (transport.getGameViewModel(gameId)?.confirmedPlayback || !result) return;
+  confirmedResultOwner.present(gameId);resultPresentation.enter(gameId,result);activeResultGameId=gameId;render({animatePanels:false});
+};
 let activeResultGameId = null;
 let pendingResultReviewFocus = null;
 let currentRoute = parseRouteFromHash(window.location.hash);
@@ -3406,7 +3415,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
     const resultDecision=confirmedResultOwner.evaluate(confirmed?.id,{current:true,visible:!document.hidden&&document.hasFocus(),dialogOpen:storyDialog.isOpen()||rematchDialog.isOpen()||branchDialog.isOpen()||accountDialog.isOpen(),inHistory:game?.inHistoryMode});
     if(resultDecision.present){activeResultGameId=currentRoute.gameId;resultPresentation.enter(confirmed.id,getGameResult(confirmed,transport.getIdentityId()));}
     if(activeResultGameId!==currentRoute.gameId&&resultDecision.allowReview)completedReviewOwner.sync(game,completedReviewEntryGeneration,{preserveSelection:preserveVisitSelection});
-    if(storyDialog.gameId()===currentRoute.gameId && getGameResult(confirmed,transport.getIdentityId()))storyDialog.setMatchStatus('Game finished',true);
+    if(storyDialog.gameId()===currentRoute.gameId)syncRevisitedStory(game);
   }
   document.title = getDocumentTitle();
   documentIcon.sync({
@@ -3898,24 +3907,9 @@ const startComputerReplay=createDisplayedReplayStarter(()=>({
  presentation:boardContextPresentation,transport,document,forcedFollowWorking,confirmedPlayback,replayController,replayRequests,appEl,boardRuntime,CSS,
  createEngineBoardAdapter,prefersReducedMotion,setReplayController:value=>{replayController=value;},
 }));
-const updateComputerUi = () => {
-  boardRuntime?.refreshStatus?.();
-  const gameId = getCurrentViewedGameId(), game = gameId ? transport.getGameViewModel(gameId) : null;
-  const mountedGameId = appEl.querySelector('[data-testid="game-shell"]')?.getAttribute('data-game-id');
-  if (game && mountedGameId === game.id) {
-    updateReconnectPresentation(game);
-    updateRecoveryAnnouncement(game);
-  }
-  updateParticipantCards(game);
-  const alerts=appEl.querySelector('#shell-game-alerts');
-  if(alerts && game) {
-    const html=renderGameAlertsHtml(game);
-    patchNotificationHtml(alerts,html);
-    alerts.closest('[data-shell-alert-zone]')?.setAttribute('data-shell-alert-zone',html?'active':'idle');
-  }
-  const debug = appEl.querySelector('[data-flyout="debug"] .shell-flyout-scroll');
-  if (debug) patchToolHtml(debug, renderDebugContent());
-};
+const updateComputerUi = () => refreshComputerUi({boardRuntime,getCurrentViewedGameId,transport,appEl,
+  updateReconnectPresentation,updateRecoveryAnnouncement,updateParticipantCards,storyDialog,syncRevisitedStory,
+  renderGameAlertsHtml,patchNotificationHtml,patchToolHtml,renderDebugContent});
 const computerUiPresentation = createFramePresentation({ render: updateComputerUi, measurementName: COMPUTER_UI_FRAME_MEASURE });
 computerSession = createComputerSession({ getContext: () => {
   const state = account.snapshot(), gameId = currentRoute.name === 'game' ? currentRoute.gameId : null;
@@ -4056,24 +4050,18 @@ const opponentSession = createOpponentSession({ preferences:createIntroductionPr
   navigateTo(buildGameHash(handle.result.id,null,getCurrentFlyoutState()));
   return handle.result;
 } });
-const storyDialog = createOpponentStoryDialog({ createModal, getReadiness: opponent => homeReadRecovery ? {state:'preparing',message:'Your games are still reconnecting.'} : opponent === 'friend' ? {state:'ready'} : getComputerReadiness(),
-  onPlay: intent => {
-    if(homeReadRecovery)return {state:'error',message:'Reconnect your games before starting.'};
-    if(intent.opponent !== 'friend') return opponentSession.play(intent);
-    if(!account.canPlay()) return {state:'error',message:'Sign in to start your game.'};
-    storyDialog.close('play');
-    const handle=transport.createGame({selfPlayMode:false});
-    startGameEntryRouteTransition(handle.result.id,currentRoute.name);
-    navigateTo(buildGameHash(handle.result.id,null,getCurrentFlyoutState()));
-    openFriendInvite(handle.result.id);
-    return {state:'started'};
-  }, onRetry:opponent=>prepareOpponent('intro',opponent), onClose:reason=>{preparation.cancel('intro');opponentSession.cancel();if(reason === 'dismiss')gameSound.play('intro-back');resumePendingResult();},
-  onPresentation: () => { const root=document.createElement('div');root.className='story-presentation-board';root.setAttribute('aria-hidden','true');document.body.append(root);const preview=createMiniBoardPreview({rootEl:root,preview:{snapshot:createInitialBoardSnapshot(),previewKey:'intro'},createAdapter:createEngineBoardAdapter});return ()=>{preview.destroy();root.remove();}; },
-});
+storyDialog = createShellStoryDialog({createModal,document,getHomeReadRecovery:()=>homeReadRecovery,getComputerReadiness,
+ getAccount:()=>account,getTransport:()=>transport,getCurrentRoute:()=>currentRoute,opponentSession,prepareOpponent,preparation,gameSound,
+ startGameEntryRouteTransition,navigateTo:(...args)=>navigateTo(...args),buildGameHash,getCurrentFlyoutState,openFriendInvite,
+ resumePendingResult,presentGameResult,createMiniBoardPreview,createInitialBoardSnapshot,createEngineBoardAdapter});
+function syncRevisitedStory(game) {
+  const result=getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId());
+  storyDialog.setMatchStatus(result?'Game finished':computerSession?.snapshot().activity?.label ?? 'Game in progress',Boolean(result&&!game.confirmedPlayback));
+}
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {preparation.cancel();resultPresentation.clear();}
-  else if (storyDialog.isOpen()) void prepareOpponent('intro',storyDialog.opponent());
+  else if (storyDialog.isOpen() && storyDialog.opponent()) void prepareOpponent('intro',storyDialog.opponent());
   else if (rematchDialog.isOpen()) void prepareOpponent('rematch',rematchDialog.opponent());
   else if (branchDialog.isOpen()) void prepareOpponent('branch',branchDialog.opponent());
   if(!document.hidden)resumePendingResult();
@@ -4517,7 +4505,7 @@ appEl.addEventListener("click", async (event) => {
     accountDialog.open("login", intent, actionEl);
     return;
   }
-  if (action === "view-result") { const result=getGameResult(transport.getAuthoritativeGame(actionGameId), transport.getIdentityId());if (transport.getGameViewModel(actionGameId)?.confirmedPlayback || !result) return; confirmedResultOwner.present(actionGameId);resultPresentation.enter(actionGameId,result);activeResultGameId = actionGameId; render({ animatePanels: false }); return; }
+  if (action === "view-result") { presentGameResult(actionGameId); return; }
   if (action === "dismiss-result-notice") {confirmedResultOwner.dismissNotice(actionGameId);render({animatePanels:false,includeBoard:false});return;}
   if (action === "analysis") { confirmedResultOwner.review(actionGameId);completedReviewEntryGeneration++;resultPresentation.clear();pendingResultReviewFocus = actionGameId; activeResultGameId = null; render({ animatePanels: false }); navigateTo(buildGameHash(actionGameId, null, getCurrentGameHashState("history"))); return; }
   if (action === "rematch") {
@@ -4586,6 +4574,17 @@ appEl.addEventListener("click", async (event) => {
       const work=action==='retry-history-archive'?additionalHistory.retry(gameId):additionalHistory.more(gameId);
       render({animatePanels:false,includeBoard:false});await work;
     }
+    return;
+  }
+  if (action === 'computer-story') {
+    const gameId=actionEl.dataset.gameId, side=actionEl.dataset.computerSide;
+    const owner=transport,scope=viewingScope(),game=owner.getGameViewModel(gameId),identityId=owner.getIdentityId(),generation=account.snapshot().generation;
+    const profileFor = value => value?.computer ? value.computer.seats?.[side==='P1'?'p1':'p2'] : value?.[side==='P1'?'player1':'player2']?.computerProfile;
+    const opponent=profileFor(game);
+    if(gameId!==getCurrentViewedGameId() || !['P1','P2'].includes(side) || !OPPONENT_STORIES[opponent])return;
+    gameSound.play('intro');
+    storyDialog.open(opponent,{mode:'revisit',gameId,trigger:actionEl,side:humanControlledSides(game,{identityId})[0]?.toLowerCase()??'p1',isCurrent:()=>owner===transport&&scope===viewingScope()&&gameId===getCurrentViewedGameId()&&generation===account.snapshot().generation&&identityId===owner.getIdentityId()&&profileFor(owner.getGameViewModel(gameId))===opponent});
+    syncRevisitedStory(game);
     return;
   }
   if (action === 'toggle-computer-card') {

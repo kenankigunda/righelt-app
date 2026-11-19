@@ -12,16 +12,16 @@ function fixture() {
   ]);
   const document = new EventTarget();
   document.querySelector = selector => nodes.get(selector) ?? null;
-  const status = {dataset:{},textContent:''};
+  const status = {dataset:{},textContent:''},result={hidden:true},results=[];
   const element = new EventTarget();
   element.dataset = {}; element.open = false;
-  element.querySelector = selector => selector === '[data-story-readiness]' ? status : null;
+  element.querySelector = selector => selector === '[data-story-readiness]' ? status : selector === '[data-story-result]' ? result : null;
   element.querySelectorAll = () => [];
   let resolver, trigger;
   const story = createOpponentStoryDialog({document,
-    createModal:({onClose}) => ({element,open(_html,source,resolve) {trigger=source;resolver=resolve;},close(){onClose('dismiss');},destroy(){onClose('dismiss');}}),
-    getReadiness:() => ({state:'ready'}),onPlay:() => assert.fail('Opening a story must not start a game')});
-  return {story,friend,babs,nodes,get resolver(){return resolver;},get trigger(){return trigger;}};
+    createModal:({onClose}) => ({element,open(_html,source,resolve) {element.open=true;trigger=source;resolver=resolve;},close(){element.open=false;onClose('dismiss');},destroy(){element.open=false;onClose('dismiss');}}),
+    getReadiness:() => ({state:'ready'}),onViewResult:id=>results.push(id),onPlay:() => assert.fail('Opening a story must not start a game')});
+  return {story,friend,babs,nodes,element,status,result,results,get resolver(){return resolver;},get trigger(){return trigger;}};
 }
 
 test('Friend introduction resolves the available replacement Home opener',()=>{
@@ -35,4 +35,29 @@ test('computer introduction retains its own replacement opener',()=>{
 });
 test('revisited stories do not redirect focus to a Home opener',()=>{
   const f=fixture();try {f.story.open('friend',{mode:'revisit'});assert.equal(f.resolver,null);}finally {f.story.destroy();}
+});
+
+test('revisit refresh retains current match status and its result action uses the captured game',()=>{
+ const f=fixture();
+ try {
+  f.story.open('babs',{mode:'revisit',gameId:'current-match'});
+  f.story.setMatchStatus('Making their move');f.story.refresh();
+  assert.equal(f.status.textContent,'Making their move');assert.equal(f.result.hidden,true);
+  f.story.setMatchStatus('Game finished',true);f.story.refresh();
+  assert.equal(f.status.textContent,'Game finished');assert.equal(f.result.hidden,false);
+  const event=new Event('click');Object.defineProperty(event,'target',{value:{closest:selector=>selector==='[data-story-result]'?{}:null}});
+  f.element.dispatchEvent(event);assert.deepEqual(f.results,['current-match']);assert.equal(f.element.open,false);
+ } finally {f.story.destroy();}
+});
+
+test('retired revisit scope closes without publishing stale status or a result action',()=>{
+ const f=fixture();let current=true;
+ try {
+  f.story.open('babs',{mode:'revisit',gameId:'old-match',isCurrent:()=>current});
+  f.story.setMatchStatus('Waiting for a turn');current=false;
+  f.story.setMatchStatus('Game finished',true);assert.equal(f.status.textContent,'Waiting for a turn');
+  f.story.refresh();assert.equal(f.element.open,false);
+  const event=new Event('click');Object.defineProperty(event,'target',{value:{closest:()=>({})}});
+  f.element.dispatchEvent(event);assert.deepEqual(f.results,[]);
+ } finally {f.story.destroy();}
 });

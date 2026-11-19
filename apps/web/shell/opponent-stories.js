@@ -22,11 +22,13 @@ export const shouldShowOpponentIntroduction = (opponent, introduced, readiness) 
   !OPPONENT_STORIES[opponent] || !(introduced & OPPONENT_STORIES[opponent].bit) || readiness.state !== "ready";
 
 export const createOpponentStoryDialog = ({ createModal, document = globalThis.document, getReadiness, onPlay, onRetry = () => {}, onViewResult = () => {}, onPresentation = () => () => {}, onClose = () => {} }) => {
-  let opponent, side, carousel, mode, gameId, busy = false, session = 0, destroyPresentation = () => {};
+  let opponent, side, carousel, mode, gameId, busy = false, session = 0, destroyPresentation = () => {}, isCurrent = () => true;
   const artworkMotion=createStoryArtworkMotion();
   const modal = createModal({ document, labelId: "opponent-story-title", className: "opponent-story-modal", onClose: reason => { artworkMotion.cancel(); session++; busy = false; destroyPresentation(); destroyPresentation = () => {}; carousel?.destroy(); carousel = null; onClose(reason); } });
   const refresh = () => {
     if (!modal.element.open) return;
+    if (!isCurrent()) { modal.close('retired'); return; }
+    if (mode === 'revisit') return;
     const readiness = getReadiness(opponent);
     const play = modal.element.querySelector("[data-story-play]");
     if (play) { play.disabled = busy || readiness.state !== "ready"; play.dataset.loadingState = busy ? "pending" : "idle"; play.setAttribute("aria-busy",String(busy)); }
@@ -68,6 +70,7 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
     }
   });
   modal.element.addEventListener("click", async event => {
+    if (!modal.element.open || !isCurrent()) return;
     if (event.target.closest("[data-story-result]")) { const id = gameId; modal.close(); onViewResult(id); return; }
     const caret = event.target.closest("[data-story-step]");
     if (caret) carousel?.select((carousel.state().index + Number(caret.dataset.storyStep) + 3) % 3);
@@ -96,11 +99,11 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
     gameId: () => gameId,
     opponent: () => mode === "intro" ? opponent : null,
     refresh,
-    setMatchStatus(text, finished = false) { if (!modal.element.open || mode !== "revisit") return; modal.element.querySelector("[data-story-readiness]").textContent = text; const result = modal.element.querySelector("[data-story-result]"); if (result) result.hidden = !finished; },
+    setMatchStatus(text, finished = false) { if (!modal.element.open || mode !== "revisit" || !isCurrent()) return; modal.element.querySelector("[data-story-readiness]").textContent = text; const result = modal.element.querySelector("[data-story-result]"); if (result) result.hidden = !finished; },
     open(id, options = {}) {
       const story = id === "friend" ? FRIEND_STORY : OPPONENT_STORIES[id]; if (!story) return;
       const multipleScenes = story.scenes.length > 1;
-      artworkMotion.cancel();session++; destroyPresentation(); carousel?.destroy(); opponent = id; side = options.side || "p1"; mode = options.mode || "intro"; gameId = options.gameId || null; busy = false;
+      artworkMotion.cancel();session++; destroyPresentation(); carousel?.destroy(); opponent = id; side = options.side || "p1"; mode = options.mode || "intro"; gameId = options.gameId || null; busy = false; isCurrent = options.isCurrent ?? (() => true);
       destroyPresentation = mode === "intro" ? onPresentation() : () => {};
       const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches || false;
       modal.open(`${renderDismissButton({label:"Close opponent story",className:"story-close",attributes:{"data-modal-close":true}})}

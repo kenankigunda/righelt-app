@@ -13,7 +13,9 @@ test('every approved state has one decorative combined icon and one complete row
   assert.equal((html.match(/computer-status-badge/g)||[]).length,1);
   assert.doesNotMatch(html,/connection-status-icon|player-kind-icon|aria-description|role="img"/);
   assert.doesNotMatch(html,new RegExp(`>${label}<`));
-  assert.equal((html.match(/<button /g)||[]).length,1);
+  assert.equal((html.match(/<button /g)||[]).length,2,'Story identity and status disclosure stay independently actionable');
+  assert.match(html,/data-action="computer-story"/);
+  assert.match(html,new RegExp(`aria-label="About Horus, ${side==='P1'?'Red':'Blue'}" aria-haspopup="dialog"`));
  }
 });
 test('expansion retains recovery permissions without repeating ordinary status words',()=>{
