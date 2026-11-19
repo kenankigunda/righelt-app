@@ -138,7 +138,8 @@ import {actionAwaitsPlayer,createDocumentIconOwner,gameDocumentStartedAt} from '
 import { icon, soundToggle, headerActionContent } from './ui.js';
 import { createGameSound } from './sound.js';
 import { createModal } from './modal.js';
-import { createOpponentStoryDialog, OPPONENT_STORIES } from './opponent-stories.js';
+import { OPPONENT_STORIES } from './opponent-stories.js';
+import { createShellStoryDialog } from './shell-story-dialog.js';
 import { recoveryMessage, needsRecoveryAction, sharedMutationActions, isBoardRecoveryPending } from "./recovery-view.js";
 import { createForegroundRecoveryWait } from './foreground-recovery.js';
 import { renderGameAlertCard } from "./game-alert.js";
@@ -4049,21 +4050,10 @@ const opponentSession = createOpponentSession({ preferences:createIntroductionPr
   navigateTo(buildGameHash(handle.result.id,null,getCurrentFlyoutState()));
   return handle.result;
 } });
-storyDialog = createOpponentStoryDialog({ createModal, getReadiness: opponent => homeReadRecovery ? {state:'preparing',message:'Your games are still reconnecting.'} : opponent === 'friend' ? {state:'ready'} : getComputerReadiness(),
-  onViewResult: presentGameResult,
-  onPlay: intent => {
-    if(homeReadRecovery)return {state:'error',message:'Reconnect your games before starting.'};
-    if(intent.opponent !== 'friend') return opponentSession.play(intent);
-    if(!account.canPlay()) return {state:'error',message:'Sign in to start your game.'};
-    storyDialog.close('play');
-    const handle=transport.createGame({selfPlayMode:false});
-    startGameEntryRouteTransition(handle.result.id,currentRoute.name);
-    navigateTo(buildGameHash(handle.result.id,null,getCurrentFlyoutState()));
-    openFriendInvite(handle.result.id);
-    return {state:'started'};
-  }, onRetry:opponent=>prepareOpponent('intro',opponent), onClose:reason=>{preparation.cancel('intro');opponentSession.cancel();if(reason === 'dismiss')gameSound.play('intro-back');resumePendingResult();},
-  onPresentation: () => { const root=document.createElement('div');root.className='story-presentation-board';root.setAttribute('aria-hidden','true');document.body.append(root);const preview=createMiniBoardPreview({rootEl:root,preview:{snapshot:createInitialBoardSnapshot(),previewKey:'intro'},createAdapter:createEngineBoardAdapter});return ()=>{preview.destroy();root.remove();}; },
-});
+storyDialog = createShellStoryDialog({createModal,document,getHomeReadRecovery:()=>homeReadRecovery,getComputerReadiness,
+ getAccount:()=>account,getTransport:()=>transport,getCurrentRoute:()=>currentRoute,opponentSession,prepareOpponent,preparation,gameSound,
+ startGameEntryRouteTransition,navigateTo:(...args)=>navigateTo(...args),buildGameHash,getCurrentFlyoutState,openFriendInvite,
+ resumePendingResult,presentGameResult,createMiniBoardPreview,createInitialBoardSnapshot,createEngineBoardAdapter});
 function syncRevisitedStory(game) {
   const result=getGameResult(transport.getAuthoritativeGame(game.id),transport.getIdentityId());
   storyDialog.setMatchStatus(result?'Game finished':computerSession?.snapshot().activity?.label ?? 'Game in progress',Boolean(result&&!game.confirmedPlayback));

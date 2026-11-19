@@ -21,7 +21,10 @@ test('computer player opens its story while the same match continues at 390px',a
  await identity.click();await expect(story(page)).toBeVisible();
  await expect(story(page).getByRole('button',{name:'Return to game',exact:true})).toBeVisible();
  await expect(story(page).locator('[data-story-play],[data-story-retry]')).toHaveCount(0);
- expect(canonical(await read(page,id))).toEqual(canonical(before));
+ const opened=await read(page,id);
+ expect(canonical(opened)).toEqual(canonical(before));
+ expect(before.computer.paused).toBe(false);
+ expect(opened.computer.paused).toBe(false);
 
  // A second normal page supplies the human move while the first stays in its
  // story. The accepted computer response must still advance the same match.
