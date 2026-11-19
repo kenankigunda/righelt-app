@@ -1,8 +1,8 @@
 {
   "version": 1,
   "modulePath": "/shell/app.js",
-  "sourceSha256": "65e4ffa7bebdf7d3c6b87458323c67b6fe9a02e868617ad8b7bc7525a322fb02",
-  "outputSha256": "ecee8ef3b4d604220c1ee6c001fa373c0a3305af0589654d3c8487f36f673b2f",
+  "sourceSha256": "24ed6e0964011bb178ae050f6a8b5513f475205822895b3b18138518466d1e73",
+  "outputSha256": "c541db5076dc09abb6ab940c2dca2e074297f51e623e8c8c16687c8127eef2da",
   "prefix": "const __righeltResultReviewFocusProbe = (kind, refs = {}) => { try { globalThis.__RIGHELT_RESULT_REVIEW_FOCUS_PROBE__?.(kind, refs); } catch {} };\n",
   "operations": [
     {
@@ -14,36 +14,36 @@
     },
     {
       "label": "incremental-history-patch",
-      "start": 146803,
-      "end": 146858,
+      "start": 147057,
+      "end": 147112,
       "before": "    patchToolHtml(historyEl, renderHistoryPanel(game));",
       "after": "    __righeltResultReviewFocusProbe(\"history-before-incremental-patch\",{root:historyEl});\n    patchToolHtml(historyEl, renderHistoryPanel(game));\n    __righeltResultReviewFocusProbe(\"history-after-incremental-patch\",{root:historyEl});"
     },
     {
       "label": "committed-render-entry",
-      "start": 181197,
-      "end": 181270,
+      "start": 181451,
+      "end": 181524,
       "before": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;",
       "after": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;\n  __righeltResultReviewFocusProbe(\"render-committed-entry\");"
     },
     {
       "label": "original-focus-once",
-      "start": 182700,
-      "end": 182809,
+      "start": 182954,
+      "end": 183063,
       "before": "if (heading) { heading.tabIndex = -1; heading.focus({preventScroll:true}); pendingResultReviewFocus = null; }",
       "after": "if (heading) { heading.tabIndex = -1; __righeltResultReviewFocusProbe(\"focus-before\", {node:heading}); heading.focus({preventScroll:true}); __righeltResultReviewFocusProbe(\"focus-after\", {node:heading}); pendingResultReviewFocus = null; }"
     },
     {
       "label": "existing-render-tail",
-      "start": 182814,
-      "end": 183011,
+      "start": 183068,
+      "end": 183265,
       "before": "  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  resumeBoardContextReplay();",
       "after": "  __righeltResultReviewFocusProbe(\"render-before-join\");\n  joinFeedback.restoreFocus({ document, root: appEl, previousActive: previousJoinFocus });\n  __righeltResultReviewFocusProbe(\"render-after-join\");\n  pendingInvitationFocus.restore({ root: appEl, pending: isButtonPending });\n  resumeBoardContextReplay();\n  __righeltResultReviewFocusProbe(\"render-after-resume\");"
     },
     {
       "label": "explicit-analysis",
-      "start": 253438,
-      "end": 253569,
+      "start": 253860,
+      "end": 253991,
       "before": "if (action === \"analysis\") { confirmedResultOwner.review(actionGameId);completedReviewEntryGeneration++;resultPresentation.clear();",
       "after": "if (action === \"analysis\") { __righeltResultReviewFocusProbe(\"analysis-entry\"); confirmedResultOwner.review(actionGameId);completedReviewEntryGeneration++;resultPresentation.clear();"
     }
