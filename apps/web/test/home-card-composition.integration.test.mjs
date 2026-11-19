@@ -34,8 +34,8 @@ test('confirmed result and pending Undo retain quiet canonical identities, winne
     const before = structuredClone(input), h = renderer();
     const html = h.render(input);
     assert.match(html, /data-winner-side="p2"/);
-    assert.match(html, /<div class="home-card-result"><span class="home-card-result-line"><strong class="player-tone-p2"><bdi>Horus won<\/bdi><\/strong><\/span><\/div>/);
-    assert.doesNotMatch(html, /You lost/);
+    assert.match(html, /<span class="home-card-result-line"><strong class="player-tone-p2"><bdi>Horus won<\/bdi><\/strong><\/span>/);
+    assert.match(html, /<span class="small">You lost<\/span>/);
     assert.equal(statusHtml(html), 'Review game');
     assert.match(html, /<span class="sr-only">Red: <\/span><bdi dir="auto">You<\/bdi>/);
     assert.match(html, /<span class="sr-only">Blue: <\/span><bdi dir="auto">Horus<\/bdi>/);
@@ -141,7 +141,8 @@ test('ongoing scenario preview names the preview actor without borrowing live tu
 // Literal expected labels and tones are independent of homeCardResult's implementation.
 for (const [name, overrides, identityId, label, tone, detail] of [
   ['owned Red win', {confirmedOutcomeStatus:'p1_win'}, 'owner', 'You won', 'p1', null],
-  ['owned Blue loss', {confirmedOutcomeStatus:'p2_win'}, 'owner', 'Ada won', 'p2', 'You lost'],
+  ['owned Red loss', {confirmedOutcomeStatus:'p2_win'}, 'owner', 'Ada won', 'p2', 'You lost'],
+  ['owned Blue loss', {confirmedOutcomeStatus:'p1_win',myRole:'Player 2',myRoles:['Player 2'],player1:{identityId:'other',profile:{displayName:'Ada'}},player2:{identityId:'owner',profile:{displayName:'Kenan'}}}, 'owner', 'Ada won', 'p1', 'You lost'],
   ['viewer Red win', {confirmedOutcomeStatus:'p1_win',myRole:'Viewer'}, 'visitor', '&lt;Kenan&gt; won', 'p1', null],
   ['viewer Blue win', {confirmedOutcomeStatus:'p2_win',myRole:'Viewer'}, 'visitor', 'Ada won', 'p2', null],
   ['self-play Red win', {confirmedOutcomeStatus:'p1_win',myRole:'Both Players',selfPlayMode:true,player2:{identityId:'owner'}}, 'owner', 'You won as Red', 'p1', null],
@@ -152,7 +153,7 @@ for (const [name, overrides, identityId, label, tone, detail] of [
   const html=renderer(identityId).render(input);
   const result=html.match(/<div class="home-card-result">([\s\S]*?)<\/div>/)?.[1];
   assert.ok(result, 'result container remains neutral');
-  assert.equal(result, `<span class="home-card-result-line"><strong${tone ? ` class="player-tone-${tone}"` : ''}><bdi>${label}</bdi></strong></span>`);
+  assert.equal(result, `<span class="home-card-result-line"><strong${tone ? ` class="player-tone-${tone}"` : ''}><bdi>${label}</bdi></strong></span>${detail === 'You lost' ? '<span class="small">You lost</span>' : ''}`);
   assert.equal(statusHtml(html),'Review game');
   assert.match(html, /<article class="mini-board-card"/);
   assert.match(html, /data-flyout-link="game"/);
