@@ -384,12 +384,12 @@ button {
   box-shadow: inset 0 0 0 1px var(--accent-2), var(--cell-recess-shadow);
 }
 
-.cell.target.target-side-p1:not(.continuation-member) {
+.cell.target.target-side-p1:not(.continuation-member):not(.mutation-unavailable-target) {
   border-color: var(--player-p1);
   box-shadow: inset 0 0 0 1px var(--player-p1), var(--cell-recess-shadow);
 }
 
-.cell.target.target-side-p2:not(.continuation-member) {
+.cell.target.target-side-p2:not(.continuation-member):not(.mutation-unavailable-target) {
   border-color: var(--player-p2);
   box-shadow: inset 0 0 0 1px var(--player-p2), var(--cell-recess-shadow);
 }
@@ -1116,13 +1116,13 @@ button:disabled {
    and individual-move axes aligned. History endpoints opt in separately below. */
 :root { --move-source: #7650A6; --move-target: #1F7A5A; }
 .cell.source { border-color: var(--move-source); box-shadow: inset 0 0 0 1px var(--move-source), var(--cell-recess-shadow); }
-.cell.target:not(.continuation-member) { border-color: var(--move-target); box-shadow: inset 0 0 0 1px var(--move-target), var(--cell-recess-shadow); }
+.cell.target:not(.continuation-member):not(.mutation-unavailable-target) { border-color: var(--move-target); box-shadow: inset 0 0 0 1px var(--move-target), var(--cell-recess-shadow); }
 .board-preview-coordinate-chip.board-preview-coordinate-chip-selected-piece { color:var(--move-source); border-color:var(--move-source); background:#f1ecf6; }
 .board-preview-coordinate-chip.board-preview-coordinate-chip-target { color:var(--move-target); border-color:var(--move-target); background:#e8f2ed; }
 .axis-label.axis-strong { color:var(--move-source); }
 .axis-label.axis-medium { color:var(--move-target); }
 .axis-label.axis-medium.axis-target-p1, .axis-label.axis-medium.axis-target-p2 { color:var(--move-target); }
-.cell.target.target-side-p1:not(.continuation-member), .cell.target.target-side-p2:not(.continuation-member) { border-color:var(--move-target); box-shadow:inset 0 0 0 1px var(--move-target), var(--cell-recess-shadow); }
+.cell.target.target-side-p1:not(.continuation-member):not(.mutation-unavailable-target), .cell.target.target-side-p2:not(.continuation-member):not(.mutation-unavailable-target) { border-color:var(--move-target); box-shadow:inset 0 0 0 1px var(--move-target), var(--cell-recess-shadow); }
 
 /* History action roles: shape distinguishes source from target independently
    of affiliation. Shared endpoints retain both roles; live views do not opt in. */

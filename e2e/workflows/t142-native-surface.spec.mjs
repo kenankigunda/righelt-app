@@ -1,7 +1,43 @@
 import {test,expect} from '@playwright/test';
 import {mountT142NativeBoard} from '../support/t142-native-board-fixture.mjs';
+import {writeFile} from 'node:fs/promises';
 
 const wash=locator=>locator.evaluate(element=>{const elementStyle=getComputedStyle(element),style=getComputedStyle(element,'::after'),rect=element.getBoundingClientRect(),ghost=element.querySelector('.move-ghost'),ghostStyle=ghost?getComputedStyle(ghost):null;return{rect:{x:rect.x,y:rect.y,width:rect.width,height:rect.height},unavailable:element.classList.contains('mutation-unavailable-target')||element.dataset.mutationUnavailable==='true',pulse:element.dataset.mutationPulse??null,animation:style.animationName,duration:style.animationDuration,delay:style.animationDelay,border:elementStyle.borderStyle,focused:document.activeElement===element,ghost:{present:Boolean(ghost),animation:ghostStyle?.animationName??null,z:ghostStyle?.zIndex??null}};});
+
+test('T-142 unavailable destinations keep a neutral border and recess until recovery',async({page},info)=>{
+  const fixture=await mountT142NativeBoard(page),{target,source}=await fixture.selectMove();
+  const appearance=()=>target.evaluate(element=>{
+    const style=getComputedStyle(element),plain=document.querySelector('.cell:not(.target):not(.source):not(.selected)');
+    return {border:style.borderColor,borderStyle:style.borderStyle,shadow:style.boxShadow,recess:getComputedStyle(plain).boxShadow};
+  });
+  await expect.poll(()=>source.evaluate(element=>getComputedStyle(element).borderColor)).toBe('rgb(118, 80, 166)');
+  const sourceBefore=await source.evaluate(element=>getComputedStyle(element).borderColor),observations=[];
+  await expect.poll(async()=>(await appearance()).border).toBe('rgb(31, 122, 90)');
+  await fixture.setIncident(4100);
+  await expect(target).toHaveClass(/mutation-unavailable-target/);
+  for(const side of [null,'target-side-p1','target-side-p2']){
+    await target.evaluate((element,side)=>{element.classList.remove('target-side-p1','target-side-p2');if(side)element.classList.add(side);},side);
+    await target.evaluate(async element=>{await Promise.all(element.getAnimations().filter(animation=>animation.effect.getTiming().iterations!==Infinity).map(animation=>animation.finished));});
+    observations.push({side,...await appearance()});
+  }
+  await writeFile(info.outputPath('unavailable-target-appearance.json'),JSON.stringify(observations,null,2));
+  await page.screenshot({path:info.outputPath('unavailable-destination.png')});
+  for(const state of observations){
+    expect(state.border,`neutral border for ${state.side??'unaffiliated'}`).toBe('rgb(133, 135, 125)');
+    expect(state.borderStyle).toBe('dashed');
+    expect(state.shadow,`only the ordinary cell recess for ${state.side??'unaffiliated'}`).toBe(state.recess);
+  }
+  await page.emulateMedia({forcedColors:'active',reducedMotion:'reduce'});
+  expect(await page.evaluate(()=>matchMedia('(forced-colors: active)').matches)).toBe(true);
+  const forced=await wash(target);expect(forced.border).toBe('dashed');expect(forced.animation).toBe('none');
+  await target.focus();await expect(target).toBeFocused();
+  await page.emulateMedia({forcedColors:'none',reducedMotion:'no-preference'});
+  await fixture.recover();await expect(target).not.toHaveClass(/mutation-unavailable-target/);
+  await expect.poll(async()=>(await appearance()).border).toBe('rgb(31, 122, 90)');
+  expect((await appearance()).shadow).toContain('rgb(31, 122, 90)');
+  expect(await source.evaluate(element=>getComputedStyle(element).borderColor)).toBe(sourceBefore);
+  expect(await fixture.commands()).toHaveLength(0);
+});
 
 test('T-142 N01 production Pass surface preserves timing, ownership and preferences',async({page},info)=>{
   test.skip(info.project.name==='firefox','Firefox representative lane uses destination');
