@@ -195,7 +195,7 @@ const documentIcon=createDocumentIconOwner({documentObject:document});
 let previousTurnKeyInteraction=null;
 let boardContextVisit=0;
 const boardContextPresentation=createBoardContextPresentation({appEl,document,getDependencies:()=>({
- transport,viewingScope,boardContextVisit,currentRoute,getBoardGame,getCurrentViewedGameId,replayRequests,replayController,
+ transport,viewingScope,viewingIntent,boardContextVisit,currentRoute,getBoardGame,getCurrentViewedGameId,replayRequests,replayController,
  renderGesture,updateMountedHeader,syncRenderedMarkupSnapshot,renderHistoryPanel,patchToolHtml,syncBoardContextDetails,syncRecoverySpace,
  forcedFollowWorking,confirmedPlayback,notificationStack,startComputerReplay,routeHydrated,getGamePanel,mountedBoardGameId,getShellLayoutMode,navigateTo,buildGameHash,getCurrentGameHashState,
 })});
@@ -1562,7 +1562,7 @@ const cycleGameAlertStack = (gameId, actionEl = null) => {
 
 const renderGameAlertStackCard = options => renderAlertStackCard(options,escapeHtml);
 
-const historyRendering = createHistoryRendering(() => ({renderIncomingHistory:game=>renderIncomingNarrationHost(game,'wide'), getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, mobilePreviousTurnReplaySupplies:descriptor=>previousTurnKeyInteraction?.supplies(descriptor)===true, historySelectionEpisode:()=>historySelectionActions.snapshot(), undoHistory, expandedUndoneGroups, expandedImportedHistory, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView}));
+const historyRendering = createHistoryRendering(() => ({importedTurnReplayDescriptor:gameId=>boardContextPresentation.importedTurnReplayDescriptor(gameId),renderIncomingHistory:game=>renderIncomingNarrationHost(game,'wide'), getShellLayoutMode, renderBoardMessageHtml, selectedHistoryPresentation, renderMiniBoardPreviewRoot, toStableKey, visibleRecordedMoves, recordedMoveNumber, isCompletedGame, transport, historyActorLabel, escapeHtml, icon, playerToneClassForSide, buildMovePreview, formatClientDateTime, historyTurnSide, COMPUTER_PROFILES, playerDisplayName, buildTurnPreview, playerToneClassForSeat, liveHistoryLabel, boardContextScope, boardContexts, canReplayDisplayed, contextReplayEnabled, mobilePreviousTurnReplaySupplies:descriptor=>previousTurnKeyInteraction?.supplies(descriptor)===true, historySelectionEpisode:()=>historySelectionActions.snapshot(), undoHistory, expandedUndoneGroups, expandedImportedHistory, canReadAdditionalHistory, account, additionalHistory, deriveBoardView, recordedHistoryView}));
 const renderHistoryPreview = (game, preview, key) => historyRendering.renderHistoryPreview(game, preview, key);
 const renderTurnHistory = game => historyRendering.renderTurnHistory(game);
 const renderHeader = () => `

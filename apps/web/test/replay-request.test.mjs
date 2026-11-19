@@ -28,3 +28,9 @@ test('a rejected deferred archive read stays quiet after the user moves on', asy
   let reject;const pending=new Promise((_,no)=>{reject=no;}).catch(()=>state.fail(token,before));
   state.cancel();reject(Error('offline'));assert.equal(await pending,false);assert.equal(state.snapshot(),null);
 });
+test('imported replay requests cannot revive after selecting away and back to the same saved turn',()=>{
+ const state=createReplayRequest(),before={...context(),viewGeneration:7},token=state.begin(before);
+ state.reconcile({...before,viewGeneration:8});assert.equal(state.snapshot(),null);
+ assert.equal(state.ready(token,{...before,viewGeneration:9}),false);
+ assert.equal(state.fail(token,before),false);
+});

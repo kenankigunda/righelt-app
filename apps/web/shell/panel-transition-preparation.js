@@ -14,7 +14,9 @@ export function createPanelTransitionPreparation(getDependencies) {
   if(changedPanel){d.replayRequests.cancel();d.replayController?.stop('navigation');}
   if(d.getShellLayoutModeForRoute(next)==='narrow'&&changedPanel){
    const viewed=d.transport.getGameViewModel(next.gameId);
-   if(d.getGamePanel(next)==='board'&&viewed?.inHistoryMode&&!d.isCompletedGame?.(viewed))d.transport.returnToLive({gameId:next.gameId});
+   const importedReplay=d.pendingBoardContextReplay?.descriptor;
+   const preservesImportedTurn=importedReplay?.source==='imported-turn'&&importedReplay.gameId===next.gameId;
+   if(d.getGamePanel(next)==='board'&&viewed?.inHistoryMode&&!d.isCompletedGame?.(viewed)&&!preservesImportedTurn)d.transport.returnToLive({gameId:next.gameId});
    if(!d.pendingRoutePosition){
     const owner=d.transport,scope=d.viewingScope(),navigation=d.mobileNavigation;
     d.window.requestAnimationFrame(()=>{

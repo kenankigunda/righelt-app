@@ -1,4 +1,5 @@
 import {createBoardContextPresentation} from '../shell/board-context-presentation.js';
+import {deriveBoardView} from '../shell/viewing-state.js';
 import {createDisplayedReplayStarter,displayedReplayFocusTarget} from '../shell/displayed-replay-starter.js';
 import {createRenderGestureGate} from '../shell/render-gesture.js';
 import {createDestinationRouteOwner,destinationReadScope} from '../shell/destination-route-owner.js';
@@ -272,4 +273,41 @@ test('hidden Board detail never consumes an announcement ahead of the actual vis
  f.context.appEl.querySelectorAll=()=>[hidden,visible];p.queue();await f.flush();
  assert.equal(p.announcement.textContent,'Incoming turn');assert.equal(p.store.takeAnnouncement('hidden-piece'),'Hidden inspection','hidden content was not marked announced');
  p.queue();await f.flush();assert.equal(p.store.takeAnnouncement('visible-incoming'),null,'only the actually exposed host announces once');
+});
+
+test('imported-turn dispatch uses selected saved records without overwriting live acknowledged context',async t=>{
+ const f=fixture(t),p=f.context.presentation;
+ f.c.ack(f.context.view,{}, {identityId:'me',canInteract:true});
+ const before=f.c.store.channel('acknowledged');
+ const saved={moveId:'saved-import',index:0,turnIndex:0,turnMoveIndex:0,actorSide:'P1',action:{type:'pass'},selectionSnapshot:{pieces:[],turnIndex:0,sideToMove:'P1'},snapshot:{pieces:[],turnIndex:1,sideToMove:'P2'},importedFrom:{gameId:'source',decisionId:'original'}};
+ f.context.view={...f.context.view,inHistoryMode:true,historyTurnIndex:0,historyIndex:null,historyTurnMoves:[saved],moves:[saved,{moveId:'live-head',turnIndex:1}],board:{state:{pieces:[],turnIndex:2,sideToMove:'P1'}}};
+ // The real narrow Board projection stays live while the History control owns
+ // its saved turn. Capturing that live projection would replay the wrong turn.
+ f.context.getBoardGame=view=>deriveBoardView(view,{narrow:true,identityId:'me'});
+ let generation=3;f.context.viewingIntent={generation:()=>generation};
+ const descriptor=p.importedTurnReplayDescriptor('game');assert.ok(descriptor);
+ assert.deepEqual(descriptor.moveIds,['saved-import']);assert.equal(p.canReplayDisplayed(descriptor),true);
+ f.button.dataset={boardContextKey:descriptor.key,replaySource:'imported-turn'};
+ f.button.closest=selector=>selector.includes('.history-imported-turn-replay')?{}:null;
+ f.button.focus();p.replayAction(f.button);await f.flush();
+ assert.equal(f.plays.length,1);assert.deepEqual(f.plays[0].frames.map(frame=>frame.decisionId),['saved-import']);
+ assert.equal(f.c.store.channel('acknowledged'),before,'a History replay must not replace the live acknowledged summary');
+ generation++;assert.equal(p.canReplayDisplayed(descriptor),false);
+ f.button.dataset.boardContextKey=descriptor.key;p.replayAction(f.button);await f.flush();
+ assert.equal(f.plays.length,1,'an old control cannot acquire the new generation');
+});
+
+test('mobile imported-turn activation waits for the Board handoff and rechecks selected intent',async t=>{
+ const f=fixture(t),p=f.context.presentation;
+ const saved={moveId:'saved-import',index:0,turnIndex:0,turnMoveIndex:0,actorSide:'P1',action:{type:'pass'},selectionSnapshot:{pieces:[],turnIndex:0,sideToMove:'P1'},snapshot:{pieces:[],turnIndex:1,sideToMove:'P2'},importedFrom:{gameId:'source',decisionId:'original'}};
+ f.context.view={...f.context.view,inHistoryMode:true,historyTurnIndex:0,historyIndex:null,historyTurnMoves:[saved],moves:[saved]};
+ f.context.getBoardGame=view=>deriveBoardView(view,{narrow:true,identityId:'me'});
+ let generation=5;f.context.viewingIntent={generation:()=>generation};f.context.currentRoute.panel='history';
+ const descriptor=p.importedTurnReplayDescriptor('game');assert.ok(descriptor);
+ f.button.dataset={boardContextKey:descriptor.key,replaySource:'imported-turn'};f.button.closest=selector=>selector.includes('.history-imported-turn-replay')?{}:null;
+ let navigated=0;f.context.navigateTo=()=>{navigated++;};f.button.focus();p.replayAction(f.button);
+ assert.equal(navigated,1);assert.equal(f.plays.length,0);assert.ok(p.state.pendingBoardContextReplay);
+ generation++;f.context.currentRoute.panel='board';p.resume();await f.flush();
+ assert.equal(f.plays.length,0,'changed History intent must win before the Board is ready');
+ assert.equal(p.state.pendingBoardContextReplay,null);
 });

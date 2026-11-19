@@ -42,3 +42,9 @@ for(const interruption of ['Home','other-game','account','transport','navigation
  if(interruption==='uncommitted-route')f.d.currentRoute=game('g','history');
  f.queued.shift()();assert(!f.calls.some(call=>Array.isArray(call)&&['restore','foreign-restore'].includes(call[0])),'superseded callback cannot scroll or reveal the foreign destination');
 });
+
+for(const source of ['imported-turn','opponent-turn',null])test(`mobile replay handoff preserves only a selected imported turn: ${source}`,()=>{
+ const f=fixture();f.d.transport.getGameViewModel=()=>({inHistoryMode:true});f.d.pendingBoardContextReplay={descriptor:{gameId:'g',source}};
+ f.prepare(game('g','history'),game('g'));
+ assert.equal(f.calls.some(call=>Array.isArray(call)&&call[0]==='live'),source!=='imported-turn');
+});

@@ -3,7 +3,7 @@ import {buildPushSequenceReplay} from './push-sequence-replay.js';
 import {buildTurnReplay,createComputerReplay} from './computer-replay.js';
 import {activeDecisionLineage} from './decision-history.js';
 
-export const displayedReplayFocusTarget = target => Boolean(target?.closest?.('#shell-board-preview-label [data-action^="replay-"],#shell-board-preview-label [data-board-message-action^="replay-"],[data-incoming-context] [data-action="replay-board-context"],.history-live-replay [data-action="replay-board-context"]'));
+export const displayedReplayFocusTarget = target => Boolean(target?.closest?.('#shell-board-preview-label [data-action^="replay-"],#shell-board-preview-label [data-board-message-action^="replay-"],[data-incoming-context] [data-action="replay-board-context"],.history-live-replay [data-action="replay-board-context"],.history-imported-turn-replay [data-action="replay-board-context"]'));
 
 // Replay remains a read-only consumer of acknowledged records. The rendering
 // boundary is injected for focused controller tests, never the payload builder
@@ -13,7 +13,7 @@ export function createDisplayedReplayStarter(getDependencies,{createReplay=creat
   const d=getDependencies(),p=d.presentation,state=p.state;
   const descriptor=requested??captureDisplayedReplay({game:p.displayedReplayFrame(),owner:d.transport,scope:p.scope(),identityId:d.transport.getIdentityId(),visible:!d.document.hidden});
   if(d.confirmedPlayback?.snapshot().playing||d.forcedFollowWorking(descriptor?.gameId)||!p.canReplayDisplayed(descriptor)||d.replayController?.snapshot().playing||d.replayRequests.snapshot()?.phase==='loading')return;
-  const context=p.currentReplayContext(),{gameId,owner,revision,lineageHead}=context;
+  const context=p.currentReplayContext(descriptor),{gameId,owner,revision,lineageHead}=context;
   state.activeReplayFocusCleanup?.();
   const liveFocusTarget=displayedReplayFocusTarget(trigger);
   let focusObserver=null,focusTimer=null,focusReturn=null;
@@ -22,7 +22,7 @@ export function createDisplayedReplayStarter(getDependencies,{createReplay=creat
   focusReturn=p.focus.begin(trigger,{allows:displayedReplayFocusTarget,allowRemoval:liveFocusTarget,allowDeferredRemoval:liveFocusTarget,onRetire:()=>{cleanupFocusWait();if(state.activeReplayFocusCleanup===releaseFocusReturn)state.activeReplayFocusCleanup=null;}});
   state.activeReplayFocusCleanup=releaseFocusReturn;state.activeDisplayedReplay=descriptor;
   const intent=p.owner.capture(),token=d.replayRequests.begin(context);
-  const stillCurrent=()=>p.owner.current(intent)&&d.replayRequests.current(token,p.currentReplayContext())&&p.canReplayDisplayed(descriptor);
+  const stillCurrent=()=>p.owner.current(intent)&&d.replayRequests.current(token,p.currentReplayContext(descriptor))&&p.canReplayDisplayed(descriptor);
   let moves=descriptor.moves;
   const buildPayload=()=>descriptor.source==='push-sequence'?buildPushSequenceReplay({moves,startId:descriptor.startId,endId:descriptor.endId,gameId,revision,lineageHead}):buildTurnReplay({moves,completedTurnIndex:descriptor.turnIndex,gameId,revision,lineageHead});
   let payload=buildPayload();
@@ -40,11 +40,11 @@ export function createDisplayedReplayStarter(getDependencies,{createReplay=creat
   if(!d.replayRequests.ready(token,p.currentReplayContext())){releaseFocusReturn();return;}
   getDependencies().replayController?.destroy();
   const rootEl=d.appEl.querySelector('[data-testid="game-board-wrap"]');if(!rootEl){releaseFocusReturn();return;}
-  const host=trigger?.closest('.history-live-replay')?'history':trigger?.closest('[data-incoming-context]')?'incoming':trigger?.closest('[data-board-context]')?'context':'board';
+  const host=trigger?.closest('.history-imported-turn-replay')?'imported-history':trigger?.closest('.history-live-replay')?'history':trigger?.closest('[data-incoming-context]')?'incoming':trigger?.closest('[data-board-context]')?'context':'board';
   const refresh=playing=>{const live=getDependencies();live.boardRuntime?.setInteractionBlocked(playing||live.forcedFollowWorking(gameId)||Boolean(live.confirmedPlayback?.snapshot().playing));live.boardRuntime?.refreshStatus();p.queue();};
   const availableFocusTarget=()=>{
    const selector=`[data-board-context-key="${d.CSS.escape(descriptor.key)}"]`;
-   const hostSelector=host==='incoming'?`[data-incoming-context] ${selector}`:host==='context'?`[data-board-context] ${selector}`:host==='history'?`.history-live-replay ${selector}`:null;
+   const hostSelector=host==='incoming'?`[data-incoming-context] ${selector}`:host==='context'?`[data-board-context] ${selector}`:host==='history'?`.history-live-replay ${selector}`:host==='imported-history'?`.history-imported-turn-replay ${selector}`:null;
    const available=target=>Boolean(target?.isConnected&&!target.disabled&&!target.closest('[inert],[hidden],[aria-hidden="true"]')&&(!target.getClientRects||target.getClientRects().length));
    const current=hostSelector?[...(d.appEl.querySelectorAll?.(hostSelector)??[])].find(available):null;
    return current??(available(trigger)?trigger:null);
