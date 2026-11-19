@@ -210,6 +210,7 @@ mountRecoverySpace(appEl);
 const utilityMemory = createUtilityMemory({ root: appEl, getScope: key => `${account.snapshot().generation}:${key === 'debug' ? getCurrentViewedGameId() ?? 'home' : 'scenarios'}` });
 const boardLoadingMessageOwner=createBoardLoadingMessageOwner(appEl);
 const historyHeadingFocus=createHistoryHeadingFocus({doc:document,getScope:()=>JSON.stringify([viewingScope(),boardContextVisit,currentRoute.name,currentRoute.gameId,getGamePanel()])});
+const resultHeadingFocus=createHistoryHeadingFocus({doc:document,selector:'.game-result h1',getScope:()=>JSON.stringify([viewingScope(),currentRoute.name,currentRoute.gameId,activeResultGameId,confirmedResultOwner.snapshot(currentRoute.gameId)?.key])});
 const dismissedRecoveryNotices = new Map();
 // This node survives header/panel rendering, including repeated heartbeat snapshots.
 const syncAnnouncement = document.createElement("div");
@@ -3391,6 +3392,7 @@ const render = ({ animatePanels = true, includeBoard = true } = {}) => {
   return true;
 };
 const renderContent = ({ animatePanels, includeBoard }) => {
+  const retainedResultHeadingFocus=resultHeadingFocus.capture();
   gameVisitViewingOwner?.sync();
   const hadResultView = Boolean(appEl.querySelector('.game-result'));
   const resultFocus = document.activeElement?.closest('.game-result') ? {action:document.activeElement.getAttribute('data-action'),href:document.activeElement.getAttribute('href')} : null;
@@ -3544,7 +3546,7 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   restoreHomeReadingIntent({patched:didPatchContent});
   animateHomeSectionTransitions();
   syncScenarioAuthoringControls();
-  if(currentRoute.name==='game' && activeResultGameId===currentRoute.gameId){destroyMountedBoardRuntime();resultPresentation.mount(appEl.querySelector('.game-result'),currentRoute.gameId);if(!hadResultView)appEl.querySelector('.game-result h1')?.focus({preventScroll:true});return;}
+  if(currentRoute.name==='game' && activeResultGameId===currentRoute.gameId){destroyMountedBoardRuntime();resultPresentation.mount(appEl.querySelector('.game-result'),currentRoute.gameId);if(!hadResultView)appEl.querySelector('.game-result h1')?.focus({preventScroll:true});else resultHeadingFocus.restore(retainedResultHeadingFocus,()=>appEl.querySelector('.game-result h1'));return;}
   if (currentRoute.name !== "game" && currentRoute.name !== "invite") {
     scheduleGameShellStickyLayout();
     destroyMountedBoardRuntime();
