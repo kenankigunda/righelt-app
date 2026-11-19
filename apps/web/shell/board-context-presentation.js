@@ -1,3 +1,4 @@
+import {isOngoingGame} from './game-lifecycle.js';
 import {createBoardContextStore} from './board-context.js';
 import {createBoardContextOwner,createBoardContextFocus} from './board-context-owner.js';
 import {createBoardContextLayout} from './board-context-layout.js';
@@ -78,6 +79,14 @@ export function createBoardContextPresentation({appEl,document,getDependencies,c
   const d=getDependencies(),game=descriptor?.source==='imported-turn'?d.transport.getGameViewModel(d.getCurrentViewedGameId()):displayedReplayFrame();
   return displayedReplayIsCurrent(descriptor,{game,context:currentReplayContext(descriptor)});
  };
+ const finishImportedTurnReplay=(descriptor,beforeReturn=()=>{})=>{
+  const d=getDependencies();
+  if(descriptor?.source!=='imported-turn'||d.getShellLayoutMode()!=='narrow'||d.getGamePanel()!=='board'
+   ||!isOngoingGame(d.transport.getAuthoritativeGame(descriptor.gameId))||!canReplayDisplayed(descriptor))return false;
+  beforeReturn();
+  if(!canReplayDisplayed(descriptor))return false;
+  d.transport.returnToLive({gameId:descriptor.gameId});return true;
+ };
  const contextReplayEnabled=descriptor=>{
   const d=getDependencies();
   return contextReplayAvailable({descriptor,followWorking:d.forcedFollowWorking(descriptor?.gameId),playbackPlaying:d.confirmedPlayback?.snapshot().playing,canReplay:canReplayDisplayed,replayPending:d.replayRequests.snapshot(),replayPlaying:d.replayController?.snapshot().playing});
@@ -155,7 +164,7 @@ export function createBoardContextPresentation({appEl,document,getDependencies,c
   const focusReturn=boardContextFocus.begin(actionEl,{allowRemoval:true});queueBoardContextRefresh();focusReturn.restore(boardFocusTarget);
  };
  return {store:boardContexts,layout:boardContextLayout,owner:boardContextOwner,focus:boardContextFocus,announcement:contextAnnouncement,scope:boardContextScope,boardFocusTarget,
-  captureIncomingFocus,restoreIncomingFocus,queue:queueBoardContextRefresh,displayedReplayFrame,canReplayDisplayed,contextReplayEnabled,importedTurnReplayDescriptor,previousTurnReplayDescriptor,replayPreviousTurn,currentReplayContext,ack:acknowledgedBoardMessage,receive:receiveBoardContext,dispatch:dispatchBoardMessageAction,cancel:cancelPendingBoardContextReplay,resume:resumeBoardContextReplay,replayAction,dismiss,
+  captureIncomingFocus,restoreIncomingFocus,finishImportedTurnReplay,queue:queueBoardContextRefresh,displayedReplayFrame,canReplayDisplayed,contextReplayEnabled,importedTurnReplayDescriptor,previousTurnReplayDescriptor,replayPreviousTurn,currentReplayContext,ack:acknowledgedBoardMessage,receive:receiveBoardContext,dispatch:dispatchBoardMessageAction,cancel:cancelPendingBoardContextReplay,resume:resumeBoardContextReplay,replayAction,dismiss,
   state:{get activeDisplayedReplay(){return activeDisplayedReplay;},set activeDisplayedReplay(value){activeDisplayedReplay=value;},get activeReplayFocusCleanup(){return activeReplayFocusCleanup;},set activeReplayFocusCleanup(value){activeReplayFocusCleanup=value;},get pendingBoardContextReplay(){return pendingBoardContextReplay;}},
   destroy(){if(disposed)return;disposed=true;boardContextOwner.retire();cancelPendingBoardContextReplay();activeReplayFocusCleanup?.();activeReplayFocusCleanup=null;boardContextFocus.destroy();boardContextLayout.destroy?.();contextAnnouncement.remove?.();},
  };

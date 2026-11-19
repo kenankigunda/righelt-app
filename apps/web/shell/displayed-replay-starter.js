@@ -49,9 +49,10 @@ export function createDisplayedReplayStarter(getDependencies,{createReplay=creat
    const current=hostSelector?[...(d.appEl.querySelectorAll?.(hostSelector)??[])].find(available):null;
    return current??(available(trigger)?trigger:null);
   };
-  const finish=()=>{
+  const finish=({reason}={})=>{
    refresh(false);state.activeDisplayedReplay=null;
    if(p.canReplayDisplayed(descriptor)){
+    if(reason==='completed'&&p.finishImportedTurnReplay?.(descriptor,()=>{focusReturn.restoreNow(()=>availableFocusTarget()??p.boardFocusTarget());}))return;
     const settle=()=>{if(!focusReturn.current()){releaseFocusReturn();return true;}const target=availableFocusTarget();if(!target)return false;cleanupFocusWait();focusReturn.restoreNow(()=>target);return true;};
     if(!settle()){
      const Observer=d.document.defaultView.MutationObserver;if(Observer){focusObserver=new Observer(settle);focusObserver.observe(d.appEl,{subtree:true,childList:true,attributes:true,attributeFilter:['disabled','inert','hidden','aria-hidden']});}

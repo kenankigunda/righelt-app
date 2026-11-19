@@ -62,7 +62,7 @@ function fixture(t){
  notificationStack:{prefer(){}},updateMountedHeader:()=>false,renderHistoryPanel:()=>'',patchToolHtml(){},syncRenderedMarkupSnapshot(){},boardRuntime:{refreshStatus(){},setInteractionBlocked(){}},
 
  createEngineBoardAdapter(){},prefersReducedMotion:()=>false,
- createComputerReplay:options=>({play:async payload=>{plays.push(payload);context.beforeReplayFinish?.();options.onFinish();},destroy(){},snapshot:()=>({playing:false}),stop(){}}),CSS:{escape:value=>value},
+ createComputerReplay:options=>({play:async payload=>{plays.push(payload);context.beforeReplayFinish?.();options.onFinish({reason:context.replayFinishReason??'completed'});},destroy(){},snapshot:()=>({playing:false}),stop(){}}),CSS:{escape:value=>value},
  };
  context.boardContextVisit=0;context.replayController=null;
  context.renderGesture=createRenderGestureGate({render:context.render,schedule:fn=>{queued.push(fn);return fn;},cancel:fn=>{const index=queued.indexOf(fn);if(index>=0)queued.splice(index,1);}});owners.push(context.renderGesture);
@@ -310,4 +310,33 @@ test('mobile imported-turn activation waits for the Board handoff and rechecks s
  generation++;f.context.currentRoute.panel='board';p.resume();await f.flush();
  assert.equal(f.plays.length,0,'changed History intent must win before the Board is ready');
  assert.equal(p.state.pendingBoardContextReplay,null);
+});
+
+for(const variant of ['current','wide','History-panel','completed','new-generation','new-owner'])test(`imported replay finish restores live mobile authority only for its current ongoing Board: ${variant}`,t=>{
+ const f=fixture(t),p=f.context.presentation;
+ const saved={moveId:'saved',turnIndex:0,turnMoveIndex:0,action:{type:'pass'},selectionSnapshot:{pieces:[],turnIndex:0},snapshot:{pieces:[],turnIndex:1},importedFrom:{gameId:'source',decisionId:'original'}};
+ f.context.view={...f.context.view,inHistoryMode:true,historyTurnIndex:0,historyTurnMoves:[saved],moves:[saved],board:{state:{pieces:[],turnIndex:1,sideToMove:'P2',outcome:{status:'ongoing'}}}};
+ f.context.getBoardGame=view=>deriveBoardView(view,{narrow:true,identityId:'me'});let generation=2;f.context.viewingIntent={generation:()=>generation};let restored=0;
+ f.context.transport.returnToLive=({gameId})=>{assert.equal(gameId,'game');restored++;f.context.view={...f.context.view,inHistoryMode:false,historyTurnIndex:null,historyTurnMoves:null};};
+ const descriptor=p.importedTurnReplayDescriptor('game');assert.ok(descriptor);
+ if(variant==='wide')f.context.getShellLayoutMode=()=> 'wide';
+ if(variant==='History-panel')f.context.currentRoute.panel='history';
+ if(variant==='completed')f.context.view.board.state.outcome.status='p1_win';
+ if(variant==='new-generation')generation++;
+ if(variant==='new-owner')f.context.transport={...f.context.transport};
+ assert.equal(p.finishImportedTurnReplay(descriptor),variant==='current');assert.equal(restored,variant==='current'?1:0);
+ if(variant==='current'){assert.equal(f.context.view.inHistoryMode,false);assert.equal(p.canReplayDisplayed(descriptor),false,'leaving History intentionally retires replay eligibility');}
+});
+
+test('imported replay live restoration rechecks ownership after its synchronous focus handoff',t=>{
+ const f=fixture(t),p=f.context.presentation;const saved={moveId:'saved',turnIndex:0,turnMoveIndex:0,action:{type:'pass'},selectionSnapshot:{pieces:[],turnIndex:0},snapshot:{pieces:[],turnIndex:1},importedFrom:{gameId:'source',decisionId:'original'}};
+ f.context.view={...f.context.view,inHistoryMode:true,historyTurnIndex:0,historyTurnMoves:[saved],moves:[saved],board:{state:{pieces:[],turnIndex:1,outcome:{status:'ongoing'}}}};f.context.getBoardGame=view=>deriveBoardView(view,{narrow:true});let generation=2;f.context.viewingIntent={generation:()=>generation};let restored=0;f.context.transport.returnToLive=()=>{restored++;};
+ const descriptor=p.importedTurnReplayDescriptor('game');assert.ok(descriptor);
+ assert.equal(p.finishImportedTurnReplay(descriptor,()=>generation++),false);assert.equal(restored,0,'a changed selection during focus handoff must win');
+});
+
+for(const reason of ['completed','navigation','error','destroyed','replaced','live-change'])test(`starter clears temporary imported History only on completed playback: ${reason}`,async t=>{
+ const f=fixture(t),p=f.context.presentation;const saved={moveId:'saved',turnIndex:0,turnMoveIndex:0,actorSide:'P1',action:{type:'pass'},selectionSnapshot:{pieces:[],turnIndex:0,sideToMove:'P1'},snapshot:{pieces:[],turnIndex:1,sideToMove:'P2'},importedFrom:{gameId:'source',decisionId:'original'}};
+ f.context.view={...f.context.view,inHistoryMode:true,historyTurnIndex:0,historyTurnMoves:[saved],moves:[saved],board:{state:{pieces:[],turnIndex:1,sideToMove:'P2',outcome:{status:'ongoing'}}}};f.context.getBoardGame=view=>deriveBoardView(view,{narrow:true});f.context.replayFinishReason=reason;let restored=0;f.context.transport.returnToLive=()=>{restored++;f.context.view={...f.context.view,inHistoryMode:false,historyTurnIndex:null,historyTurnMoves:null};};
+ f.button.closest=selector=>selector.includes('.history-imported-turn-replay')?{}:null;f.button.focus();const descriptor=p.importedTurnReplayDescriptor('game');assert.ok(descriptor);await f.c.replay(descriptor,f.button);await f.flush();assert.equal(f.plays.length,1);assert.equal(restored,reason==='completed'?1:0);
 });
