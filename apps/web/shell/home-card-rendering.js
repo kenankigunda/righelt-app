@@ -104,7 +104,7 @@ const renderHomeGameCard = (game) => {
   const moveLabel = completed ? count===null?null:`${count} ${count === 1 ? 'move' : 'moves'}` : `Move ${game.moveCount + 1}`;
   const moveMeta=moveLabel===null?'':`<div class="mini-board-card-meta mini-board-card-meta-primary"><span class="small">${escapeHtml(moveLabel)}</span></div>`;
   const turnNumber=Number.isSafeInteger(game.reviewPreview?.turnIndex)?game.reviewPreview.turnIndex+1:null;
-  const resultHtml = completed ? `<div class="home-card-result"><span class="home-card-result-line"><strong${result.winnerSide ? ` class="player-tone-${result.winnerSide.toLowerCase()}"` : ''}><bdi>${escapeHtml(result.label)}</bdi></strong>${turnNumber?`<span> on Turn ${turnNumber}</span>`:''}</span></div>` : '';
+  const resultHtml = completed ? `<div class="home-card-result"><span class="home-card-result-line"><strong${result.winnerSide ? ` class="player-tone-${result.winnerSide.toLowerCase()}"` : ''}><bdi>${escapeHtml(result.label)}</bdi></strong>${turnNumber?`<span> on Turn ${turnNumber}</span>`:''}</span>${result.detail === 'You lost' ? `<span class="small">${escapeHtml(result.detail)}</span>` : ''}</div>` : '';
   const recoveryChip =
     game.pendingPreviewSnapshot ? '<span class="status-chip">Update pending</span>' : game.syncStatus === "desynced" || game.syncStatus === "confirming" ? '<span class="status-chip">Recovering</span>' : "";
   return renderStaticMiniBoardCard({
