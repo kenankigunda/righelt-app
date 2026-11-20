@@ -3,7 +3,7 @@ import {playerDisplayName,owningPerspective} from './perspective-labels.js';
 import { computerPhasePresentation } from './computer-narration.js';
 import { icon } from './ui.js';
 import { activityActorSide } from './activity-affiliation.js';
-import { COMPUTER_PROFILES, CURRENT_COMPUTER_MODEL, COMPUTER_TIMING, COMPUTER_LIMITS } from '../generated/packages/shared-types/src/computer-play.js';
+import { COMPUTER_PROFILES, CURRENT_COMPUTER_MODEL, computerModelUpgradeAvailable, COMPUTER_TIMING, COMPUTER_LIMITS } from '../generated/packages/shared-types/src/computer-play.js';
 import { renderGameAlertCard } from './game-alert.js';
 import { SYNC_TIMING } from '../generated/packages/shared-types/src/sync-protocol.js';
 const displayValue = value => {
@@ -40,7 +40,7 @@ export function renderComputerProgress(game, status = {}) {
   else if (control.manual) body = '';
   else if (control.takeoverTurn !== null) body = '';
   else if (watch) body = `<div class="computer-status-line"><span>Watching ${escapeDebug(names.join(' and '))}</span>${button('pause', 'Pause')}</div>`;
-  if (owner && control.modelId !== CURRENT_COMPUTER_MODEL.id && control.declinedModelId !== CURRENT_COMPUTER_MODEL.id) body += `<p>An opponent update is available</p><div class="computer-actions">${button('upgrade', 'Update opponent')}${button('decline-upgrade', 'Keep current')}</div>`;
+  if (owner && computerModelUpgradeAvailable(control.modelId) && control.declinedModelId !== CURRENT_COMPUTER_MODEL.id) body += `<p>An opponent update is available</p><div class="computer-actions">${button('upgrade', 'Update opponent')}${button('decline-upgrade', 'Keep current')}</div>`;
   return body ? `<section class="computer-play" aria-label="${escapeDebug(name)} play status" data-computer-status data-key="computer-notice:${escapeDebug(game.id)}">${renderGameAlertCard({body, actorSide:activityActorSide(game,{thinking:true}), activity:working || status.phase==='other-device'?'processing':'static',tone:status.phase==='recovery'?'warn':''})}</section>` : '';
 }
 

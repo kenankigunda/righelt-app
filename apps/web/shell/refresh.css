@@ -348,7 +348,7 @@ html[data-page-active="false"] .shell-header button.ui-icon-button {transition:n
 .rematch-modal fieldset {border:0;padding:0;margin:20px 0;display:grid;gap:12px;}
 .rematch-modal legend {font-weight:700;padding:0;margin-bottom:8px;}
 .rematch-modal fieldset label {display:flex;align-items:center;gap:10px;min-height:44px;}
-.rematch-modal input[type="radio"] {appearance:auto;-webkit-appearance:radio;box-sizing:border-box;padding:0;border:0;border-radius:50%;background:transparent;box-shadow:none;min-width:20px;min-height:20px;width:20px;height:20px;margin:0;flex:none;accent-color:var(--player-p1);}
+.rematch-modal input[type="radio"],.computer-model-choice input[type="radio"] {appearance:auto;-webkit-appearance:radio;box-sizing:border-box;padding:0;border:0;border-radius:50%;background:transparent;box-shadow:none;min-width:20px;min-height:20px;width:20px;height:20px;margin:0;flex:none;accent-color:var(--player-p1);}
 .rematch-modal input[value="p2"] {accent-color:var(--player-p2);}
 .story-modal.rematch-modal .modal-content {padding-top:12px;}
 .rematch-modal .story-modal-actions {grid-template-columns:repeat(2,minmax(0,1fr));}
@@ -366,6 +366,11 @@ html[data-page-active="false"] .shell-header button.ui-icon-button {transition:n
 .rematch-opponent-mark {display:flex;align-items:center;justify-content:center;height:36px;}
 .rematch-opponent-mark img {width:36px;height:36px;object-fit:cover;clip-path:polygon(5px 0,100% 0,100% calc(100% - 5px),calc(100% - 5px) 100%,0 100%,0 5px);}
 .rematch-opponent-mark .righelt-icon {width:32px;height:32px;}
+.computer-model-choice {margin:12px 0;min-width:0;}
+.computer-model-choice > div {display:flex;flex-wrap:wrap;gap:12px;}
+.computer-model-choice label {display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;}
+.computer-model-choice input {margin:0;}
+.computer-model-choice p {margin:6px 0 0;}
 @media(max-width:480px){.game-result{padding:24px;margin:16px 0 32px;}}
 
 /* Account settings occupy the same side rail as the secondary tools. */

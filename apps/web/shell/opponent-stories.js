@@ -1,6 +1,8 @@
 import {renderDismissButton} from './dismiss-control.js';
 import { icon } from './ui.js';
 import {createStoryArtworkMotion} from './story-artwork-motion.js';
+import {CURRENT_COMPUTER_MODEL} from '../generated/packages/shared-types/src/computer-play.js';
+import {renderComputerModelChoice,selectableComputerModel} from './computer-model-choice.js';
 export const OPPONENT_STORIES = Object.freeze({
   babs: { name: "Babs", difficulty: "Easy", bit: 1, story: "Babs discovered Righelt during a rainstorm and has been demanding rematches ever since. She plays on instinct, celebrates early, and considers every defeat valuable research. Her research collection is impressive.", scenes: [["babs-1-discovery", "Babs discovers the board during a rainstorm."], ["babs-2-rematch", "Babs eagerly invites another match."], ["babs-3-research", "Babs studies her growing collection of game notebooks."]] },
   tau: { name: "Tau", difficulty: "Medium", bit: 2, story: "Tau spent years tending the village gardens, where he learned that everything depends on a good supply line. He brought that lesson to the board. He calls it patience. Babs calls it taking forever.", scenes: [["tau-1-gardens", "Tau waters the village garden."], ["tau-2-connections", "Tau considers a board beside connected irrigation channels."], ["tau-3-patience", "Tau considers his move while Babs waits."]] },
@@ -21,15 +23,17 @@ export const createStoryCarousel = ({ reducedMotion = false, now = () => perform
 export const shouldShowOpponentIntroduction = (opponent, introduced, readiness) =>
   !OPPONENT_STORIES[opponent] || !(introduced & OPPONENT_STORIES[opponent].bit) || readiness.state !== "ready";
 
-export const createOpponentStoryDialog = ({ createModal, document = globalThis.document, getReadiness, onPlay, onRetry = () => {}, onViewResult = () => {}, onPresentation = () => () => {}, onClose = () => {} }) => {
+export const createOpponentStoryDialog = ({ createModal, document = globalThis.document, getReadiness, onPlay, onRetry = () => {}, onModelChange = () => {}, onViewResult = () => {}, onPresentation = () => () => {}, onClose = () => {} }) => {
   let opponent, side, carousel, mode, gameId, busy = false, session = 0, destroyPresentation = () => {}, isCurrent = () => true;
+  let modelId = CURRENT_COMPUTER_MODEL.id;
   const artworkMotion=createStoryArtworkMotion();
   const modal = createModal({ document, labelId: "opponent-story-title", className: "opponent-story-modal", onClose: reason => { artworkMotion.cancel(); session++; busy = false; destroyPresentation(); destroyPresentation = () => {}; carousel?.destroy(); carousel = null; onClose(reason); } });
   const refresh = () => {
     if (!modal.element.open) return;
     if (!isCurrent()) { modal.close('retired'); return; }
     if (mode === 'revisit') return;
-    const readiness = getReadiness(opponent);
+    const readiness = getReadiness(opponent,modelId);
+    for (const input of modal.element.querySelectorAll?.("[data-computer-model-choice] input") ?? []) input.disabled = busy;
     const play = modal.element.querySelector("[data-story-play]");
     if (play) { play.disabled = busy || readiness.state !== "ready"; play.dataset.loadingState = busy ? "pending" : "idle"; play.setAttribute("aria-busy",String(busy)); }
     const status = modal.element.querySelector("[data-story-readiness]");
@@ -63,7 +67,12 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
   };
   const onVisibility = () => {if(document.hidden)artworkMotion.cancel();carousel?.visibility(document.hidden);};
   document.addEventListener("visibilitychange", onVisibility);
+  modal.element.addEventListener('change',event=>{
+    if (!event.target.matches?.('[data-computer-model-choice] input') || busy || mode !== 'intro' || !selectableComputerModel(event.target.value)) return;
+    modelId=event.target.value; onModelChange(opponent,modelId); refresh();
+  });
   modal.element.addEventListener('keydown',event=>{
+    if (event.target.closest?.('[data-computer-model-choice]')) return;
     carousel?.keyboard();
     if(event.key==='ArrowLeft' || event.key==='ArrowRight'){
       event.preventDefault();carousel?.select((carousel.state().index+(event.key==='ArrowLeft'?2:1))%3);
@@ -78,10 +87,10 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
     const play = event.target.closest("[data-story-play]");
     if ((!retry && !play) || busy || !modal.element.open) return;
     const request = session;
-    const intent = { opponent, side };
+    const intent = { opponent, side, ...(opponent !== 'friend' ? {modelId} : {}) };
     busy = true; refresh();
     try {
-      const result = retry ? await onRetry(intent.opponent) : await onPlay(intent);
+      const result = retry ? await onRetry(intent.opponent,intent.modelId) : await onPlay(intent);
       if (request !== session || !modal.element.open) return;
       busy = false;
       if (result?.state === "started") modal.close("play");
@@ -98,11 +107,13 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
     isOpen: () => modal.element.open,
     gameId: () => gameId,
     opponent: () => mode === "intro" ? opponent : null,
+    modelId: () => modelId,
     refresh,
     setMatchStatus(text, finished = false) { if (!modal.element.open || mode !== "revisit" || !isCurrent()) return; modal.element.querySelector("[data-story-readiness]").textContent = text; const result = modal.element.querySelector("[data-story-result]"); if (result) result.hidden = !finished; },
     open(id, options = {}) {
       const story = id === "friend" ? FRIEND_STORY : OPPONENT_STORIES[id]; if (!story) return;
       const multipleScenes = story.scenes.length > 1;
+      modelId=CURRENT_COMPUTER_MODEL.id;
       artworkMotion.cancel();session++; destroyPresentation(); carousel?.destroy(); opponent = id; side = options.side || "p1"; mode = options.mode || "intro"; gameId = options.gameId || null; busy = false; isCurrent = options.isCurrent ?? (() => true);
       destroyPresentation = mode === "intro" ? onPresentation() : () => {};
       const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches || false;
@@ -111,7 +122,7 @@ export const createOpponentStoryDialog = ({ createModal, document = globalThis.d
         <div class="story-art">${story.scenes.map(([file, alt], i) => `<img data-story-image data-active="${i === 0}" aria-hidden="${i !== 0}" ${i ? "data-src" : "src"}="/assets/opponents/${file}.webp" width="960" height="640" alt="${alt}">`).join("")}</div>
         ${multipleScenes ? `<button class="ui-icon-button story-caret" data-story-step="1" aria-label="Next story image">${icon('right')}</button>` : ""}</div>
         <div class="story-copy">${id === "friend" ? `<span class="sr-only" id="opponent-story-title">${story.name}</span><div class="story-heading"><h2>${story.difficulty}</h2></div>` : `<div class="story-heading"><h2 id="opponent-story-title">${story.name}</h2><span>${story.difficulty}</span></div>`}
-        <p class="opponent-story-copy">${story.story}</p><p role="status" data-story-readiness></p><div class="story-modal-actions">${mode === "intro" ? `<button data-story-play disabled>${icon('play')}${story.playLabel || `Play ${story.name}`}</button><button class="secondary" data-story-retry hidden>Retry</button>` : `<button data-modal-close>${icon('back')}Return to game</button><button data-story-result hidden>View result</button>`}</div></div>`, options.trigger, options.mode === "revisit" ? null : () => document.querySelector(id === "friend" ? 'button[data-action="create-game"]' : `button[data-opponent="${id}"]`));
+        <p class="opponent-story-copy">${story.story}</p>${mode === "intro" && id !== "friend" ? renderComputerModelChoice(modelId,"intro-computer-model") : ""}<p role="status" data-story-readiness></p><div class="story-modal-actions">${mode === "intro" ? `<button data-story-play disabled>${icon('play')}${story.playLabel || `Play ${story.name}`}</button><button class="secondary" data-story-retry hidden>Retry</button>` : `<button data-modal-close>${icon('back')}Return to game</button><button data-story-result hidden>View result</button>`}</div></div>`, options.trigger, options.mode === "revisit" ? null : () => document.querySelector(id === "friend" ? 'button[data-action="create-game"]' : `button[data-opponent="${id}"]`));
       modal.element.dataset.opponent = id;
       modal.element.dataset.actionAffiliation = side === "p2" ? "blue" : "red";
       modal.element.querySelectorAll("img").forEach(img => img.addEventListener("error", () => { img.style.visibility = "hidden"; }));

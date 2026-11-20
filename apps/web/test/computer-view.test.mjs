@@ -105,7 +105,7 @@ test('shared stalled-turn eligibility offers friendly recovery without device in
  assert.match(html,/Tau hasn’t resumed/);assert.match(html,/data-control="resume-here"/);assert.match(html,/Resume here/);
  assert.match(html,/data-notification-activity="static"/);assert.doesNotMatch(html,/device|lease|worker|Interrupt|Continue play/);
  assert.equal(renderComputerProgress({...game,canControlComputer:false},{phase:'idle',activity:{showRecoveryNotice:true}}),'');
- const update=renderComputerProgress({...game,computerTurn:null,computer:{...game.computer,modelId:'previous'}},{phase:'idle'});
+ const update=renderComputerProgress({...game,computerTurn:null,computer:{...game.computer,modelId:'initial-1554'}},{phase:'idle'});
  assert.match(update,/An opponent update is available/);assert.match(update,/Update opponent/);assert.match(update,/Keep current/);
  assert.doesNotMatch(update,/new computer model|Use new model/);
 });

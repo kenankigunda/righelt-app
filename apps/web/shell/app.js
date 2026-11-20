@@ -81,7 +81,7 @@ import { createComputerSession, COMPUTER_PRESENTATION } from './computer-session
 import { createFramePresentation, COMPUTER_UI_FRAME_MEASURE } from './frame-presentation.js';
 import {refreshComputerUi} from './computer-ui-refresh.js';
 import { renderComputerProgress, renderDecisionDebug } from './computer-view.js';
-import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
+import { COMPUTER_PROFILES, CURRENT_COMPUTER_MODEL } from '../generated/packages/shared-types/src/computer-play.js';
 let computerSession = null;
 const viewingIntent = createViewingIntent();
 const liveTurnOverview = createLiveTurnOverview({
@@ -4000,39 +4000,40 @@ const openFriendInvite = gameId => {
   });
 };
 const preparation = createComputerPreparation({ onChange: () => { storyDialog.refresh(); rematchDialog.refresh(); branchDialog.refresh(); } });
-const getComputerReadiness = (owner = 'intro') => typeof Worker !== 'function' || typeof WebAssembly !== 'object'
+const selectedComputerModel = owner => (owner==='intro'?storyDialog:owner==='rematch'?rematchDialog:branchDialog)?.modelId() ?? CURRENT_COMPUTER_MODEL.id;
+const getComputerReadiness = (owner = 'intro',modelId=selectedComputerModel(owner)) => typeof Worker !== 'function' || typeof WebAssembly !== 'object'
     ? { state: 'unavailable', message: 'Computer play isn’t available in this browser' }
-    : preparation.snapshot(owner);
-const prepareOpponent = (owner, opponent) => {
+    : preparation.snapshot(owner).modelId === modelId ? preparation.snapshot(owner) : {state:'idle',message:'Preparing your opponent…',modelId};
+const prepareOpponent = (owner, opponent, modelId=selectedComputerModel(owner)) => {
   if (!COMPUTER_PROFILES[opponent]) { preparation.cancel(owner); return; }
-  if (getComputerReadiness(owner).state !== 'unavailable' && !document.hidden) return preparation.start(owner);
+  if (getComputerReadiness(owner).state !== 'unavailable' && !document.hidden) return preparation.start(owner,modelId);
 };
-const readinessForChoice = (owner, opponent) => COMPUTER_PROFILES[opponent] ? getComputerReadiness(owner) : { state: 'ready', message: '' };
-const rematchDialog = createRematchDialog({createModal,getReadiness:opponent=>readinessForChoice('rematch',opponent),onOpponentChange:opponent=>prepareOpponent('rematch',opponent),onRetry:opponent=>prepareOpponent('rematch',opponent),onClose:()=>{preparation.cancel('rematch');resumePendingResult();},onStart:async({opponent,side},{isCurrent})=>{
+const readinessForChoice = (owner, opponent, modelId=selectedComputerModel(owner)) => COMPUTER_PROFILES[opponent] ? getComputerReadiness(owner,modelId) : { state: 'ready', message: '' };
+const rematchDialog = createRematchDialog({createModal,getReadiness:(opponent,modelId)=>readinessForChoice('rematch',opponent,modelId),onOpponentChange:(opponent,modelId)=>prepareOpponent('rematch',opponent,modelId),onRetry:(opponent,modelId)=>prepareOpponent('rematch',opponent,modelId),onClose:()=>{preparation.cancel('rematch');resumePendingResult();},onStart:async({opponent,side,modelId},{isCurrent})=>{
   if(!await waitForAccountGate() || !isCurrent())return;
   if(!account.canPlay())throw new Error('Sign in to start another game.');
-  if(readinessForChoice('rematch',opponent).state!=='ready')throw new Error('Prepare your opponent first.');
+  if(readinessForChoice('rematch',opponent,modelId).state!=='ready')throw new Error('Prepare your opponent first.');
   const computer = COMPUTER_PROFILES[opponent] ? { p1: side === 'p2' ? opponent : null, p2: side === 'p1' ? opponent : null } : undefined;
-  const handle=transport.createGame({selfPlayMode:opponent==='self',creatorSide:side,computer,computerModelId:computer?readinessForChoice('rematch',opponent).modelId:undefined});
+  const handle=transport.createGame({selfPlayMode:opponent==='self',creatorSide:side,computer,computerModelId:computer?readinessForChoice('rematch',opponent,modelId).modelId:undefined});
   rematchDialog.close();activeResultGameId=null;
   startGameEntryRouteTransition(handle.result.id,'game');navigateTo(buildGameHash(handle.result.id,null,getCurrentFlyoutState()));
   if(opponent==='friend')openFriendInvite(handle.result.id);
 }});
 let pendingBranch = null;
-const getBranchReadiness = opponent => {
-  const readiness = readinessForChoice('branch',opponent);
+const getBranchReadiness = (opponent,modelId) => {
+  const readiness = readinessForChoice('branch',opponent,modelId);
   if (readiness.state !== 'ready') return readiness;
   const source = pendingBranch && transport.getGameViewModel(pendingBranch.sourceGameId);
   return source?.sharedMutationsBlocked
     ? { state: 'preparing', message: 'Updating this game' }
     : readiness;
 };
-const branchDialog = createRematchDialog({ createModal, getReadiness:getBranchReadiness, onOpponentChange:opponent=>prepareOpponent('branch',opponent), onRetry:opponent=>prepareOpponent('branch',opponent), onClose:()=>{preparation.cancel('branch');resumePendingResult();}, title: 'Create a new game here', labelId: 'branch-title', onStart: async ({ opponent, side }, { isCurrent }) => {
+const branchDialog = createRematchDialog({ createModal, getReadiness:getBranchReadiness, onOpponentChange:(opponent,modelId)=>prepareOpponent('branch',opponent,modelId), onRetry:(opponent,modelId)=>prepareOpponent('branch',opponent,modelId), onClose:()=>{preparation.cancel('branch');resumePendingResult();}, title: 'Create a new game here', labelId: 'branch-title', onStart: async ({ opponent, side, modelId }, { isCurrent }) => {
   if (!account.canPlay() || !pendingBranch || !isCurrent()) throw new Error('Sign in to create a game.');
-  const readiness = getBranchReadiness(opponent);
+  const readiness = getBranchReadiness(opponent,modelId);
   if (readiness.state !== 'ready') throw new Error(readiness.message || 'Prepare your opponent first.');
   const computer = COMPUTER_PROFILES[opponent] ? { p1: side === 'p2' ? opponent : null, p2: side === 'p1' ? opponent : null } : undefined;
-  const handle = transport.launchHistoryBranch({ ...pendingBranch, creatorSide: side, selfPlayMode: opponent === 'self', computer, computerModelId: computer ? readinessForChoice('branch',opponent).modelId : undefined });
+  const handle = transport.launchHistoryBranch({ ...pendingBranch, creatorSide: side, selfPlayMode: opponent === 'self', computer, computerModelId: computer ? readinessForChoice('branch',opponent,modelId).modelId : undefined });
   const nextHash = buildGameHash(handle.result.game.id, null, { debug: false, scenarios: false });
   window.open(`${window.location.pathname}${window.location.search}${nextHash}`, '_blank', 'noopener');
   await handle.committed;
@@ -4041,9 +4042,9 @@ const branchDialog = createRematchDialog({ createModal, getReadiness:getBranchRe
 const opponentSession = createOpponentSession({ preferences:createIntroductionPreferences(storage), getReadiness:()=>getComputerReadiness('intro'), createGame:async(intent,isCurrent)=>{
   if(!await waitForAccountGate() || !isCurrent())throw new Error('Game start cancelled.');
   if(!account.canPlay())throw new Error('Sign in to start your game.');
-  if(getComputerReadiness('intro').state!=='ready')throw new Error('Prepare your opponent first.');
+  if(getComputerReadiness('intro',intent.modelId).state!=='ready')throw new Error('Prepare your opponent first.');
   const side = intent.side === 'p2' ? 'p2' : 'p1';
-  const handle=transport.createGame({creatorSide:side,computer:{p1:side==='p2'?intent.opponent:null,p2:side==='p1'?intent.opponent:null},computerModelId:getComputerReadiness('intro').modelId});
+  const handle=transport.createGame({creatorSide:side,computer:{p1:side==='p2'?intent.opponent:null,p2:side==='p1'?intent.opponent:null},computerModelId:getComputerReadiness('intro',intent.modelId).modelId});
   await handle.committed;
   if(!isCurrent())return;
   startGameEntryRouteTransition(handle.result.id,currentRoute.name);

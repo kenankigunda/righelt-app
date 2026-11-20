@@ -20,6 +20,15 @@ export const CURRENT_COMPUTER_MODEL = Object.freeze({
   checkpoint: 'fece7b0b299f3980e257c6c1f29e6f5e5162e32026d73875e78e6c38719c4e44',
   url: '/computer/models/trained-20261029-1086.onnx', experimental: true,
 });
+export const CANDIDATE_A_COMPUTER_MODEL = Object.freeze({
+  id: 'candidate-a-20261120-2323', sha256: '1229c22869d8122a5b3b2add4bdd4e0d0e0dcd82df063cf7ff31b20cab179c0e', bytes: 322842,
+  checkpoint: 'e4a41c636dfa3a98f0973a5023e0fe5883dfd8d592b0df27be034cd547543af5',
+  url: '/computer/models/candidate-a-20261120-2323.onnx', experimental: true,
+});
+export const COMPUTER_MODEL_CHOICES = Object.freeze([
+  Object.freeze({id: CURRENT_COMPUTER_MODEL.id, label: 'Incumbent'}),
+  Object.freeze({id: CANDIDATE_A_COMPUTER_MODEL.id, label: 'Candidate A'}),
+]);
 export type ComputerModel = Readonly<{ id: string; sha256: string; bytes: number; checkpoint: string; url: string; experimental: boolean }>;
 // This historical HTTP default stays fixed when CURRENT changes in a later release.
 const LEGACY_COMPUTER_MODEL_ID = 'initial-1554';
@@ -27,7 +36,9 @@ const LEGACY_COMPUTER_MODEL_ID = 'initial-1554';
 export const COMPUTER_MODELS: Readonly<Record<string, ComputerModel>> = Object.freeze({
   [LEGACY_COMPUTER_MODEL_ID]: LEGACY_COMPUTER_MODEL,
   [CURRENT_COMPUTER_MODEL.id]: CURRENT_COMPUTER_MODEL,
+  [CANDIDATE_A_COMPUTER_MODEL.id]: CANDIDATE_A_COMPUTER_MODEL,
 });
+export const computerModelUpgradeAvailable = (id: string) => id === LEGACY_COMPUTER_MODEL_ID;
 export const getComputerModel = (id: string) => Object.hasOwn(COMPUTER_MODELS, id) ? COMPUTER_MODELS[id] : null;
 /** Requests from cached clients predate model pinning and know only the original model. */
 export const computerModelForCreation = (value: unknown): ComputerModel | null => value === undefined
