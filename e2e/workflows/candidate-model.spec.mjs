@@ -31,7 +31,10 @@ for(const profile of ['babs','tau','horus'])test(`Candidate A ${profile} branche
   await expect(chooser.getByRole('radio',{name:'Incumbent',exact:true})).toBeChecked();
   await chooser.getByRole('radio',{name:'Candidate A',exact:true}).check();
   await expect(chooser.getByRole('button',{name:'Start game',exact:true})).toBeEnabled({timeout:45000});
-  if(profile==='babs')await page.screenshot({path:info.outputPath('candidate-branch-desktop.png')});
+  if(profile==='babs'){
+    await chooser.evaluate(dialog=>{dialog.scrollTop=0;});
+    await page.screenshot({path:info.outputPath('candidate-branch-desktop.png')});
+  }
   const response=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/shell/history/branch');
   const popupPromise=page.waitForEvent('popup');
   await chooser.getByRole('button',{name:'Start game',exact:true}).click();
@@ -59,6 +62,7 @@ test('Candidate A story entry plays Blue while fresh entry keeps the incumbent d
   await expect(story.getByRole('radio',{name:'Incumbent',exact:true})).toBeChecked();
   await story.getByRole('radio',{name:'Candidate A',exact:true}).check();
   await waitForOpponentReady(page);
+  expect(await story.getByRole('radio',{name:'Candidate A',exact:true}).evaluate(input=>getComputedStyle(input).appearance)).toBe('radio');
   await page.screenshot({path:info.outputPath('candidate-story-mobile.png')});
   const response=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/shell/games'&&r.request().method()==='POST');
   await story.getByRole('button',{name:'Play Babs',exact:true}).click();
