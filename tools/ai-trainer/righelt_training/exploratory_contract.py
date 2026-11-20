@@ -57,11 +57,22 @@ def validate_gate(gate,source_revision,backend,plan):
             ('restorePassed','checkpointRecoveryPassed','finiteUpdatePassed','numericPassed','abiPassed'))):
         raise ValueError('actual target-backend restore/update/export proof missing')
     report=json.loads(read_bound(target['evidence']))
+    compatible=False
+    if target.get('compatibleExecutionRecipe'):
+        previous_raw=read_bound(target['compatibleExecutionRecipe'])
+        previous=json.loads(previous_raw);current=json.loads(read_bound(plan['executionRecipe']))
+        if hashlib.sha256(previous_raw).hexdigest()!=report.get('executionRecipeSha256'):
+            raise ValueError('compatible backend recipe bytes differ')
+        # Only this gate/authority module may change. Model, optimizer, data,
+        # arithmetic, sampling and every other source byte must remain identical.
+        for record in (previous,current):
+            record['settings']['sourceFiles'].pop('exploratory_contract.py',None)
+        compatible=(previous==current and target.get('compatibleSourceRevision')==report.get('sourceRevision'))
     if (report.get('schema')!=1 or report.get('kind') not in ('disposable-local-mps-preflight','disposable-target-backend-preflight')
-            or report.get('sourceRevision')!=source_revision or report.get('backend')!=backend
+            or not (report.get('sourceRevision')==source_revision or compatible) or report.get('backend')!=backend
             or report.get('configSha256')!=CONFIG_SHA256 or report.get('passed') is not True
             or report.get('inputCheckpointSha256')!=plan['checkpoint']['sha256']
-            or report.get('executionRecipeSha256')!=plan['executionRecipe']['sha256']
+            or not (report.get('executionRecipeSha256')==plan['executionRecipe']['sha256'] or compatible)
             or type(report.get('updates')) is not int or report['updates']<=0
             or not isinstance(report.get('parameterDelta'),(int,float))
             or not math.isfinite(report['parameterDelta']) or report['parameterDelta']<=0
@@ -80,7 +91,29 @@ def validate_gate(gate,source_revision,backend,plan):
                 or any(o.get('abiPassed') is not True or o.get('finite') is not True for o in c['outputs'])
                 for b in numeric['batches'] for c in b.get('comparisons',{}).values())):
         raise ValueError('target numeric/ABI proof differs')
+    if not numeric_gate_passed(numeric):raise ValueError('target numeric output/tolerance proof differs')
     return gate
+
+
+def numeric_gate_passed(numeric):
+    """Mirror the existing raw ABI/NumPy acceptance, never its diagnostics."""
+    if numeric.get('atol')!=1e-5 or numeric.get('rtol')!=1e-4 or numeric.get('inputDtype')!='float32':return False
+    count=numeric.get('states');shape=numeric.get('inputShape')
+    if type(count)is not int or count<=0 or shape!=[count,46,10,10]:return False
+    cursor=0
+    for batch in numeric.get('batches',[]):
+        size=batch.get('count')
+        if batch.get('start')!=cursor or type(size)is not int or not 0<size<=32 or cursor+size>count:return False
+        if set(batch.get('comparisons',{}))!={'torchCpuToOrtCpu','torchReferenceToTorchCpu','torchReferenceToOrtCpu'}:return False
+        for comparison in batch['comparisons'].values():
+            if comparison.get('passed')is not True or len(comparison.get('outputs',[]))!=2:return False
+            for output,name,expected in zip(comparison.get('outputs',[]),('policy','value'),([size,2801],[size])):
+                if (output.get('name')!=name or output.get('referenceShape')!=expected or output.get('actualShape')!=expected
+                        or output.get('referenceDtype')!='float32' or output.get('actualDtype')!='float32'
+                        or output.get('passed') is not True or output.get('abiPassed') is not True or output.get('finite') is not True
+                        or output.get('referenceNonfinite')!=0 or output.get('actualNonfinite')!=0 or output.get('exceedingCells')!=0):return False
+        cursor+=size
+    return cursor==count
 
 
 def continuation(directory,manifest):

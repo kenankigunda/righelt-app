@@ -63,9 +63,13 @@ class ExploratoryContractTest(unittest.TestCase):
             plan={'checkpoint':{'sha256':'c'*64},'executionRecipe':{'sha256':'d'*64}}
             def bind(path):return {'path':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
             numeric.write_text(json.dumps({'schema':2,'referenceDevice':'mps','numericPassed':True,
-                'onnxSha256':'e'*64,'inputShape':[32,46,10,10],'arithmetic':{'policyApplied':True},
-                'batches':[{'comparisons':{key:{'passed':True,
-                    'outputs':[{'abiPassed':True,'finite':True},{'abiPassed':True,'finite':True}]}
+                'onnxSha256':'e'*64,'states':32,'inputShape':[32,46,10,10],'inputDtype':'float32',
+                'atol':1e-5,'rtol':1e-4,'arithmetic':{'policyApplied':True},
+                'batches':[{'start':0,'count':32,'comparisons':{key:{'passed':True,
+                    'outputs':[{'name':name,'referenceShape':shape,'actualShape':shape,
+                        'referenceDtype':'float32','actualDtype':'float32','passed':True,
+                        'abiPassed':True,'finite':True,'referenceNonfinite':0,'actualNonfinite':0,'exceedingCells':0}
+                        for name,shape in [('policy',[32,2801]),('value',[32])]]}
                     for key in ('torchCpuToOrtCpu','torchReferenceToTorchCpu','torchReferenceToOrtCpu')}}]}))
             report={'schema':1,'kind':'disposable-local-mps-preflight','passed':True,'backend':'mps',
                 'sourceRevision':'a'*40,'configSha256':CONFIG_SHA256,'inputCheckpointSha256':'c'*64,
@@ -81,6 +85,20 @@ class ExploratoryContractTest(unittest.TestCase):
                 finiteUpdatePassed=True,numericPassed=True,abiPassed=True)
             with patch('righelt_training.manifest.dependency_inventory',return_value={'fixture':'b'*64}):
                 self.assertEqual(contract.validate_gate(gate,'a'*40,'mps',plan),gate)
+                old_plan=copy.deepcopy(plan)
+                previous=Path(temporary)/'previous-recipe.json';current=Path(temporary)/'current-recipe.json'
+                old_recipe={'settings':{'sourceFiles':{'exploratory_contract.py':'old','trainer.py':'same'},'optimizer':{'lr':.001}},'dataSha256':'same-data'}
+                new_recipe=copy.deepcopy(old_recipe);new_recipe['settings']['sourceFiles']['exploratory_contract.py']='new'
+                previous.write_text(json.dumps(old_recipe));current.write_text(json.dumps(new_recipe))
+                plan['executionRecipe']=bind(current)
+                old_report=copy.deepcopy(report);report['executionRecipeSha256']=bind(previous)['sha256'];report['sourceRevision']='f'*40
+                target=gate['checks']['targetBackend'];target.update(compatibleExecutionRecipe=bind(previous),compatibleSourceRevision='f'*40)
+                proof.write_text(json.dumps(report));evidence.update(bind(proof))
+                self.assertEqual(contract.validate_gate(gate,'a'*40,'mps',plan),gate)
+                new_recipe['settings']['optimizer']['lr']=.002;current.write_text(json.dumps(new_recipe));plan['executionRecipe']=bind(current)
+                with self.assertRaisesRegex(ValueError,'planned continuation'):contract.validate_gate(gate,'a'*40,'mps',plan)
+                target.pop('compatibleExecutionRecipe');target.pop('compatibleSourceRevision');plan=old_plan;report=old_report
+                proof.write_text(json.dumps(report));evidence.update(bind(proof))
                 with self.assertRaises(ValueError):contract.validate_gate(gate,'a'*40,'cuda',plan)
                 for field,value in [('backend','cuda'),('inputCheckpointSha256','f'*64),
                                     ('executionRecipeSha256','f'*64),('sourceRevision','f'*40)]:
@@ -93,6 +111,22 @@ class ExploratoryContractTest(unittest.TestCase):
                 proof.write_text(json.dumps(report));evidence.update(bind(proof))
                 proof.write_text('changed')
                 with self.assertRaisesRegex(ValueError,'checksum'):contract.validate_gate(gate,'a'*40,'mps',plan)
+
+    def test_numeric_gate_rejects_loose_tolerances_failed_outputs_and_incoherent_coverage(self):
+        outputs=[{'name':name,'referenceShape':shape,'actualShape':shape,'referenceDtype':'float32',
+            'actualDtype':'float32','passed':True,'abiPassed':True,'finite':True,'referenceNonfinite':0,
+            'actualNonfinite':0,'exceedingCells':0,'maxToleranceRatio':1.0000001}
+            for name,shape in [('policy',[1,2801]),('value',[1])]]
+        good={'states':1,'inputShape':[1,46,10,10],'inputDtype':'float32','atol':1e-5,'rtol':1e-4,
+            'batches':[{'start':0,'count':1,'comparisons':{key:{'passed':True,'outputs':copy.deepcopy(outputs)}
+            for key in ('torchCpuToOrtCpu','torchReferenceToTorchCpu','torchReferenceToOrtCpu')}}]}
+        self.assertTrue(contract.numeric_gate_passed(good))
+        changes=[lambda r:r.update(atol=1),lambda r:r.update(rtol=1),lambda r:r.update(inputDtype='float64'),
+            lambda r:r['batches'][0].update(start=1),
+            lambda r:r['batches'][0]['comparisons']['torchCpuToOrtCpu']['outputs'][0].update(passed=False,exceedingCells=1),
+            lambda r:r['batches'][0]['comparisons']['torchCpuToOrtCpu']['outputs'][0].update(actualShape=[1,2800])]
+        for change in changes:
+            bad=copy.deepcopy(good);change(bad);self.assertFalse(contract.numeric_gate_passed(bad))
 
 
 class ExploratoryPolicyWitnessTest(unittest.TestCase):
