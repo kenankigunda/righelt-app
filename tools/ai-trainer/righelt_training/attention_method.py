@@ -185,3 +185,4 @@ def restore_attention(runner, checkpoint):
         if not isinstance(elapsed,(int,float)) or not math.isfinite(elapsed) or elapsed<0:raise ValueError('invalid restored generation clock')
         state['generationStartedMonotonic']=time.monotonic()-elapsed
     runner.model_version=meta['sha256']
+    return data

@@ -20,13 +20,19 @@ STATE_KEY = 'freshTraining'
 
 
 def continuation_for(directory, manifest):
+    if manifest.get('exploratoryWindow') is not None:
+        from .exploratory_contract import continuation
+        return continuation(directory,manifest)
     # A removed manifest field must not downgrade an already-authorized fresh
     # allocation to legacy health. Legacy fixtures may predate allocation logs.
     events = Allocation(Path(directory).resolve().parent, directory).events()
     if manifest.get('continuation') is None and not (events and events[0].get('continuation')):
         return None
     from .allocation import validate_continuation
-    return validate_continuation(directory, manifest)
+    contract=validate_continuation(directory, manifest)
+    if contract.get('policyOnlyFresh'):
+        raise ValueError('decision-only acceptance requires the explicit exploratory entry')
+    return contract
 
 
 def digest(value):
@@ -79,8 +85,9 @@ def allocation_record(directory):
 
 
 def source_identity(checkpoint):
-    checkpoint = Path(checkpoint).resolve()
-    meta = json.loads(checkpoint.with_suffix('.json').read_text())
+    from .portable import resolve_reference
+    checkpoint = resolve_reference(checkpoint)
+    meta = json.loads(resolve_reference(checkpoint.with_suffix('.json')).read_text())
     data = inspect_checkpoint(checkpoint, manifest_sha256=meta['manifestSha256'], require_recovery=True)
     return {'path': str(checkpoint), 'sha256': meta['sha256'], 'updates': data['updates'],
             'weightsSha256': weights_sha256(data['model']),
@@ -103,7 +110,8 @@ def load_baseline(directory, continuation, *, expected_sha256=None):
             or value['allocationId'] != creation['id'] or value['allocationSha256'] != digest(creation)
             or value['continuation'] != continuation or value['checkpoint'] != source):
         raise ValueError('fresh baseline allocation or starting checkpoint changed')
-    inherited = {str((Path(source['path']).parent.parent / name).resolve()): sha
+    from .portable import resolve_reference
+    inherited = {str(resolve_reference(name,base=Path(source['path']).parent.parent)): sha
                  for name, sha in data['recovery']['archives'].items()}
     archived = {entry['path']: entry['sha256'] for entry in value['archives']}
     if not inherited.items() <= archived.items():
@@ -118,15 +126,19 @@ def load_baseline(directory, continuation, *, expected_sha256=None):
 def initialize(directory, continuation, state, checkpoint):
     """Called after full restoration and before this allocation starts work."""
     directory = Path(directory).resolve()
+    from .portable import resolve_reference
+    checkpoint=resolve_reference(checkpoint)
+    starting_checkpoint=resolve_reference(continuation['recoveryCheckpoint'])
     creation = allocation_record(directory)
     retained = state.get(STATE_KEY)
     same_allocation = retained is not None and retained.get('allocationId') == creation['id']
     path = directory / BASELINE_NAME
     if not path.exists():
-        if same_allocation or Path(checkpoint).resolve() != Path(continuation['recoveryCheckpoint']).resolve():
+        if same_allocation or checkpoint != starting_checkpoint:
             raise ValueError('fresh baseline missing for recovered allocation')
         source, data = source_identity(checkpoint)
-        inherited = {(Path(checkpoint).resolve().parent.parent / name).resolve()
+        from .portable import resolve_reference
+        inherited = {resolve_reference(name,base=Path(checkpoint).resolve().parent.parent)
                      for name in data['recovery']['archives']}
         # Freeze prior training, diagnostic and disposable canary archives too.
         archives = inherited | set(directory.parent.glob('**/games/*.json.gz'))
@@ -151,7 +163,7 @@ def initialize(directory, continuation, state, checkpoint):
     baseline = load_baseline(directory, continuation,
                              expected_sha256=retained['baselineSha256'] if same_allocation else None)
     if not same_allocation:
-        if Path(checkpoint).resolve() != Path(continuation['recoveryCheckpoint']).resolve():
+        if checkpoint != starting_checkpoint:
             raise ValueError('fresh allocation must start at its authorized checkpoint')
         state[STATE_KEY] = {'schema': 1, 'allocationId': creation['id'], 'baselineSha256': baseline['sha256'],
                             'games': {}, 'batches': [], 'checkpoints': []}
@@ -185,7 +197,9 @@ def accept_game(directory, state, baseline, game, archive, job):
         raise ValueError('duplicate fresh training receipt')
     archive_digest = file_digest(archive)
     trajectory = trajectory_digest(game)
-    eligible = (game['termination'] == 'terminal' and game['outcome']['status'] in ('p1_win', 'p2_win', 'draw')
+    policy_only=value['continuation'].get('policyOnlyFresh') is True
+    eligible = ((game['termination'] == 'terminal' and game['outcome']['status'] in ('p1_win', 'p2_win', 'draw')
+                 or policy_only and game['termination']=='truncated' and game['outcome']['status']=='ongoing')
                 and bool(game['decisions']) and game['id'] not in {entry.get('gameId') for entry in value['archives']}
                 and archive_digest not in {entry['sha256'] for entry in value['archives']}
                 and trajectory not in {entry.get('trajectorySha256') for entry in value['archives']}
@@ -207,8 +221,11 @@ def record_batch(state, metrics):
     row = {key: metrics[key] for key in ('loss', 'policyLoss', 'valueLoss', 'gradientNorm', 'parameterDelta')}
     if any(type(v) not in (int, float) or not math.isfinite(v) for v in row.values()) or row['parameterDelta'] <= 0:
         raise ValueError('fresh update must be finite and nonzero')
-    row.update(update=state['updates'], policyExamples=metrics.get('policyExamples', [])[:1],
-               valueExamples=metrics.get('valueExamples', [])[:1])
+    row.update(update=state['updates'], policyExamples=metrics.get('policyExamples', []),
+               valueExamples=metrics.get('valueExamples', []),
+               freshPolicySampleCount=len(metrics.get('policyExamples',[])),
+               freshValueSampleCount=len(metrics.get('valueExamples',[])),
+               futureFactLabels=metrics.get('futureFactLabels',0))
     fresh['batches'].append(row)
 
 
@@ -259,9 +276,11 @@ def audit_evidence(directory, state, baseline, games):
             raise ValueError('fresh eligibility receipt missing')
         if not receipt['eligible']:
             excluded += 1; continue
+        policy_only=value['continuation'].get('policyOnlyFresh') is True
+        valid_end=(game['termination']=='terminal' and game['outcome']['status'] in ('p1_win','p2_win','draw')
+                   or policy_only and game['termination']=='truncated' and game['outcome']['status']=='ongoing')
         if (game_id in old_ids or receipt['sha256'] in old_hashes or trajectory in old_trajectories
-                or trajectory in trajectories or game['termination'] != 'terminal'
-                or game['outcome']['status'] not in ('p1_win', 'p2_win', 'draw') or not game['decisions']):
+                or trajectory in trajectories or not valid_end or not game['decisions']):
             raise ValueError('inherited, duplicate or nonterminal game claimed as fresh')
         trajectories.add(trajectory)
         qualified[game_id] = {d['id']: d for d in game['decisions']}
@@ -284,11 +303,18 @@ def audit_evidence(directory, state, baseline, games):
                         key == 'valueExamples' and game['termination'] != 'terminal'):
                     raise ValueError('update witness references masked or missing example')
                 if game_id in qualified: used.add((game_id, position_id))
+        for name,key in (('freshPolicySampleCount','policyExamples'),('freshValueSampleCount','valueExamples')):
+            if name in batch and batch[name]!=len(batch[key]):raise ValueError('fresh sample count differs from witnesses')
     inherited = sum(game['termination'] == 'terminal' for name, game in games.items()
                     if name not in {receipt['archive'] for receipt in fresh['games'].values()})
-    return {'freshTerminalGames': len(qualified), 'inheritedTerminalGames': inherited,
+    terminal_count=sum(games[fresh['games'][gid]['archive']]['termination']=='terminal' for gid in qualified)
+    return {'freshTerminalGames': terminal_count, 'inheritedTerminalGames': inherited,
             'excludedFreshGames': excluded, 'freshPolicyExamples': len(policy), 'freshValueExamples': len(values),
-            'freshFiniteNonzeroUpdates': len(fresh['batches']), 'freshExamplesUsed': bool(policy and values)}
+            'freshPolicySamples':sum(b.get('freshPolicySampleCount',len(b['policyExamples'])) for b in fresh['batches']),
+            'freshTerminalValueSamples':sum(b.get('freshValueSampleCount',len(b['valueExamples'])) for b in fresh['batches']),
+            'sampledFutureFactLabels':sum(b.get('futureFactLabels',0) for b in fresh['batches']),
+            'freshFiniteNonzeroUpdates': len(fresh['batches']),
+            'freshExamplesUsed': bool(policy) if value['continuation'].get('policyOnlyFresh') is True else bool(policy and values)}
 
 
 def retained_checkpoint(candidate, latest_state, baseline):
