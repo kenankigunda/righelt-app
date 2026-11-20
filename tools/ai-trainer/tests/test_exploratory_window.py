@@ -55,6 +55,45 @@ class ExploratoryContractTest(unittest.TestCase):
             contract.start_repair(temporary,10000)
             with self.assertRaisesRegex(ValueError,'repair window exhausted'):contract.check_repair(temporary,17100)
 
+    def test_launch_gate_uses_bound_backend_proof_without_terminal_or_tactical_counts(self):
+        import hashlib
+        from righelt_training.config import CONFIG_SHA256
+        with tempfile.TemporaryDirectory() as temporary:
+            proof=Path(temporary)/'backend-proof.json';numeric=Path(temporary)/'numeric.json'
+            plan={'checkpoint':{'sha256':'c'*64},'executionRecipe':{'sha256':'d'*64}}
+            def bind(path):return {'path':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+            numeric.write_text(json.dumps({'schema':2,'referenceDevice':'mps','numericPassed':True,
+                'onnxSha256':'e'*64,'inputShape':[32,46,10,10],'arithmetic':{'policyApplied':True},
+                'batches':[{'comparisons':{key:{'passed':True,
+                    'outputs':[{'abiPassed':True,'finite':True},{'abiPassed':True,'finite':True}]}
+                    for key in ('torchCpuToOrtCpu','torchReferenceToTorchCpu','torchReferenceToOrtCpu')}}]}))
+            report={'schema':1,'kind':'disposable-local-mps-preflight','passed':True,'backend':'mps',
+                'sourceRevision':'a'*40,'configSha256':CONFIG_SHA256,'inputCheckpointSha256':'c'*64,
+                'executionRecipeSha256':'d'*64,'updates':1,'parameterDelta':.5,'teacherLoaded':True,
+                'freshBaselineInitialized':True,'checkpointRecoveryPassed':True,'numericParityPassed':True,
+                'abiPassed':True,'originalCheckpointUnchanged':True,'numericReport':bind(numeric),
+                'export':{'sha256':'e'*64,'dtype':'float32','opset':17,'configSha256':CONFIG_SHA256}}
+            proof.write_text(json.dumps(report));evidence=bind(proof)
+            gate={'schema':1,'kind':'exploratory-launch-gate','sourceRevision':'a'*40,'configSha256':CONFIG_SHA256,
+                  'proofDependencies':{'fixture':'b'*64},'checks':{name:{'passed':True,'evidence':evidence}
+                      for name in ('coreTests','trainerTests','exactReplay','targetBackend')}}
+            gate['checks']['targetBackend'].update(backend='mps',restorePassed=True,checkpointRecoveryPassed=True,
+                finiteUpdatePassed=True,numericPassed=True,abiPassed=True)
+            with patch('righelt_training.manifest.dependency_inventory',return_value={'fixture':'b'*64}):
+                self.assertEqual(contract.validate_gate(gate,'a'*40,'mps',plan),gate)
+                with self.assertRaises(ValueError):contract.validate_gate(gate,'a'*40,'cuda',plan)
+                for field,value in [('backend','cuda'),('inputCheckpointSha256','f'*64),
+                                    ('executionRecipeSha256','f'*64),('sourceRevision','f'*40)]:
+                    bad=copy.deepcopy(report);bad[field]=value;proof.write_text(json.dumps(bad))
+                    evidence.update(bind(proof))
+                    with self.subTest(field=field),self.assertRaisesRegex(ValueError,'planned continuation'):
+                        contract.validate_gate(gate,'a'*40,'mps',plan)
+                proof.write_text('{"unrelated":"proof"}');evidence.update(bind(proof))
+                with self.assertRaisesRegex(ValueError,'planned continuation'):contract.validate_gate(gate,'a'*40,'mps',plan)
+                proof.write_text(json.dumps(report));evidence.update(bind(proof))
+                proof.write_text('changed')
+                with self.assertRaisesRegex(ValueError,'checksum'):contract.validate_gate(gate,'a'*40,'mps',plan)
+
 
 class ExploratoryPolicyWitnessTest(unittest.TestCase):
     def setUp(self):

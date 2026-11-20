@@ -29,8 +29,12 @@ qualified data commitment. The trainingRecipe file contains that unchanged
 root-search recipe. Preserve the teacher, normal/contact curriculum, losses,
 observed-future targets and masks. No policy-refresh input is permitted.
 
-The source-bound initial gate retains core/trainer/replay/export proof and its
-dependency inventory. Historical overnight100-terminal and predecessor-phase
+The `exploratory-launch-gate` schema1 gate retains sourceRevision, configSha256,
+proofDependencies and checks named coreTests, trainerTests, exactReplay and
+targetBackend. Each has passed:true and evidence:{path,sha256} referencing actual
+retained proof. targetBackend additionally binds backend and true restorePassed,
+checkpointRecoveryPassed, finiteUpdatePassed, numericPassed and abiPassed. No
+1000-state or tactical diagnostic count is required. Historical overnight100-terminal and predecessor-phase
 requirements do not apply to this distinct entry. Fresh-policy acceptance
 requires real replay-accepted decisions sampled in finite nonzero updates and
 retained in the selected checkpoint. Valid truncation supplies no terminal value.

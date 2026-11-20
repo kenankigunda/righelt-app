@@ -51,4 +51,32 @@ class PortableTest(unittest.TestCase):
             self.local.unlink()
             with self.assertRaises(FileNotFoundError):corpus_record({'path':str(self.outside),'sha256':self.expected})
 
+    def test_parsed_inventory_reuse_rechecks_inventory_target_bytes_and_symlinks(self):
+        from unittest.mock import patch
+        import os
+        from righelt_training.portable import closure_from_env,resolve_reference
+        self.closure()
+        env={'RIGHELT_PORTABLE_CLOSURE_PATH':str(self.path),'RIGHELT_PORTABLE_CLOSURE_SHA256':hashlib.sha256(self.path.read_bytes()).hexdigest(),'RIGHELT_PORTABLE_ROOT':str(self.root)}
+        with patch.dict(os.environ,env):
+            first=closure_from_env();self.assertIs(first,closure_from_env())
+            self.assertEqual(resolve_reference(str(self.outside)).read_bytes(),b'independent cloud bytes')
+            self.local.write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError,'checksum'):resolve_reference(str(self.outside))
+            self.local.unlink();self.local.symlink_to(self.outside)
+            with self.assertRaisesRegex(ValueError,'symlink'):resolve_reference(str(self.outside))
+            self.local.unlink();self.local.write_bytes(b'independent cloud bytes')
+            self.path.write_bytes(b'changed inventory')
+            with self.assertRaisesRegex(ValueError,'inventory checksum'):closure_from_env()
+
+    def test_cached_inventory_cannot_follow_replaced_inventory_ancestor(self):
+        from unittest.mock import patch
+        import os
+        from righelt_training.portable import closure_from_env
+        self.closure();raw=self.path.read_bytes()
+        env={'RIGHELT_PORTABLE_CLOSURE_PATH':str(self.path),'RIGHELT_PORTABLE_CLOSURE_SHA256':hashlib.sha256(raw).hexdigest(),'RIGHELT_PORTABLE_ROOT':str(self.root)}
+        with patch.dict(os.environ,env):
+            closure_from_env()
+            saved=self.run.with_name('saved');self.run.rename(saved);self.run.symlink_to(saved,target_is_directory=True)
+            with self.assertRaisesRegex(ValueError,'symlink'):closure_from_env()
+
 if __name__=='__main__':unittest.main()

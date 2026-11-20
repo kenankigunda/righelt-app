@@ -39,6 +39,50 @@ def validate(plan):
     return plan
 
 
+def validate_gate(gate,source_revision,backend,plan):
+    """Source proof plus actual backend probe, not historical strength health."""
+    from .config import CONFIG_SHA256
+    from .manifest import dependency_inventory
+    from .portable import read_bound
+    if (gate.get('schema')!=1 or gate.get('kind')!='exploratory-launch-gate'
+            or gate.get('sourceRevision')!=source_revision or gate.get('configSha256')!=CONFIG_SHA256
+            or gate.get('proofDependencies')!=dependency_inventory()):
+        raise ValueError('exploratory gate source/configuration differs')
+    for name in ('coreTests','trainerTests','exactReplay','targetBackend'):
+        proof=gate.get('checks',{}).get(name,{})
+        if proof.get('passed') is not True:raise ValueError('exploratory launch proof missing: '+name)
+        read_bound(proof['evidence'])
+    target=gate['checks']['targetBackend']
+    if (target.get('backend')!=backend or any(target.get(key) is not True for key in
+            ('restorePassed','checkpointRecoveryPassed','finiteUpdatePassed','numericPassed','abiPassed'))):
+        raise ValueError('actual target-backend restore/update/export proof missing')
+    report=json.loads(read_bound(target['evidence']))
+    if (report.get('schema')!=1 or report.get('kind') not in ('disposable-local-mps-preflight','disposable-target-backend-preflight')
+            or report.get('sourceRevision')!=source_revision or report.get('backend')!=backend
+            or report.get('configSha256')!=CONFIG_SHA256 or report.get('passed') is not True
+            or report.get('inputCheckpointSha256')!=plan['checkpoint']['sha256']
+            or report.get('executionRecipeSha256')!=plan['executionRecipe']['sha256']
+            or type(report.get('updates')) is not int or report['updates']<=0
+            or not isinstance(report.get('parameterDelta'),(int,float))
+            or not math.isfinite(report['parameterDelta']) or report['parameterDelta']<=0
+            or any(report.get(k) is not True for k in ('teacherLoaded','freshBaselineInitialized',
+                'checkpointRecoveryPassed','numericParityPassed','abiPassed','originalCheckpointUnchanged'))):
+        raise ValueError('target-backend evidence does not prove the planned continuation')
+    numeric=json.loads(read_bound(report['numericReport']))
+    if (numeric.get('schema')!=2 or numeric.get('referenceDevice')!=backend or numeric.get('numericPassed') is not True
+            or numeric.get('onnxSha256')!=report.get('export',{}).get('sha256')
+            or numeric.get('inputShape',[None])[1:]!=[46,10,10]
+            or numeric.get('arithmetic',{}).get('policyApplied') is not True
+            or report.get('export',{}).get('dtype')!='float32' or report['export'].get('opset')!=17
+            or report['export'].get('configSha256')!=CONFIG_SHA256
+            or any(set(b.get('comparisons',{}))!={'torchCpuToOrtCpu','torchReferenceToTorchCpu','torchReferenceToOrtCpu'} for b in numeric.get('batches',[]))
+            or not numeric.get('batches') or any(c.get('passed') is not True or len(c.get('outputs',[]))!=2
+                or any(o.get('abiPassed') is not True or o.get('finite') is not True for o in c['outputs'])
+                for b in numeric['batches'] for c in b.get('comparisons',{}).values())):
+        raise ValueError('target numeric/ABI proof differs')
+    return gate
+
+
 def continuation(directory,manifest):
     from .allocation import Allocation
     plan=validate(manifest['exploratoryWindow'])

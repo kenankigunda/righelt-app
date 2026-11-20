@@ -119,7 +119,8 @@ def drive(plan,gate):
     from .allocation import Allocation,append,identity
     from .budget import Budget
     from .processes import cleanup_owned,start_group,stop_group,register_owned,install_stop_handlers
-    from .supervisor import run_phase,validate_gate_report
+    from .supervisor import run_phase
+    from .exploratory_contract import validate_gate
     from .portable import resolve_reference
     from .resource_policy import POLICY_ID
     if POLICY_ID!='adaptive-headroom-v2':raise ValueError('resource policy imported before exploratory configuration')
@@ -130,7 +131,7 @@ def drive(plan,gate):
     with (directory.parent/'supervisor.lock').open('a+') as lock:
         fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         recipe=configure(plan)
-        validate_gate_report(read(gate),plan['sourceRevision'],'initial')
+        validate_gate(read(gate),plan['sourceRevision'],plan['nativeManifest']['executionBackend'],plan)
         # No mutable branch/source repair is permitted inside this driver.
         from .source_image import source_image
         image=source_image()
