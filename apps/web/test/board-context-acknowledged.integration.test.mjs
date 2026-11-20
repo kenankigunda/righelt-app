@@ -24,7 +24,7 @@ function fixture(){
  const game={id:'g',gameplayRevision:1,myRoles:['Player 2'],controlSeat:'Player 2',
   currentSnapshot:{sideToMove:'P2'},board:{state:{turnIndex:1,sideToMove:'P2',outcome:{status:'ongoing'}}},
   player1:{identityId:'other'},player2:{identityId:'me'},turns:[{index:0,playerSeat:'Player 1',status:'complete'}],
-  computer:{seats:{p1:'tau',p2:null},modelId:'old-model',takeoverTurn:null},canControlComputer:true,
+  computer:{seats:{p1:'tau',p2:null},modelId:'initial-1554',takeoverTurn:null},canControlComputer:true,
   moves:[{moveId:'a',turnIndex:0,turnMoveIndex:0,actorSide:'P1',selectionSnapshot:{pieces:[],sideToMove:'P1'},snapshot:{pieces:[],sideToMove:'P2'},action:{type:'rush',from:{row:1,col:2},to:{row:2,col:3}}}]};
  const stack=createNotificationStack({getInteractionKey:()=>held}),store=createBoardContextStore();
  const ctx={SYNC_TIMING,viewingScope:()=> 'fixture',recoveryPresentationOptions:()=>({}),playbackRecoveryWait:{update:()=>0},liveBoardVisible:()=>true,historyBoardMessage,opponentBoardMessage,withPushSequenceMessage,captureDisplayedReplay,structuredClone,boardContexts:store,renderBoardContext,renderGameAlertCard,renderComputerProgress,recoveryActivity,activityActorSide,undoApprovalActorSide,icon,notificationStack:stack,
