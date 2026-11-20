@@ -17,9 +17,25 @@ test('identical hash-bound upload handles a lost response once and checksum/auth
   let count=0;client.fetcher=async()=>{count++;return response();};await assert.rejects(client.upload(bytes));assert.equal(count,1);
  }
 });
-test('safe interrupted response body gets only one retry and sustained unavailability stops',async()=>{
+test('safe interrupted response body retries within three total attempts and sustained unavailability stops',async()=>{
  let count=0;const client=new Client({url:'https://compute.example',id:'public',token:'private',fetcher:async()=>{count++;return count===1?{ok:true,status:200,json:async()=>{throw Error('broken stream');}}:Response.json({ok:true});}});
  assert.equal((await client.json('status')).ok,true);assert.equal(count,2);
  count=0;client.fetcher=async()=>{count++;return new Response('not json',{status:200});};await assert.rejects(client.json('status'),/response malformed/);assert.equal(count,1);
- count=0;client.fetcher=async()=>{count++;return new Response(null,{status:503});};await assert.rejects(client.json('status'),InfrastructureError);assert.equal(count,2);
+ count=0;client.fetcher=async()=>{count++;return new Response(null,{status:503});};await assert.rejects(client.json('status'),InfrastructureError);assert.equal(count,3);
+});
+test('safe retries are clamped to remaining authority and never renew the elapsed window',async()=>{
+ let now=0,count=0;
+ const client=new Client({url:'https://compute.example',id:'public',token:'private',clock:()=>now,deadline:()=>15,
+  fetcher:async()=>{count++;now+=10;throw Error('lost');}});
+ await assert.rejects(client.json('status'),InfrastructureError);assert.equal(count,2);
+ count=0;now=15;await assert.rejects(client.json('status'),InfrastructureError);assert.equal(count,0);
+ now=0;client.deadline=()=>Infinity;client.fetcher=async()=>{count++;now+=61000;throw Error('lost');};
+ await assert.rejects(client.json('status'),InfrastructureError);assert.equal(count,2);
+});
+test('settlement repeats identical content but work creation remains single dispatch',async()=>{
+ let count=0;const bodies=[];
+ const client=new Client({url:'https://compute.example',id:'public',token:'private',generation:1,
+  fetcher:async(_url,options)=>{count++;bodies.push(options.body);if(count<3)throw Error('lost');return Response.json({settled:true});}});
+ const body={key:'a'.repeat(64),result:{sha256:'b'.repeat(64),bytes:1,name:'result'}};
+ assert.equal((await client.json('settle',body)).settled,true);assert.equal(count,3);assert.equal(new Set(bodies).size,1);
 });

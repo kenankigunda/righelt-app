@@ -8,7 +8,10 @@ import tempfile
 import psutil
 
 
-def snapshot(root, directory, pid=None, parent=None):
+PARENT_LEDGERS=('allocation-events.jsonl','generation-launches.jsonl','recovery-ledger.json')
+
+
+def snapshot(root, directory, pid=None, parent=None, parent_ledgers=False):
     root = Path(root).resolve()
     source = (root / directory).resolve()
     if not source.is_relative_to(root / '.ai-runs'):
@@ -36,6 +39,12 @@ def snapshot(root, directory, pid=None, parent=None):
                 dest = target / path.relative_to(root)
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(path, dest)
+        if parent_ledgers:
+            for name in PARENT_LEDGERS:
+                path=source.parent/name
+                if not path.exists():continue
+                if path.is_symlink() or not path.is_file():raise ValueError('unsafe native parent ledger')
+                dest=target/path.relative_to(root);dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(path,dest)
         return str(target)
     except BaseException:
         if target is not None: shutil.rmtree(target)
@@ -52,8 +61,9 @@ def main():
     p.add_argument('--directory', required=True)
     p.add_argument('--pid', type=int)
     p.add_argument('--parent', type=int)
+    p.add_argument('--parent-ledgers',action='store_true')
     args = p.parse_args()
-    print(json.dumps({'directory': snapshot(args.root, args.directory, args.pid, args.parent)}))
+    print(json.dumps({'directory': snapshot(args.root, args.directory, args.pid, args.parent,args.parent_ledgers)}))
 
 
 if __name__ == '__main__': main()

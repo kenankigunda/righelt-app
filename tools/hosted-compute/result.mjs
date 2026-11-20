@@ -1,4 +1,6 @@
 import { POLICY,assert, artifact, canonical, sha256 } from './policy.mjs';
+import {EXPLORATORY_PURPOSE} from './exploratory-policy.mjs';
+import {verifyExploratoryResult} from './exploratory-result.mjs';
 
 export function executionIdentity(manifest, manifestSha256, phase, generation) {
   return { campaign: manifest.id, phase: phase.id, manifestSha256, generation, seed: manifest.seed,
@@ -11,14 +13,15 @@ export function executionIdentity(manifest, manifestSha256, phase, generation) {
 }
 // A completed receipt from a prior host is valid only through an exact durable
 // snapshot membership. Consumed but unsettled game claims are never successes.
-export async function verifyResult(result, { manifest, manifestSha256, phase, generation, snapshot, rawSha256, read, phaseDeadline,expect = {} }) {
-  assert(result?.schema === 1 && result.kind === (manifest.purpose===POLICY.publicTiming.purpose?POLICY.publicTiming.resultKind:'compute-result') && result.disposition === 'complete', 'typed completed result required');
+export async function verifyResult(result, { manifest, manifestSha256, phase, generation, snapshot, rawSha256, read, phaseDeadline,sealedEndpoint,expect = {} }) {
+  assert(result?.schema === 1 && result.kind === (manifest.purpose===POLICY.publicTiming.purpose?POLICY.publicTiming.resultKind:manifest.purpose===EXPLORATORY_PURPOSE?'exploratory-hosted-result':'compute-result') && result.disposition === 'complete', 'typed completed result required');
   for (const [key,value] of Object.entries(expect)) assert(canonical(result[key]) === canonical(value), 'phase evidence failed');
   const origin = result.execution?.generation;
   assert(Number.isSafeInteger(origin) && origin > 0 && origin <= generation, 'invalid original execution');
   if (origin !== generation) assert(snapshot && snapshot.phaseIndex === manifest.phases.findIndex(p => p.id === phase.id) && snapshot.files.some(f => f.sha256 === rawSha256 && (f.originGeneration ?? snapshot.generation) === origin), 'result lacks durable recovery chain');
   assert(canonical(result.execution) === canonical(executionIdentity(manifest, manifestSha256, phase, origin)), 'result execution identity mismatch');
   if(manifest.purpose===POLICY.publicTiming.purpose)return verifyPublicTimingResult(result,{manifest,phase,read,phaseDeadline});
+  if(manifest.purpose===EXPLORATORY_PURPOSE)return verifyExploratoryResult(result,{manifest,phase,read,sealedEndpoint});
   if(manifest.scientific) return verifyScientificResult(result,{manifest,phase,read});
   assert(canonical(result.completedWorkIds) === canonical(phase.workIds), 'scheduled work not complete');
   assert(result.artifacts?.length >= 2 && result.artifacts.some(a => a.role === 'model') && result.artifacts.some(a => a.role === 'proof'), 'model and proof identities required');

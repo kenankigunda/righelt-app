@@ -5,16 +5,19 @@ import {cashPlan,cloudflareCoverage} from './cash.mjs';
 import {readCleanupRegistry,readOperatorReceipt,sameReference,validateManualIntent,validateRepairAllowance,operatorAttemptBinding,MANUAL_STARTUP_MS,CLEANUP_CONTRACTS} from './manual-authority.mjs';
 import {validateRuntimeUpgrade} from './runtime-upgrade.mjs';
 import {actualEnvelope} from './actual-spend.mjs';
-import {needsOwnershipWatch,effectiveRefusal,refusalFor,refusalHeld} from './refusal-state.mjs';
+import {needsOwnershipWatch,effectiveRefusal,refusalFor,refusalHeld,allRefusals} from './refusal-state.mjs';
+import {exploratoryAuthority,consumeExploratoryCreate} from './exploratory-window.mjs';
+import {EXPLORATORY_PURPOSE} from './exploratory-policy.mjs';
 
 const hash=value=>sha256(encode(canonical(value)));
 export async function manualAuthority(core,db,c,intent){
   assert(core.config.enabled===true&&(db.pilotReservedCents??0)<=core.config.authorizedCents,'manual compute disabled or authorization reduced');
   validateManualIntent(intent);
   validateRepairAllowance(intent,core.config.authorizedCents);
+  const exploratory=intent.exploratoryWindow?await exploratoryAuthority(core,db,c,intent):null;
   const now=core.now(),prior=core.campaign(db,intent.priorCampaignId),old=prior.attempts.at(-1);
-  assert(!db.providerRefusalResolution||!refusalHeld(db,db.providerRefusalResolution),'capacity refusal contradicted: cleanup hold required');
-  assert(!db.providerRefusalResolution||c.manifest.purpose===POLICY.publicTiming.purpose&&intent.publicTimingTransition,'resolved refusal requires the public timing authority ladder');
+  assert(allRefusals(db).every(r=>!refusalHeld(db,r)),'capacity refusal contradicted: cleanup hold required');
+  assert(exploratory||!db.providerRefusalResolution||c.manifest.purpose===POLICY.publicTiming.purpose&&intent.publicTimingTransition,'resolved refusal requires the public timing authority ladder');
   const actual=Boolean(db.actualSpendBasis);
   if(actual){
     assert(now<db.actualSpendBasis.validUntil&&intent.expiresAt<=db.actualSpendBasis.validUntil,'fresh actual-spend reconciliation required');
@@ -23,7 +26,8 @@ export async function manualAuthority(core,db,c,intent){
   assert(c.manifest.id===intent.campaignId&&c.manifestSha256===intent.manifestSha256&&prior!==c&&prior.manifestSha256===intent.priorManifestSha256,'manual campaign binding differs');
   assert(c.manifest.sourceRevision===intent.sourceRevision,'manual source differs from intent');
   let transition;
-  if(intent.publicTimingTransition)transition=await validatePublicTimingTransition(core,db,prior,c,intent);
+  if(exploratory){assert(c.manifest.purpose===EXPLORATORY_PURPOSE,'exploratory purpose differs');}
+  else if(intent.publicTimingTransition)transition=await validatePublicTimingTransition(core,db,prior,c,intent);
   else if(intent.runtimeUpgrade)await validateRuntimeUpgrade(core,prior,c,intent);
   else{
     assert(c.manifest.sourceRevision===prior.manifest.sourceRevision&&c.manifest.runtimeSha256===prior.manifest.runtimeSha256,'manual frozen source/runtime differs');
@@ -31,7 +35,8 @@ export async function manualAuthority(core,db,c,intent){
     assert(c.manifest.phases[0].host.image===prior.manifest.phases[prior.phase].host.image,'manual frozen image differs');
   }
   assert(c.manifest.purpose!==POLICY.publicTiming.purpose||intent.publicTimingTransition,'public timing qualification transition missing');
-  if(!intent.publicTimingTransition)for(const key of ['dependencySha256','checkpointSha256','corpusSha256','recipeSha256','seed'])assert(canonical(c.manifest[key])===canonical(prior.manifest[key]),'manual frozen public inputs differ');
+  if(!intent.publicTimingTransition&&!exploratory)for(const key of ['dependencySha256','checkpointSha256','corpusSha256','recipeSha256','seed'])assert(canonical(c.manifest[key])===canonical(prior.manifest[key]),'manual frozen public inputs differ');
+  assert(c.manifest.purpose!==EXPLORATORY_PURPOSE||exploratory,'exploratory window authority missing');
   assert(c.manifest.mode==='supervised-qualification'&&c.manifest.purpose!=='scientific-comparison'&&c.manifest.phases.length===1,'manual public qualification only');
   assert(prior.attempts.length===1&&old?.uncertain===true&&['stopping','cleanup-uncertain'].includes(prior.status),'original uncertain owner required');
   assert(canonical(intent.priorAttempt)===canonical({generation:prior.generation,name:old.name,prearmSha256:old.prearmSha256,startedAt:old.startedAt}),'original attempt binding differs');
@@ -64,8 +69,8 @@ export async function manualAuthority(core,db,c,intent){
   const fence=await control.store.readFence(oldRecord.nonce,prior.manifest.externalControl);
   assert(fence?.kind==='terminal'&&fence.prearmSha256===prior.manifest.externalControl.sha256,'original terminal fence missing');
   const authority=await control.authorizeLaunch(c.manifest,{phaseIndex:0,generation:1});
-  const publicWork=await publicWorkAuthority(core,db,c,intent,authority);
-  if(intent.startup)assert(intent.startup.deadline<=Math.min(c.manifest.deadline,authority.cutoff,publicWork?.admissionDeadline??intent.repairDeadline,db.manualProgram?.deadline??Infinity),'startup authority exceeds immutable bounds');
+  const publicWork=exploratory?.publicWork??await publicWorkAuthority(core,db,c,intent,authority);
+  if(intent.startup)assert(intent.startup.deadline<=Math.min(c.manifest.deadline,authority.cutoff,publicWork?.admissionDeadline??intent.repairDeadline,exploratory?Infinity:db.manualProgram?.deadline??Infinity),'startup authority exceeds immutable bounds');
   assert(authority.name===intent.name&&authority.name!==old.name,'manual exact name differs');
   assert(intent.liabilityUntil>=authority.cutoff,'cleanup and response liability horizon missing');
   const ready=await readOperatorReceipt(control.store,intent.cleanupReady);
@@ -96,7 +101,7 @@ export async function manualAuthority(core,db,c,intent){
   // Every earlier prepared manual allocation remains committed after cleanup,
   // cancellation or completion. The original unknown owner stays the prior.
   const retainedManualCents=Object.values(db.campaigns).filter(other=>other!==c&&other.manual?.intent.priorCampaignId===prior.manifest.id).reduce((sum,other)=>sum+other.manifest.maxCents,0);
-  const envelope=actual?actualEnvelope(core,db,c,intent):null;
+  const envelope=actual?actualEnvelope(core,db,c,intent,exploratory?.authority):null;
   const encumberedCents=envelope?.requiredCents??prior.manifest.maxCents+intent.priorRiskReserveCents+retainedManualCents+c.manifest.maxCents;
   assert(funding.schema===1&&funding.kind===(actual?'operator-actual-funding-freeze':'operator-additive-funding-freeze')&&(!actual||funding.basisSha256===db.actualSpendBasis.receiptSha256)&&oldFunding?.id===prior.manifest.id&&oldFunding.manifestSha256===prior.manifestSha256&&Date.parse(oldFunding.startedAt)===old.startedAt,'operator funding prior binding differs');
   const oldReserve=actual?(db.actualSpendBasis.activeResources.some(r=>r.campaignId===prior.manifest.id)?reserveCents(prior.manifest.maxCents):0):reserveCents(prior.manifest.maxCents);
@@ -106,7 +111,7 @@ export async function manualAuthority(core,db,c,intent){
   assert(total?.runpodEncumberedCents===encumberedCents&&total.repairEncumberedCents===encumberedCents&&total.runpodEncumberedCents<=total.runpodCeilingCents&&total.runpodCeilingCents<=10000&&total.repairEncumberedCents<=intent.repairMaxCents&&total.repairCeilingCents===intent.repairMaxCents&&total.cloudflareEncumberedCents<=total.cloudflareCeilingCents&&total.cloudflareCeilingCents<=2000&&total.githubPaidOverageAuthorized===false,'operator aggregate funding exceeded');
   cloudflareCoverage(c.manifest.cash,{now,deadline:c.manifest.deadline,forecastUntil:authority.forecastUntil});
   assert(core.now()<intent.expiresAt&&core.now()<(publicWork?.admissionDeadline??intent.repairDeadline),'manual admission expired during authorization');
-  return {prior,old,authority,registry,publicWork,retainedWatchOwnerIds,capacityRecovery:transition?.capacityRecovery};
+  return {prior,old,authority,registry,publicWork,retainedWatchOwnerIds,capacityRecovery:transition?.capacityRecovery,exploratory};
 }
 function repairCost(core,db,prior){
   let total=core.cost(prior);
@@ -115,8 +120,8 @@ function repairCost(core,db,prior){
   }
   return total;
 }
-function requireHeadroom(core,db,prior,c,cutoff){
-  if(db.actualSpendBasis){actualEnvelope(core,db,c,c.manual.intent);return;}
+function requireHeadroom(core,db,prior,c,cutoff,windowAuthority){
+  if(db.actualSpendBasis){actualEnvelope(core,db,c,c.manual.intent,windowAuthority);return;}
   cutoff=c.manual.intent.liabilityUntil;
   const now=core.now(),host=c.manifest.phases[0].host;
   const repair=repairCost(core,db,prior);
@@ -139,8 +144,8 @@ export async function prepareManual(core,id,intent){
   }
   assert(c.status==='staged'&&core.config.enabled===true,'manual campaign unavailable');
   assert(!db.manualFundingReservations?.[intent.fundingReservation?.sha256],'funding reservation already assigned');
-  assert(!db.manualProgram||core.now()<db.manualProgram.deadline,'overall actual program ended');
-  const {prior,authority,publicWork,retainedWatchOwnerIds,capacityRecovery}=await manualAuthority(core,db,c,intent),now=core.now();
+  assert(intent.exploratoryWindow||!db.manualProgram||core.now()<db.manualProgram.deadline,'overall actual program ended');
+  const {prior,authority,publicWork,retainedWatchOwnerIds,capacityRecovery,exploratory}=await manualAuthority(core,db,c,intent),now=core.now();
   for(const other of Object.values(db.campaigns))assert(other===c||other===prior||effectiveRefusal(db,other)||TERMINAL.has(other.status)&&!refusalFor(db,other)||other.status==='staged'||retainedWatchOwnerIds.has(other.manifest.id),'another campaign owns compute');
   for(const input of c.manifest.inputs)assert(c.objects[input.sha256]?.bytes===input.bytes,'manual inputs incomplete');
   const host=c.manifest.phases[0].host;assert(host.quoteObservedAt<=now&&host.quoteExpires>now,'manual host quote expired');
@@ -148,14 +153,14 @@ export async function prepareManual(core,id,intent){
   assert(db.cashFunding&&canonical(db.cashFunding)===canonical(funding),'manual cumulative funding differs');
   const oldHold=db.manualRiskHolds?.[prior.manifest.id]??0;assert(intent.priorRiskReserveCents>=oldHold,'prior risk reservation cannot shrink');
   const additionalRisk=intent.priorRiskReserveCents-oldHold;
-  const actual=Boolean(db.actualSpendBasis),envelope=actual?actualEnvelope(core,db,c,intent):null;
+  const actual=Boolean(db.actualSpendBasis),envelope=actual?actualEnvelope(core,db,c,intent,exploratory?.authority):null;
   assert(actual?envelope.requiredCents<=cash.fundedCreditCents:(db.creditAllocatedCents??0)+c.manifest.maxCents+additionalRisk<=cash.fundedCreditCents&&(db.pilotReservedCents??0)+c.manifest.maxCents+additionalRisk<=core.config.authorizedCents,'manual cumulative credit/authorization exhausted');
   assert((db.cloudflareAllocatedCents??0)+cloudflareUsageCapCents<=cash.cloudflareReservedCents,'manual cumulative Cloudflare reserve exhausted');
   if(publicWork?.diagnostic&&!db.publicQualificationEscalation)db.publicQualificationEscalation={campaignId:id,intentSha256,receiptSha256:publicWork.receiptSha256,preparedAt:now,programAcceptedAt:db.manualProgram.acceptedAt};
   c.manual={intent:structuredClone(intent),intentSha256,...(publicWork?{publicWork:structuredClone(publicWork)}:{})};
   if(actual)c.manual.actualSpendBasisSha256=db.actualSpendBasis.receiptSha256;
   c.attempts.push({manual:true,provider:'runpod',name:authority.name,quote:structuredClone(host),hourlyCents:host.hourlyCents,startedAt:intent.createdAt,cutoff:authority.cutoff,prearmSha256:authority.prearmSha256,uncertain:true});
-  requireHeadroom(core,db,prior,c,authority.cutoff);
+  requireHeadroom(core,db,prior,c,authority.cutoff,exploratory?.authority);
   c.generation=1;c.status='manual-pending';c.cleanupVerified=false;
   db.manualRiskHolds??={};db.manualRiskHolds[prior.manifest.id]=intent.priorRiskReserveCents;
   db.manualFundingReservations??={};db.manualFundingReservations[intent.fundingReservation.sha256]={campaignId:id,intentSha256};
@@ -164,6 +169,7 @@ export async function prepareManual(core,id,intent){
   db.cloudflareAllocatedCents+=cloudflareUsageCapCents;
   c.manual.requiredAuthorizationCents=actual?envelope.requiredCents:db.pilotReservedCents;
   if(capacityRecovery&&!db.capacityRecoveryShort)db.capacityRecoveryShort={campaignId:id,intentSha256,transitionSha256:intent.publicTimingTransition.sha256,refusalReceiptSha256:capacityRecovery.refusalReceiptSha256,preparedAt:now,programAcceptedAt:db.manualProgram.acceptedAt};
+  if(exploratory)consumeExploratoryCreate(core,db,c,intent,exploratory,intentSha256);
   core.event(c,'manual-prepared',{intentSha256});await core.save(db);
   return {intentSha256,generation:1,workerToken:await core.token(id,1)};
 }
@@ -183,10 +189,13 @@ export async function attachManual(core,id,body){
   // Recheck the actual wall clock after provider I/O, before granting authority.
   assert(core.now()<c.manual.intent.expiresAt&&core.now()<authority.cutoff&&core.now()<(publicWork?.admissionDeadline??c.manual.intent.repairDeadline),'manual attach expired during qualification');
   c.manual.attached={podId:body.podId,acceptedAt:body.acceptedAt};
-  if(db.manualProgram)assert(body.acceptedAt>=db.manualProgram.acceptedAt,'overall actual start cannot move backward');
+  if(c.manual.intent.exploratoryWindow){
+    assert(db.exploratoryWindow&&body.acceptedAt>=db.exploratoryWindow.authority.createdAt,'new actual start cannot move backward');
+  }else if(db.manualProgram)assert(body.acceptedAt>=db.manualProgram.acceptedAt,'overall actual start cannot move backward');
   else db.manualProgram={acceptedAt:body.acceptedAt,deadline:body.acceptedAt+c.manual.intent.runtimeWindowMs,intentSha256:body.intentSha256,campaignId:id};
-  c.programAnchor=structuredClone(db.manualProgram);
-  c.manual.campaignDeadline=Math.min(db.manualProgram.deadline,c.manifest.deadline,publicWork?.executionDeadline??body.acceptedAt+MANUAL_STARTUP_MS);
+  c.programAnchor=structuredClone(c.manual.intent.exploratoryWindow?{kind:'bounded-exploratory-training',
+    acceptedAt:body.acceptedAt,deadline:db.exploratoryWindow.authority.artifactDeadline,reference:db.exploratoryWindow.reference}:db.manualProgram);
+  c.manual.campaignDeadline=Math.min(c.programAnchor.deadline,c.manifest.deadline,publicWork?.executionDeadline??body.acceptedAt+MANUAL_STARTUP_MS);
   assert(core.now()<c.manual.campaignDeadline,'manual actual run window expired');
   if(c.manual.intent.startup){c.manual.startupDeadline=Math.min(c.manual.intent.startup.deadline,body.acceptedAt+c.manual.intent.startup.maximumMs,c.manual.campaignDeadline,authority.cutoff,publicWork?.admissionDeadline??c.manual.intent.repairDeadline);assert(core.now()<c.manual.startupDeadline,'manual startup already expired');}
   a.resourceId=body.podId;a.placement=placement;a.uncertain=false;

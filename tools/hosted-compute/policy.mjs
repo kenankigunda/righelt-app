@@ -1,4 +1,5 @@
 import { cashPlan } from './cash.mjs';
+import {EXPLORATORY_PURPOSE,validateExploratoryManifest} from './exploratory-policy.mjs';
 // Operational limits are independent of model/search configuration.
 import policy from './policy.json' with { type: 'json' };
 export const POLICY = Object.freeze(policy);
@@ -27,7 +28,8 @@ export function validateManifest(m) {
     assert(new RegExp(key === 'sourceRevision' ? '^[a-f0-9]{40}$' : '^[a-f0-9]{64}$').test(m[key]), `missing ${key}`);
   }
   assert(typeof m.authorizationReference === 'string' && m.authorizationReference.length >= 8, 'explicit spending authorization reference required');
-  assert(Number.isSafeInteger(m.seed) && ['reliability-pilot','scientific-comparison',POLICY.publicTiming.purpose].includes(m.purpose), 'explicit supported campaign purpose required');
+  assert(Number.isSafeInteger(m.seed) && ['reliability-pilot','scientific-comparison',POLICY.publicTiming.purpose,EXPLORATORY_PURPOSE].includes(m.purpose), 'explicit supported campaign purpose required');
+  assert(m.exploratory===undefined||m.purpose===EXPLORATORY_PURPOSE,'exploratory metadata requires its explicit purpose');
   assert(Number.isSafeInteger(m.maxCents) && m.maxCents > 0 && m.maxCents <= POLICY.pilotCents, 'invalid pilot cap');
   assert(['supervised-qualification','unattended'].includes(m.mode),'explicit pilot mode required');
   cashPlan(m.cash,m.maxCents);
@@ -87,12 +89,13 @@ export function validateManifest(m) {
     assert(typeof h.image === 'string' && /^[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}$/.test(h.image), 'container image must be digest-pinned');
     assert(Number.isSafeInteger(h.hourlyCents) && h.hourlyCents > 0 && h.hourlyCents <= 500, 'all-in hourly quote required');
     assert(Number.isSafeInteger(h.quoteExpires) && Number.isSafeInteger(h.diskGb) && h.diskGb >= 80, 'fresh quote and disk required');
-    assert((p.device === 'cuda' || p.kind==='rehearsal' && p.device==='cpu') && typeof h.gpu === 'string' && Number.isSafeInteger(h.minVcpu) && h.minVcpu >= 8 && Number.isSafeInteger(h.minRamGb) && h.minRamGb >= 48, 'CPU-rich Runpod configuration required');
-    assert(typeof h.dataCenterId==='string' && /^(US|EU)-[A-Z0-9-]+$/.test(h.dataCenterId), 'approved US or Europe data center required');
+    assert((p.device === 'cuda' || p.kind==='rehearsal' && p.device==='cpu') && typeof h.gpu === 'string' && Number.isSafeInteger(h.minVcpu) && h.minVcpu >= 8 && Number.isSafeInteger(h.minRamGb) && h.minRamGb >= (m.purpose===EXPLORATORY_PURPOSE?24:48), 'CPU-rich Runpod configuration required');
+    assert(typeof h.dataCenterId==='string' && (m.purpose===EXPLORATORY_PURPOSE?/^[A-Z]{2,3}-[A-Z0-9-]+$/:/^(US|EU)-[A-Z0-9-]+$/).test(h.dataCenterId), 'approved data center required');
     assert(typeof h.minCudaVersion==='string' && /^\d+\.\d+$/.test(h.minCudaVersion),'explicit compatible minimum CUDA driver capability required');
     assert(typeof h.quoteReference==='string' && h.quoteReference.length>=8 && Number.isSafeInteger(h.quoteObservedAt) && h.quoteObservedAt<h.quoteExpires, 'actual quote evidence required');
   }
   if(publicTiming)validatePublicTimingManifest(m);
+  if(m.purpose===EXPLORATORY_PURPOSE)validateExploratoryManifest(m);
   return structuredClone(m);
 }
 

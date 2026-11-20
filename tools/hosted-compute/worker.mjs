@@ -45,7 +45,15 @@ async function walk(root, relative) {
   }
   return list.sort();
 }
-export async function publishSnapshot(client, root, runDir, sourceRoot = root, requireFresh = true, renew = async () => {}) {
+async function nativeParentLedgers(root,runDir){
+  const result=[];
+  for(const name of ['allocation-events.jsonl','generation-launches.jsonl','recovery-ledger.json']){
+    const relative=path.posix.join(path.posix.dirname(runDir),name);
+    try{await fs.stat(await containedFile(root,relative));result.push(relative);}catch(error){if(error.code!=='ENOENT')throw error;}
+  }
+  return result;
+}
+export async function publishSnapshot(client, root, runDir, sourceRoot = root, requireFresh = true, renew = async () => {},extras=[]) {
   const latestPath = await containedFile(root, `${runDir}/latest.json`);
   let before;
   try { before = await fs.readFile(latestPath); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
@@ -56,7 +64,7 @@ export async function publishSnapshot(client, root, runDir, sourceRoot = root, r
   const files = [];
   const capturedAt = requireFresh ? Math.min(Date.now(), (await fs.stat(latestPath)).mtimeMs) : Date.now();
   if (Date.now() - capturedAt >= POLICY.checkpointMs) return null;
-  for (const relative of await walk(root, runDir)) {
+  for (const relative of [...await walk(root, runDir),...extras].sort()) {
     await renew();
     const target = await containedFile(root, relative), bytes = await fs.readFile(target);
     assert(bytes.length <= POLICY.maxObjectBytes, 'split oversized artifacts before hosted execution');
@@ -93,6 +101,7 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
   }
   const hydrationStarted=performance.now();
   await hydrate(client, root, manifest.inputs);
+  client.rememberObjects?.(work.knownObjects??manifest.inputs);
   timing.inputHydrationMs=performance.now()-hydrationStarted;
   if (work.snapshot) await hydrate(client, root, work.snapshot.files);
   if(runtime)await fs.writeFile(await containedFile(root,`${phase.runDir}/runtime-${work.generation}.json`,{createParents:true}),canonical(runtime)+'\n',{flag:'wx',mode:0o600});
@@ -128,6 +137,8 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
   assert(executionRecipe, 'execution recipe artifact missing');
   const failurePath = `${phase.runDir}/hosted-infrastructure-${work.generation}.json`;
   let lease = ready.leaseExpires;
+  const priorDeadline=client.deadline;
+  client.deadline=()=>Math.min(priorDeadline?.()??Infinity,lease-5000,ready.phaseDeadline??Infinity);
   const argv = work.resume || work.snapshot?.phaseIndex === work.phaseIndex ? phase.resumeArgv : phase.argv;
   const child = spawn(argv[0], argv.slice(1), { cwd: root, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: {
     ...runtimeEnvironment(env), LANG: 'C.UTF-8', PYTHONPATH: 'tools/ai-trainer',
@@ -148,6 +159,7 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
     child.once('exit', code => { exitCode = code; done = true; resolve(); });
   });
   let watchdog;
+  let sealedSnapshot=work.sealedEndpoint?work.snapshot:null,sealedCheckpointSha=work.sealedEndpoint?.checkpointSha256??null,lastResourceEventCount=0;
   const stop = async () => {
     if (!child.pid) return;
     try { process.kill(-child.pid, 'SIGTERM'); } catch (e) { if (e.code !== 'ESRCH') throw e; }
@@ -165,19 +177,39 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
   // This timer remains independent of upload/heartbeat requests.
   watchdog = setInterval(() => { if (clock() >= lease) { failure = 'infrastructure'; done = true; void stop().catch(() => {}); } }, 1000);
   const coherentSnapshot = async () => {
+    if(sealedSnapshot){
+      const current=JSON.parse(await fs.readFile(await containedFile(root,`${phase.runDir}/latest.json`)));
+      assert(current.sha256===sealedCheckpointSha,'sealed checkpoint changed');return sealedSnapshot;
+    }
     if (phase.kind === 'training') {
       try { if (Date.now() - (await fs.stat(await containedFile(root, `${phase.runDir}/latest.json`))).mtimeMs >= POLICY.checkpointMs) return null; }
       catch (e) { if (e.code === 'ENOENT') return null; throw e; }
     }
     if (snapshotter) return snapshotter(client, root, phase.runDir);
     const args = ['-m', 'righelt_training.hosted_snapshot', '--root', root, '--directory', phase.runDir];
+    if(manifest.exploratory)args.push('--parent-ledgers');
     if (!done) args.push('--pid', String(child.pid), '--parent', String(process.pid));
     const { stdout } = await exec('tools/ai-trainer/.venv/bin/python', args, { cwd: root, env: { ...env, PYTHONPATH: 'tools/ai-trainer' }, timeout: 30000 });
     const snapshotRoot = JSON.parse(stdout).directory;
     const renew = snapshotLeaseRenewal(async () => {
       lease = (await client.json('heartbeat', { restoredSnapshotId: work.snapshot?.id })).leaseExpires;
     }, clock);
-    try { return await publishSnapshot(client, snapshotRoot, phase.runDir, root, phase.kind === 'training', renew); }
+    try {
+      const extras=manifest.exploratory?await nativeParentLedgers(snapshotRoot,phase.runDir):[];
+      const snapshot=await publishSnapshot(client, snapshotRoot, phase.runDir, root, phase.kind === 'training', renew,extras);
+      if(snapshot&&manifest.exploratory){
+        const context=JSON.parse(await fs.readFile(contextPath));
+        context.recoveryFiles=snapshot.files;
+        const temporary=contextPath+'.tmp';await fs.writeFile(temporary,JSON.stringify(context),{mode:0o600});await fs.rename(temporary,contextPath);
+        const endpoint=snapshot.files.find(f=>f.path===phase.runDir+'/runner-result.json');
+        if(endpoint){
+          const latest=JSON.parse(await fs.readFile(await containedFile(root,`${phase.runDir}/latest.json`)));
+          await client.json('seal-endpoint',{snapshotId:snapshot.id,checkpointSha256:latest.sha256});
+          sealedSnapshot=snapshot;sealedCheckpointSha=latest.sha256;
+        }
+      }
+      return snapshot;
+    }
     finally { await fs.rm(snapshotRoot, { recursive: true }); }
   };
   const publishLog = async () => {
@@ -189,6 +221,12 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
     } finally { await file.close(); }
   };
   let lastLog = 0, lastSnapshot = clock();
+  let logTask=null,logFailure=null;
+  const optionalLog=()=>{
+    if(logTask)return;
+    logTask=publishLog().catch(error=>{if(!(error instanceof InfrastructureError))logFailure=error;})
+      .finally(()=>{logTask=null;});
+  };
   try {
     while (!done) {
       const delay = new Promise(resolve => setTimeout(resolve, POLICY.heartbeatMs).unref());
@@ -196,7 +234,32 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
       if (done) break;
       try {
         lease = (await client.json('heartbeat', { restoredSnapshotId: work.snapshot?.id })).leaseExpires;
-        if (clock() - lastLog >= POLICY.snapshotEveryMs) { await publishLog(); lastLog = clock(); }
+        if(manifest.exploratory&&!sealedSnapshot){
+          const eventsPath=await containedFile(root,`${phase.runDir}/resource-events.jsonl`);
+          let resourceEvents=[];try{resourceEvents=(await fs.readFile(eventsPath,'utf8')).trim().split('\n').filter(Boolean).map(line=>JSON.parse(line)).filter(e=>e.event==='resource-compute-stopped');}catch(error){if(error.code!=='ENOENT')throw error;}
+          if(resourceEvents.length>lastResourceEventCount){
+            assert(await coherentSnapshot(),'resource resume has no durable checkpoint');
+            lastResourceEventCount=resourceEvents.length;lastSnapshot=clock();
+          }
+          let native;try{native=JSON.parse(await fs.readFile(await containedFile(root,`${phase.runDir}/manifest.json`)));}catch(error){if(error.code!=='ENOENT')throw error;}
+          const budget=manifest.exploratory;
+          if(native){
+            const markerPath=await containedFile(root,`${phase.runDir}/preflight-state.json`);
+            const marker=JSON.parse(await fs.readFile(markerPath));
+            if(marker.kind==='cloud-preflight-disposition'&&marker.productiveWorkStarted===false)
+              await fs.writeFile(markerPath,JSON.stringify({...marker,status:'driver-admitted',productiveWorkStarted:true}),{mode:0o600});
+            const paths=await walk(root,phase.runDir);let bytes=0,oversize=false;
+            for(const name of paths){const stat=await fs.stat(await containedFile(root,name));bytes+=stat.size;oversize||=name.endsWith('.pt')&&stat.size>=POLICY.maxObjectBytes/2;}
+            const newObjects=(client.knownObjects?.size??manifest.inputs.length)-new Set(manifest.inputs.map(a=>a.sha256)).size;
+            if(clock()>=budget.handoffAt||newObjects>=budget.maxPublicationObjects-64||paths.length>=budget.maxPublicationObjects-64||bytes>=budget.maxPublicationBytes/2||oversize){
+              const requestPath=await containedFile(root,`${phase.runDir}/handoff-request.json`);
+              try{await fs.writeFile(requestPath,JSON.stringify({schema:1,id:'exploratory-artifact-budget',reason:'validation',manifestSha256:native.sha256}),{flag:'wx',mode:0o600});}
+              catch(error){if(error.code!=='EEXIST')throw error;}
+            }
+          }
+        }
+        if(logFailure)throw logFailure;
+        if (clock() - lastLog >= POLICY.snapshotEveryMs) { optionalLog(); lastLog = clock(); }
         if (clock() - lastSnapshot >= POLICY.snapshotEveryMs) {
           if (await coherentSnapshot()) lastSnapshot = clock();
         }
@@ -205,12 +268,36 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
   } finally {
     clearInterval(watchdog); process.removeListener('SIGTERM', onSignal); process.removeListener('SIGINT', onSignal);
     await stop(); await new Promise((resolve, reject) => { output.once('error', reject); output.end(resolve); });
+    if(logTask)await logTask;
+    if(logFailure&&!failure)failure='correctness';
   }
   const outputs = {}, files = []; let reason;
+  if(manifest.exploratory&&exitCode!==0){
+    try{
+      const markerPath=await containedFile(root,`${phase.runDir}/preflight-state.json`),marker=JSON.parse(await fs.readFile(markerPath));
+      if(marker.kind==='cloud-preflight-disposition'&&marker.productiveWorkStarted===false)
+        await fs.writeFile(markerPath,JSON.stringify({...marker,status:'failed',exitCode}),{mode:0o600});
+    }catch(error){if(error.code!=='ENOENT')throw error;}
+  }
   try { if (JSON.parse(await fs.readFile(await containedFile(root, failurePath))).kind === 'infrastructure') failure = 'infrastructure'; }
   catch (e) { if (e.code !== 'ENOENT') throw e; }
   if (!failure && exitCode === 0) {
     try {
+      if(manifest.exploratory){
+        const reportPath=`${phase.runDir}/candidate-report.json`,report=JSON.parse(await fs.readFile(await containedFile(root,reportPath)));
+        const checkpoint=path.relative(root,report.checkpoint.checkpoint);assert(safeRunPath(checkpoint)&&checkpoint.startsWith(phase.runDir+'/'),'candidate checkpoint outside run');
+        const paths={model:`${phase.runDir}/model.onnx`,checkpoint,'candidate-report':reportPath,
+          'checkpoint-metadata':checkpoint.replace(/\.pt$/,'.json'),'recovery-sidecar':checkpoint.replace(/\.pt$/,'.runner.json'),
+          numeric:`${phase.runDir}/numeric-parity.json`,'runner-result':`${phase.runDir}/runner-result.json`};
+        const artifacts=[];
+        for(const [role,relative]of Object.entries(paths)){
+          lease=(await client.json('heartbeat',{restoredSnapshotId:work.snapshot?.id})).leaseExpires;
+          const bytes=await fs.readFile(await containedFile(root,relative)),a=await client.upload(bytes);artifacts.push({...a,role,path:relative});
+        }
+        const result={schema:1,kind:'exploratory-hosted-result',disposition:'complete',qualified:true,strengthEstablished:false,defaultPromotion:false,
+          execution:executionIdentity(manifest,work.manifestSha256,phase,work.generation),completedWorkIds:phase.workIds,artifacts};
+        await fs.writeFile(await containedFile(root,phase.outputPaths[phase.outputs[0]]),canonical(result)+'\n',{mode:0o600,flag:'wx'});
+      }
       for (const name of phase.outputs) {
         const raw = await fs.readFile(await containedFile(root, phase.outputPaths[name]));
         const evidence = JSON.parse(raw);
@@ -219,7 +306,7 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
         outputs[name] = await client.upload(raw);
       }
       // Keep the completed run bundle even when no latest pointer was written.
-      for (const relative of await walk(root, phase.runDir)) {
+      for (const relative of [...await walk(root, phase.runDir),...(manifest.exploratory?await nativeParentLedgers(root,phase.runDir):[])]) {
         await client.json('heartbeat', {});
         files.push({ ...await client.upload(await fs.readFile(await containedFile(root, relative))), path: relative });
       }
@@ -230,7 +317,7 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
   try {
     await publishLog();
     if (failure || exitCode !== 0) {
-      for (const relative of await walk(root, phase.runDir)) {
+      for (const relative of [...await walk(root, phase.runDir),...(manifest.exploratory?await nativeParentLedgers(root,phase.runDir):[])]) {
         await client.json('heartbeat', { restoredSnapshotId: work.snapshot?.id });
         files.push({ ...await client.upload(await fs.readFile(await containedFile(root, relative))), path: relative });
       }

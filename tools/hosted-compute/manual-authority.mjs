@@ -57,6 +57,7 @@ export function validateManualIntent(intent){
   if(Object.hasOwn(intent??{},'startup'))keys.push('startup');
   if(Object.hasOwn(intent??{},'publicWorkAuthority'))keys.push('publicWorkAuthority');
   if(Object.hasOwn(intent??{},'publicTimingTransition'))keys.push('publicTimingTransition');
+  if(Object.hasOwn(intent??{},'exploratoryWindow'))keys.push('exploratoryWindow');
   assert(intent&&Object.keys(intent).sort().join(',')===keys.sort().join(',')&&intent.schema===1&&intent.kind==='manual-ui-admission'&&/^[a-f0-9]{32}$/.test(intent.id),'typed manual intent required');
   assert(digest.test(intent.manifestSha256)&&digest.test(intent.priorManifestSha256)&&digest.test(intent.fundingSha256)&&revision.test(intent.sourceRevision),'manual source and funding identities required');
   assert(typeof intent.accountId==='string'&&intent.accountId.length>=3&&typeof intent.name==='string'&&intent.name.length>0,'manual account and name required');
@@ -65,7 +66,7 @@ export function validateManualIntent(intent){
   if(Object.hasOwn(intent,'startup')){const s=intent.startup;assert(s&&typeof s==='object'&&!Array.isArray(s)&&Object.keys(s).sort().join(',')==='deadline,kind,maximumMs,schema'&&s.schema===1&&s.kind==='confirmed-pod-startup'&&s.maximumMs===MANUAL_STARTUP_MS&&Number.isSafeInteger(s.deadline)&&s.deadline>intent.createdAt&&s.deadline<=intent.expiresAt+MANUAL_STARTUP_MS&&s.deadline<=(intent.publicWorkAuthority?MANUAL_PUBLIC_ADMISSION_END:intent.repairDeadline),'typed finite confirmed-Pod startup required');}
   // Explicitly scoped authorization for this repair. It does not alter worker
   // policy or extend any old manifest, prearm, lease or campaign deadline.
-  assert(intent.repairDeadline>intent.repairStartedAt&&intent.repairDeadline<=MANUAL_REPAIR_END&&Number.isSafeInteger(intent.repairMaxCents)&&intent.repairMaxCents>0&&intent.repairMaxCents<=POLICY.pilotCents&&Number.isSafeInteger(intent.priorRiskReserveCents)&&intent.priorRiskReserveCents>=0,'manual repair authorization exceeded');
+  assert(intent.repairDeadline>intent.repairStartedAt&&intent.repairDeadline<=(intent.exploratoryWindow?Date.UTC(2026,10,20,13):MANUAL_REPAIR_END)&&Number.isSafeInteger(intent.repairMaxCents)&&intent.repairMaxCents>0&&intent.repairMaxCents<=POLICY.pilotCents&&Number.isSafeInteger(intent.priorRiskReserveCents)&&intent.priorRiskReserveCents>=0,'manual repair authorization exceeded');
   const a=intent.priorAttempt;
   assert(a&&Object.keys(a).sort().join(',')==='generation,name,prearmSha256,startedAt'&&Number.isSafeInteger(a.generation)&&Number.isSafeInteger(a.startedAt)&&typeof a.name==='string'&&digest.test(a.prearmSha256),'exact prior attempt binding required');
   return intent;
