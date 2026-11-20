@@ -1,5 +1,6 @@
 // Controller state only. Historical attempts are never relabelled or erased.
-export function refusalFor(db,c){return db.providerRefusalResolution?.campaignId===c.manifest.id?db.providerRefusalResolution:null;}
+export function allRefusals(db){return [db.providerRefusalResolution,...Object.values(db.additionalProviderRefusalResolutions??{})].filter(Boolean);}
+export function refusalFor(db,c){return allRefusals(db).find(r=>r.campaignId===c.manifest.id)??null;}
 export function refusalHeld(db,resolution){return !!resolution&&!!db.providerRefusalContradictions?.some(r=>r.receiptSha256===resolution.receiptSha256);}
 export function effectiveRefusal(db,c){
  const r=refusalFor(db,c);

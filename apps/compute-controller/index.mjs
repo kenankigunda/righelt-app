@@ -66,7 +66,7 @@ export class ComputeController {
       const db = await this.core.load(), campaign=this.core.campaign(db,id);
       this.core.workerSession(campaign,request.headers.get('x-compute-startup-session'));
       this.core.fence(campaign, generation);
-      assert(['work', 'heartbeat', 'snapshot', 'finish', 'objects', 'claim', 'counter', 'settle', 'progress'].includes(action), 'worker operation forbidden');
+      assert(['work', 'heartbeat', 'snapshot', 'seal-endpoint', 'finish', 'objects', 'claim', 'counter', 'settle', 'progress'].includes(action), 'worker operation forbidden');
     }
     if (request.method === 'PUT' && action === 'manifest' && admin) {
       const m = await request.json(); assert(m.id === id, 'campaign route mismatch'); return json(await this.core.stage(m));
@@ -91,6 +91,7 @@ export class ComputeController {
     if (request.method === 'POST' && action === 'heartbeat' && worker) return json(await this.core.heartbeat(id, generation, await request.json()));
     if (request.method === 'POST' && action === 'progress' && worker) return json(await this.core.progress(id, generation, await request.json()));
     if (request.method === 'POST' && action === 'snapshot' && worker) return json(await this.core.snapshot(id, generation, await request.json()));
+    if (request.method === 'POST' && action === 'seal-endpoint' && worker) return json(await this.core.sealExploratoryEndpoint(id,generation,await request.json()));
     if (request.method === 'POST' && action === 'finish' && worker) return json(await this.core.finish(id, generation, await request.json()));
     if (request.method === 'POST' && action === 'claim' && worker) return json(await this.core.claim(id, generation, await request.json()));
     if (request.method === 'POST' && action === 'counter' && worker) return json(await this.core.counter(id, generation, await request.json()));

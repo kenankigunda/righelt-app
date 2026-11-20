@@ -1,6 +1,6 @@
 import {assert,canonical,encode,sha256,reserveCents,POLICY} from './policy.mjs';
 import {readOperatorReceipt,operatorAttemptBinding} from './manual-authority.mjs';
-import {latchRefusalContradiction} from './refusal-state.mjs';
+import {latchRefusalContradiction,allRefusals,needsOwnershipWatch} from './refusal-state.mjs';
 const hash=value=>sha256(encode(canonical(value)));
 const cents=value=>Number.isSafeInteger(value)&&value>=0;
 const digest=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
@@ -15,6 +15,7 @@ export async function spendBinding(db){
   const state={campaigns,cashFunding:db.cashFunding??null,creditAllocatedCents:db.creditAllocatedCents??0,pilotReservedCents:db.pilotReservedCents??0,
     manualRiskHolds:db.manualRiskHolds??{},manualFundingReservations:db.manualFundingReservations??{},manualProgram:db.manualProgram??null,publicQualificationEscalation:db.publicQualificationEscalation??null,
     providerRefusalResolution:db.providerRefusalResolution??null,providerRefusalContradictions:db.providerRefusalContradictions??[],capacityRecoveryShort:db.capacityRecoveryShort??null,
+    additionalProviderRefusalResolutions:db.additionalProviderRefusalResolutions??{},exploratoryWindow:db.exploratoryWindow??null,
     priorBasisSha256:db.actualSpendBasis?.receiptSha256??null};
   return {schema:1,kind:'actual-spend-binding',ledgerSha256:await hash(state),priorBasisSha256:state.priorBasisSha256,
     financialBasis:db.actualSpendBasis?'verified-account-observation':'legacy-reservations',observedDebitCents:db.actualSpendBasis?.observedDebitCents??null,
@@ -72,18 +73,28 @@ export async function reconcileActualSpend(core,id,reference){
   // Supersede financial counters only. Original attempts, receipt records,
   // unresolved create status, fences and all program/repair clocks stay intact.
   db.creditAllocatedCents=balance.debitsCents;db.pilotReservedCents=balance.debitsCents;db.manualRiskHolds={};
-  const resolved=db.providerRefusalResolution;
-  if(resolved)latchRefusalContradiction(core,db,core.campaign(db,resolved.campaignId),{source:'actual-spend',evidenceSha256:reference.sha256,resourceIds:receipt.activeResources.filter(r=>r.campaignId===resolved.campaignId).map(r=>r.id)});
+  for(const resolved of allRefusals(db))latchRefusalContradiction(core,db,core.campaign(db,resolved.campaignId),{source:'actual-spend',evidenceSha256:reference.sha256,resourceIds:receipt.activeResources.filter(r=>r.campaignId===resolved.campaignId).map(r=>r.id)});
   assert(core.now()<receipt.validUntil,'actual-spend observation expired during reconciliation');
   await core.save(db);
   return {receiptSha256:reference.sha256,reconciled:true,observedDebitCents:balance.debitsCents};
 }
 
-export function actualEnvelope(core,db,c,intent){
+export function actualEnvelope(core,db,c,intent,windowAuthority=db.exploratoryWindow?.authority){
   const basis=db.actualSpendBasis;
   assert(basis&&intent.actualSpendBasisSha256===basis.receiptSha256&&basis.priorCampaignId===intent.priorCampaignId&&basis.accountId===intent.accountId,'actual-spend admission basis differs');
   assert(intent.priorRiskReserveCents===0&&intent.repairMaxCents<=basis.authority.repairCeilingCents,'actual-spend repair authority differs');
   let required=basis.observedDebitCents;
+  if(intent.exploratoryWindow){
+    assert(windowAuthority?.kind==='bounded-exploratory-training-window'&&windowAuthority.liabilityUntil===intent.liabilityUntil,'exploratory conditional-tail authority missing');
+    required+=windowAuthority.lagContingencyCents;
+    for(const owner of Object.values(db.campaigns)){
+      if(owner===c)continue;
+      const pending=owner.attempts.filter((a,index)=>needsOwnershipWatch(db,owner,a,index)
+        &&!basis.activeResources.some(r=>r.campaignId===owner.manifest.id&&r.generation===index+1));
+      if(!pending.length)continue;
+      required+=pending.reduce((sum,a)=>sum+Math.ceil(a.hourlyCents*Math.max(0,intent.liabilityUntil-basis.observedAt)/3600000),0)+reserveCents(owner.manifest.maxCents);
+    }
+  }
   const ids=new Set();
   for(const r of basis.activeResources){
     const owner=core.campaign(db,r.campaignId),attempt=owner.attempts[r.generation-1];ids.add(r.id);

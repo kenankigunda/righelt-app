@@ -11,6 +11,8 @@ import {operatorAttemptBinding,manualStartupUntil} from './manual-authority.mjs'
 import {spendBinding,reconcileActualSpend,knownManualCost} from './actual-spend.mjs';
 import {providerRefusalBinding,resolveProviderRefusal} from './provider-refusal.mjs';
 import {refusalFor,latchRefusalContradiction} from './refusal-state.mjs';
+import {EXPLORATORY_PURPOSE} from './exploratory-policy.mjs';
+import {sealExploratoryEndpoint,currentSealedEndpoint} from './exploratory-result.mjs';
 import { POLICY, TERMINAL, assert, artifact, canonical, encode, safeName, sha256, validateManifest, reserveCents } from './policy.mjs';
 
 const stopping = new Set(['stopping', 'cleanup-uncertain']);
@@ -28,6 +30,7 @@ export class Controller {
   reconcileActualSpend(id,reference){return reconcileActualSpend(this,id,reference);}
   providerRefusalBinding(id){return providerRefusalBinding(this,id);}
   resolveProviderRefusal(id,reference){return resolveProviderRefusal(this,id,reference);}
+  sealExploratoryEndpoint(id,generation,body){return sealExploratoryEndpoint(this,id,generation,body);}
   async attemptBinding(id){const db=await this.load();return operatorAttemptBinding(this.campaign(db,id));}
   async manualReady(id,generation,claim){
     const db=await this.load(),c=this.campaign(db,id);
@@ -84,6 +87,7 @@ export class Controller {
     const db = await this.load(), c = this.campaign(db, id), now = this.now();
     if (c.status !== 'staged') return this.status(c);
     assert(c.manifest.purpose!==POLICY.publicTiming.purpose,'public timing requires explicit manual funding and qualification');
+    assert(c.manifest.purpose!==EXPLORATORY_PURPOSE,'exploratory training requires the explicit new window');
     assert(!db.actualSpendBasis,'actual-spend mode requires explicit manual funding');
     if(db.manualProgram){assert(c.manifest.deadline<=db.manualProgram.deadline&&now<db.manualProgram.deadline,'overall actual program deadline exceeded');c.programAnchor=structuredClone(db.manualProgram);}
     assert(this.config.enabled === true && this.config.authorizedCents >= c.manifest.maxCents, 'paid compute is not activated or authorized');
@@ -164,7 +168,7 @@ export class Controller {
     const db = await this.load(), c = this.campaign(db, id); this.fence(c, generation);
     await this.qualifyAttempt(db,c);
     return { manifest: c.manifest, manifestSha256: c.manifestSha256, phaseIndex: c.phase, generation,
-      phase: c.manifest.phases[c.phase], resume: c.attempts.at(-1)?.recovery === true, snapshot: c.snapshot ?? null, previousOutputs: c.outputs,
+      phase: c.manifest.phases[c.phase], resume: c.attempts.at(-1)?.recovery === true, snapshot: c.snapshot ?? null, previousOutputs: c.outputs,sealedEndpoint:c.sealedEndpoint??null,
       leaseExpires: this.now() + POLICY.leaseMs,...(c.manifest.purpose===POLICY.publicTiming.purpose?{lifecycle:{acceptedAt:c.manual?.attached?.acceptedAt??null,startupVerifiedAt:c.manual?.startupSession?.verifiedAt??null,controllerWorkGrantedAt:this.now()}}:{}) };
   }
   async heartbeat(id, generation, proof = {}) {
@@ -175,7 +179,7 @@ export class Controller {
     const reserve = Math.ceil(phase.host.hourlyCents * POLICY.startupMs / 3600000);
     assert(this.cost(c) + reserve < c.manifest.maxCents - reserveCents(c.manifest.maxCents), 'compute budget exhausted');
     assert(!c.phaseDeadline || this.now() < c.phaseDeadline, 'phase deadline exceeded');
-    if (phase.kind === 'training' && a.workStartedAt) assert(this.now() - this.durabilityAt(c, a) < POLICY.checkpointMs, 'remote checkpoint overdue');
+    if (phase.kind === 'training' && a.workStartedAt&&!currentSealedEndpoint(c)) assert(this.now() - this.durabilityAt(c, a) < POLICY.checkpointMs, 'remote checkpoint overdue');
     if (a.recovery && !a.workStartedAt && c.snapshot) assert(proof.restoredSnapshotId === c.snapshot.id, 'restored bundle verification required');
     if (c.recovering) {
       assert(this.repairAvailable(c), 'repair allowance exhausted');
@@ -224,6 +228,11 @@ export class Controller {
   }
   async snapshot(id, generation, snapshot) {
     const db = await this.load(), c = this.campaign(db, id); this.fence(c, generation);
+    const requestSha256=await sha256(encode(canonical(snapshot)));
+    if(c.snapshot?.id===snapshot?.id&&c.snapshot.generation===generation){
+      assert(c.snapshot.requestSha256===requestSha256,'snapshot ID already bound to different bytes');return {accepted:true,replayed:true};
+    }
+    assert(!c.sealedEndpoint,'sealed exploratory endpoint cannot be replaced');
     assert(snapshot && safeName(snapshot.id) && Number.isSafeInteger(snapshot.capturedAt) && snapshot.capturedAt <= this.now() && this.now() - snapshot.capturedAt < POLICY.checkpointMs, 'invalid checkpoint time');
     assert(Array.isArray(snapshot.files) && snapshot.files.length && snapshot.files.length <= POLICY.maxArtifacts, 'checkpoint files required');
     const paths = new Set();
@@ -237,7 +246,7 @@ export class Controller {
       return { ...file, originGeneration: prior ? (prior.originGeneration ?? c.snapshot.generation) : generation };
     });
     if(c.snapshot?.phaseIndex===c.phase && c.snapshot.files.find(f=>f.path.endsWith('/latest.json'))?.sha256 !== snapshot.files.find(f=>f.path.endsWith('/latest.json'))?.sha256)c.previousSnapshot=c.snapshot;
-    c.snapshot = { ...snapshot, files, phaseIndex: c.phase, generation }; this.event(c, 'checkpoint-published', { id: snapshot.id });
+    c.snapshot = { ...snapshot, files, phaseIndex: c.phase, generation,requestSha256 }; this.event(c, 'checkpoint-published', { id: snapshot.id });
     await this.save(db); return { accepted: true };
   }
   async finish(id, generation, result) {
@@ -249,10 +258,11 @@ export class Controller {
     }
     assert(['complete', 'infrastructure', 'correctness'].includes(result?.kind), 'invalid result');
     if (result.kind === 'complete') {
+      if(c.manifest.exploratory)assert(c.sealedEndpoint?.generation===generation&&c.sealedEndpoint.phaseIndex===c.phase,'completed exploratory result requires its sealed endpoint');
       for (const name of phase.outputs) {
         const a = artifact(result.outputs?.[name]); assert(c.objects[a.sha256]?.bytes === a.bytes, 'required output not uploaded');
         const raw = new Uint8Array(await (await this.bucket.get(`${id}/${a.sha256}`)).arrayBuffer());
-        await verifyResult(JSON.parse(new TextDecoder().decode(raw)), { manifest: c.manifest, manifestSha256: c.manifestSha256, phase, generation,phaseDeadline:c.phaseDeadline,snapshot: c.snapshot, expect: phase.expect[name], rawSha256: a.sha256, read: async record => {
+        await verifyResult(JSON.parse(new TextDecoder().decode(raw)), { manifest: c.manifest, manifestSha256: c.manifestSha256, phase, generation,phaseDeadline:c.phaseDeadline,snapshot: c.snapshot,sealedEndpoint:c.sealedEndpoint, expect: phase.expect[name], rawSha256: a.sha256, read: async record => {
           assert(result.files?.some(f => f.path === record.path && f.sha256 === record.sha256 && f.bytes === record.bytes), 'result missing from run inventory');
           return new Uint8Array(await (await this.bucket.get(`${id}/${record.sha256}`)).arrayBuffer());
         } });
@@ -317,7 +327,7 @@ export class Controller {
     if (['provisioning', 'running'].includes(c.status)) {
       const limit = c.status === 'provisioning' ? POLICY.startupMs : POLICY.leaseMs;
       const expired = (c.manual?.intent.startup&&!a.workStartedAt?now>=manualStartupUntil(c):now - (c.lastHeartbeat ?? a.startedAt) >= limit) ||
-        (a.workStartedAt && (now >= c.phaseDeadline || (phase.kind === 'training' && now - this.durabilityAt(c, a) >= POLICY.checkpointMs)));
+        (a.workStartedAt && (now >= c.phaseDeadline || (phase.kind === 'training'&&!currentSealedEndpoint(c) && now - this.durabilityAt(c, a) >= POLICY.checkpointMs)));
       if (expired) {
         c.status = 'stopping'; c.failure = 'worker-or-checkpoint-timeout';
         if(!c.manual?.publicWork){c.repairStartedAt ??= now; c.repairStartCents ??= this.cost(c);}

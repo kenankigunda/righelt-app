@@ -1,7 +1,8 @@
 import {assert,canonical,encode,sha256,POLICY} from './policy.mjs';
 import {readOperatorReceipt,operatorAttemptBinding,sameReference} from './manual-authority.mjs';
 import {spendBinding} from './actual-spend.mjs';
-import {refusalHeld,latchRefusalContradiction} from './refusal-state.mjs';
+import {refusalHeld,latchRefusalContradiction,refusalFor} from './refusal-state.mjs';
+import {resolveAdditionalRefusal} from './additional-refusal.mjs';
 const shape=(v,names)=>v&&Object.keys(v).sort().join(',')===names.split(',').sort().join(',');
 const hex=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
 // One independently reviewed historical refusal, not a general HTTP-400 rule.
@@ -24,9 +25,10 @@ async function journal(raw,expected){
 export async function providerRefusalBinding(core,id){
  const db=await core.load(),c=core.campaign(db,id),binding=await spendBinding(db);
  return {schema:1,kind:'provider-refusal-binding',ledgerSha256:binding.ledgerSha256,target:operatorAttemptBinding(c),
-   applied:db.providerRefusalResolution?.campaignId===id?{receiptSha256:db.providerRefusalResolution.receiptSha256,held:refusalHeld(db,db.providerRefusalResolution)}:null};
+   applied:refusalFor(db,c)?{receiptSha256:refusalFor(db,c).receiptSha256,held:refusalHeld(db,refusalFor(db,c))}:null};
 }
 export async function resolveProviderRefusal(core,id,reference){
+ if(id!==CAPACITY_REFUSAL.campaignId)return resolveAdditionalRefusal(core,id,reference);
  const db=await core.load(),c=core.campaign(db,id),prior=db.providerRefusalResolution;
  assert(id===CAPACITY_REFUSAL.campaignId,'only the reviewed capacity refusal may resolve');
  if(prior){
