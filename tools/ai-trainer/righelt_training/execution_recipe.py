@@ -17,7 +17,7 @@ from .arithmetic import POLICY
 SOURCES = ('trainer.py', 'model.py', 'curriculum.py', 'runner.py', 'replay.py', 'arithmetic.py', 'export.py', 'device.py', 'runtime_probe.py',
            'checkpoint.py', 'production.py', 'training_recipe.py', 'canary.py', 'hosted_canary.py', 'execution_recipe.py',
            'portable.py', 'attention_method.py', 'pilot_recipe.py', 'sequence_targets.py', 'board_attention.py',
-           'hosted_science.py','policy_pool.py','export_runtime.py','hosted_receipts.py','source_image.py',
+           'hosted_science.py','exploratory_contract.py','exploratory_window.py','fresh_health.py','supervisor.py','policy_pool.py','export_runtime.py','hosted_receipts.py','source_image.py',
            'prospective_durability.py','evaluation_start.py','development_assessment.py','comparison_report.py','evaluation.py','arena.py','search_parity.py')
 
 
@@ -73,7 +73,7 @@ def record(checkpoint, data_sha256, *, mode, training_recipe=None, attention_met
 
 
 def verify_runtime(training_recipe=None, *, model=None, optimizer=None):
-    if os.environ.get('RIGHELT_HOSTED') != '1':
+    if os.environ.get('RIGHELT_HOSTED') != '1' and os.environ.get('RIGHELT_EXPLORATORY_LOCAL') != '1':
         return None
     raw = Path(os.environ['RIGHELT_EXECUTION_RECIPE_PATH']).read_bytes()
     if hashlib.sha256(raw).hexdigest() != os.environ['RIGHELT_EXECUTION_RECIPE_SHA256']:

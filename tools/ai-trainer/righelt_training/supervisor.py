@@ -165,6 +165,10 @@ def wait_for_resources(budget,policy,telemetry,run_dir,runtime,*,clock=time.mono
         try:sample=telemetry.sample()
         except (RuntimeError,OSError):return 'telemetry-failed'
         assigned=policy.decide(sample)
+        if runtime.get('exploratoryPlanSha256'):
+            from .exploratory_contract import start_repair,check_repair
+            if assigned.paused:start_repair(run_dir,time.time())
+            check_repair(run_dir,time.time())
         atomic_json(Path(run_dir)/'allocation.json',{**assigned.record(),'observedAt':sample.now})
         with (Path(run_dir)/'resource-events.jsonl').open('a') as stream:
             stream.write(json.dumps({'event':'charged-resource-wait','sample':asdict(sample),'allocation':assigned.record()})+'\n')
@@ -196,6 +200,13 @@ def run_phase(argv,env,log,budget,runtime,run_dir,artifact_root,activity_file,*,
             if '--resume' in argv:argv[argv.index('--resume')+1]=str(path)
             else:argv+=['--resume',str(path)]
         validate_training_window(runtime,clock())
+        if runtime.get('exploratoryPlanSha256') and env.get('RIGHELT_EXPLORATORY_LOCAL')=='1':
+            from .exploratory_window import context,read
+            from .execution_recipe import verify_runtime
+            context(directory,read(directory/'plan.json'),verify_runtime())
+        if runtime.get('exploratoryPlanSha256'):
+            from .exploratory_contract import finish_repair
+            finish_repair(directory,time.time())
         atomic_json(directory/'allocation.json',{'workers':0,'memory_gib':LIMITS['minMemoryGiB'],
                     'paused':True,'stop':False,'reason':'device-memory-unknown','observedAt':time.time()})
         process=start_group(['/usr/bin/nice','-n','10',*argv],cwd=ROOT,env=env,stdout=log,stderr=log)
@@ -207,6 +218,9 @@ def run_phase(argv,env,log,budget,runtime,run_dir,artifact_root,activity_file,*,
             stop_group(process)
             cleanup_owned(directory)
         if reason!='resource-pressure-stop':return reason,process
+        if runtime.get('exploratoryPlanSha256'):
+            from .exploratory_contract import consume_resume
+            consume_resume(directory,reason,time.time())
         with (directory/'resource-events.jsonl').open('a') as stream:
             stream.write(json.dumps({'event':'resource-compute-stopped','pid':process.pid,'reason':reason,'cleanupVerified':True})+'\n')
         if runtime['command']!='training':

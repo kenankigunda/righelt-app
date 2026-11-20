@@ -54,7 +54,7 @@ def ieee_fp32():
 def hosted_arithmetic(function):
     @wraps(function)
     def wrapped(*args, **kwargs):
-        if os.environ.get('RIGHELT_HOSTED') != '1':
+        if os.environ.get('RIGHELT_HOSTED') != '1' and os.environ.get('RIGHELT_EXPLORATORY_LOCAL') != '1':
             return function(*args, **kwargs)
         with ieee_fp32():
             return function(*args, **kwargs)

@@ -100,6 +100,9 @@ class PortableClosure:
         return target
 
 
+_CLOSURES = {}
+
+
 def closure_from_env():
     path = os.environ.get('RIGHELT_PORTABLE_CLOSURE_PATH')
     digest = os.environ.get('RIGHELT_PORTABLE_CLOSURE_SHA256')
@@ -107,7 +110,20 @@ def closure_from_env():
         return None
     if not path or not digest:
         raise ValueError('incomplete portable inventory binding')
-    return PortableClosure(path, digest, os.environ.get('RIGHELT_PORTABLE_ROOT', os.getcwd()))
+    root=os.environ.get('RIGHELT_PORTABLE_ROOT',os.getcwd())
+    key=(str(Path(root).absolute()),str(Path(path).absolute()),digest)
+    cached=_CLOSURES.get(key)
+    if cached is not None:
+        # Reuse parsed aliases only. Inventory bytes, ancestry and each resolved
+        # object's bytes remain independently checked on every access.
+        if Path(root).resolve()!=cached.root:raise ValueError('portable restore root changed')
+        inventory=contained(cached.root,cached.relative(Path(path) if Path(path).is_absolute() else cached.root/Path(path)))
+        if file_sha256(inventory)!=digest:raise ChecksumMismatch('portable inventory checksum mismatch')
+        return cached
+    closure=PortableClosure(path,digest,root)
+    if len(_CLOSURES)>=4:_CLOSURES.pop(next(iter(_CLOSURES)))
+    _CLOSURES[key]=closure
+    return closure
 
 
 def resolve_reference(reference, *, base=None, expected_sha256=None):

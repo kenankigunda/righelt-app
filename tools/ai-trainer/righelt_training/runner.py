@@ -185,7 +185,7 @@ class Runner:
             data=inspect_checkpoint(checkpoint,manifest_sha256=binding['manifestSha256'],require_recovery=True)
             # Teacher construction must not perturb the learner's recovered RNG.
             with torch.random.fork_rng(devices=list(range(torch.cuda.device_count())) if self.device.type=='cuda' else []):
-                metadata=read_json(checkpoint.with_suffix('.json'))
+                metadata=read_json(resolve_reference(checkpoint.with_suffix('.json')))
                 self.teacher=model_from_record(metadata).to(self.device)
                 self.teacher.load_state_dict(data['model'])
             self.teacher.eval();self.teacher.requires_grad_(False)
@@ -211,7 +211,13 @@ class Runner:
         checkpoint=resolve_reference(checkpoint)
         if getattr(self,'attention_method',None):
             from .attention_method import restore_attention
-            return restore_attention(self,checkpoint)
+            data=restore_attention(self,checkpoint)
+            if self.continuation and self.continuation['freshHealth']:
+                self.fresh_baseline=fresh_health.initialize(self.directory,self.continuation,self.state,checkpoint)
+                if self.runtime.get('allocationId')!=self.fresh_baseline['baseline']['allocationId']:
+                    raise ValueError('fresh baseline differs from runtime allocation')
+                self.fresh_previous_checkpoint=None
+            return
         warm = getattr(self,'manifest',{}).get('manifest', {}).get('warmStart')
         if warm and not (self.directory / 'latest.json').exists():
             if (checkpoint.resolve() != Path(warm['path']).resolve()
@@ -652,6 +658,7 @@ class Runner:
                 # The pending difficult job cannot fit before validation. Wait
                 # for the supervisor's normal handoff, charging this time, rather
                 # than skipping its identity or repeatedly training old data.
+                if getattr(self,'manifest',{}).get('manifest',{}).get('exploratoryWindow'):break
                 self.maybe_checkpoint(); time.sleep(min(1, max(0, self.deadline - time.monotonic()))); continue
             elapsed = time.monotonic() - self.started
             if self.curriculum.observe(elapsed, self.state['terminalGames'], self.state['truncatedGames'], self.state['completedGames']):
