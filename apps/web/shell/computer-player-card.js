@@ -1,10 +1,11 @@
+import {computerModelChoiceLabel} from './computer-model-choice.js';
 import {renderComputerStatusBadge} from './computer-status-badge.js';
 import { COMPUTER_PROFILES } from '../generated/packages/shared-types/src/computer-play.js';
 import { renderPlayerEmblem } from './player-emblem.js';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-export function renderComputerPlayerCard(person, { gameId, side, expanded = false, activity } = {}) {
+export function renderComputerPlayerCard(person, { gameId, side, expanded = false, activity, modelId } = {}) {
   const name = COMPUTER_PROFILES[person.computerProfile]?.name ?? 'Computer';
   const current = activity ?? {state:'attention',label:'Needs help',showResume:true,disabledReason:'Connecting to the game…'};
   const description=`${name}, ${side === 'P1' ? 'Red' : 'Blue'}, Computer player, ${current.label}`;
@@ -13,7 +14,7 @@ export function renderComputerPlayerCard(person, { gameId, side, expanded = fals
   return `<span class="participant-identity" data-tooltip-boundary data-key="${escape(key)}" data-player-side="${escape(side.toLowerCase())}">
     <span class="computer-player-heading">
     <button class="participant-profile participant-computer" data-key="${escape(key)}:story" data-action="computer-story" data-game-id="${escape(gameId)}" data-computer-side="${escape(side)}" aria-label="About ${escape(name)}, ${side === 'P1' ? 'Red' : 'Blue'}" aria-haspopup="dialog">
-      ${renderPlayerEmblem(`computer:${person.computerProfile}`)}<span class="player-name-stack"><span class="player-name">${escape(name)}</span></span>
+      ${renderPlayerEmblem(`computer:${person.computerProfile}`)}<span class="player-name-stack"><span class="player-name">${escape(name)}</span>${computerModelChoiceLabel(modelId)?`<span class="small">${computerModelChoiceLabel(modelId)}</span>`:""}</span>
     </button>
     <button class="participant-profile computer-status-control" data-key="${escape(key)}:toggle" data-action="toggle-computer-card" data-game-id="${escape(gameId)}" data-computer-side="${escape(side)}" aria-label="${escape(description)}" data-tooltip="${escape(description)}" aria-expanded="${expanded}" aria-controls="${escape(id)}">
       ${renderComputerStatusBadge(current.state)}

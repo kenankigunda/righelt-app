@@ -2705,10 +2705,23 @@ var CURRENT_COMPUTER_MODEL = Object.freeze({
   url: "/computer/models/trained-20261029-1086.onnx",
   experimental: true
 });
+var CANDIDATE_A_COMPUTER_MODEL = Object.freeze({
+  id: "candidate-a-20261120-2323",
+  sha256: "1229c22869d8122a5b3b2add4bdd4e0d0e0dcd82df063cf7ff31b20cab179c0e",
+  bytes: 322842,
+  checkpoint: "e4a41c636dfa3a98f0973a5023e0fe5883dfd8d592b0df27be034cd547543af5",
+  url: "/computer/models/candidate-a-20261120-2323.onnx",
+  experimental: true
+});
+var COMPUTER_MODEL_CHOICES = Object.freeze([
+  Object.freeze({ id: CURRENT_COMPUTER_MODEL.id, label: "Incumbent" }),
+  Object.freeze({ id: CANDIDATE_A_COMPUTER_MODEL.id, label: "Candidate A" })
+]);
 var LEGACY_COMPUTER_MODEL_ID = "initial-1554";
 var COMPUTER_MODELS = Object.freeze({
   [LEGACY_COMPUTER_MODEL_ID]: LEGACY_COMPUTER_MODEL,
-  [CURRENT_COMPUTER_MODEL.id]: CURRENT_COMPUTER_MODEL
+  [CURRENT_COMPUTER_MODEL.id]: CURRENT_COMPUTER_MODEL,
+  [CANDIDATE_A_COMPUTER_MODEL.id]: CANDIDATE_A_COMPUTER_MODEL
 });
 function computerProfileFor(control, side, turnIndex) {
   return !control || control.manual || control.takeoverTurn === turnIndex ? null : control.seats[side === "P1" ? "p1" : "p2"];

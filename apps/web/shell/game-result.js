@@ -1,3 +1,5 @@
+import {CURRENT_COMPUTER_MODEL,isComputerProfile} from '../generated/packages/shared-types/src/computer-play.js';
+import {renderComputerModelChoice,selectableComputerModel} from './computer-model-choice.js';
 import {isTerminalOutcome} from './game-lifecycle.js';
 import {owningPerspective,playerDisplayName,sideColorName} from './perspective-labels.js';
 import { icon } from './ui.js';
@@ -76,12 +78,14 @@ export const renderHistoryResult = (game,identityId,{includeRematch=false}={}) =
 };
 
 export const createRematchDialog = ({ createModal, document = globalThis.document, onStart, title = "Play again", labelId = "rematch-title", getReadiness = () => ({ state: 'ready', message: '' }), onOpponentChange = () => {}, onRetry = () => {}, onClose = () => {} }) => {
-  let session = 0, busy = false, startFailure = null;
+  let session = 0, busy = false, startFailure = null, modelId = CURRENT_COMPUTER_MODEL.id;
   const modal = createModal({ document, labelId, className: "rematch-modal", onClose: () => { session++; busy = false; startFailure = null; onClose(); } });
   const opponent = () => modal.element.querySelector("[name=rematch-opponent]:checked")?.value;
   const refresh = () => {
     if (!modal.element.open) return;
-    const readiness = getReadiness(opponent());
+    const readiness = getReadiness(opponent(),modelId);
+    const choice = modal.element.querySelector('[data-computer-model-choice]');
+    if(choice) choice.hidden = !isComputerProfile(opponent());
     const start = modal.element.querySelector("[data-rematch-start]");
     start.disabled = busy || readiness.state !== 'ready';
     start.dataset.loadingState = busy ? 'pending' : 'idle'; start.setAttribute('aria-busy', String(busy));
@@ -98,13 +102,14 @@ export const createRematchDialog = ({ createModal, document = globalThis.documen
   };
   modal.element.addEventListener("change", event => {
     if (event.target.name === "rematch-side") modal.element.dataset.actionAffiliation = event.target.value === "p2" ? "blue" : "red";
-    if (event.target.name === 'rematch-opponent') { startFailure = null; onOpponentChange(opponent()); refresh(); }
+    if (event.target.matches?.('[data-computer-model-choice] input') && selectableComputerModel(event.target.value)) modelId=event.target.value;
+    if (event.target.name === 'rematch-opponent' || event.target.matches?.('[data-computer-model-choice] input')) { startFailure = null; onOpponentChange(opponent(),modelId); refresh(); }
   });
   modal.element.addEventListener("click", async event => {
     if (busy || !modal.element.open) return;
-    if (event.target.closest('[data-rematch-retry]')) { startFailure = null; await onRetry(opponent()); refresh(); return; }
-    if (!event.target.closest("[data-rematch-start]") || getReadiness(opponent()).state !== 'ready') return;
-    const intent = { opponent: opponent(), side: modal.element.querySelector("[name=rematch-side]:checked").value };
+    if (event.target.closest('[data-rematch-retry]')) { startFailure = null; await onRetry(opponent(),modelId); refresh(); return; }
+    if (!event.target.closest("[data-rematch-start]") || getReadiness(opponent(),modelId).state !== 'ready') return;
+    const intent = { opponent: opponent(), ...(isComputerProfile(opponent()) ? {modelId} : {}), side: modal.element.querySelector("[name=rematch-side]:checked").value };
     const request = session;
     startFailure = null; busy = true; refresh();
     try {
@@ -115,10 +120,10 @@ export const createRematchDialog = ({ createModal, document = globalThis.documen
       startFailure = "Could not start. Try again."; busy = false; refresh();
     }
   });
-  return { close: modal.close, refresh, isOpen: () => modal.element.open, opponent, open(result, trigger, findTrigger=null) {
-    session++; busy = false; startFailure = null;
-    modal.open(`<h2 id="${labelId}">${title}</h2><fieldset class="rematch-opponents"><legend>Opponent</legend><div class="rematch-opponent-cards">${[["babs","Babs"],["tau","Tau"],["horus","Horus"],["friend","Friend"],["self","Play both sides"]].map(([id,label]) => `<label class="rematch-opponent-card"><input type="radio" name="rematch-opponent" value="${id}" ${result.opponent === id ? "checked autofocus" : ""}><span class="rematch-opponent-mark" aria-hidden="true">${id === 'self' ? icon('board') : `<img src="${new URL(`../assets/opponents/${id}-portrait.webp`,import.meta.url).href}" alt="" width="36" height="36">`}</span><span>${label}</span></label>`).join("")}</div></fieldset><fieldset><legend>Your side</legend>${[["p1","Red"],["p2","Blue"]].map(([id,label]) => `<label><input type="radio" name="rematch-side" value="${id}" ${result.rematchSide === id ? "checked" : ""}>${label}</label>`).join("")}</fieldset><p role="status"></p><div class="story-modal-actions"><button data-rematch-start data-loading-state="idle" data-loading-message="Starting your game is taking a little longer than usual.">${icon('play')}Start game</button><button class="secondary" data-rematch-retry hidden>${icon('rematch')}Retry</button><button class="secondary" data-modal-close>${icon('close')}Cancel</button></div>`, trigger, findTrigger);
+  return { close: modal.close, refresh, isOpen: () => modal.element.open, opponent, modelId:()=>modelId, open(result, trigger, findTrigger=null) {
+    session++; busy = false; startFailure = null; modelId=CURRENT_COMPUTER_MODEL.id;
+    modal.open(`<h2 id="${labelId}">${title}</h2><fieldset class="rematch-opponents"><legend>Opponent</legend><div class="rematch-opponent-cards">${[["babs","Babs"],["tau","Tau"],["horus","Horus"],["friend","Friend"],["self","Play both sides"]].map(([id,label]) => `<label class="rematch-opponent-card"><input type="radio" name="rematch-opponent" value="${id}" ${result.opponent === id ? "checked autofocus" : ""}><span class="rematch-opponent-mark" aria-hidden="true">${id === 'self' ? icon('board') : `<img src="${new URL(`../assets/opponents/${id}-portrait.webp`,import.meta.url).href}" alt="" width="36" height="36">`}</span><span>${label}</span></label>`).join("")}</div></fieldset>${renderComputerModelChoice(modelId,labelId+"-computer-model")}<fieldset><legend>Your side</legend>${[["p1","Red"],["p2","Blue"]].map(([id,label]) => `<label><input type="radio" name="rematch-side" value="${id}" ${result.rematchSide === id ? "checked" : ""}>${label}</label>`).join("")}</fieldset><p role="status"></p><div class="story-modal-actions"><button data-rematch-start data-loading-state="idle" data-loading-message="Starting your game is taking a little longer than usual.">${icon('play')}Start game</button><button class="secondary" data-rematch-retry hidden>${icon('rematch')}Retry</button><button class="secondary" data-modal-close>${icon('close')}Cancel</button></div>`, trigger, findTrigger);
     modal.element.dataset.actionAffiliation = result.rematchSide === "p2" ? "blue" : "red";
-    onOpponentChange(opponent()); refresh();
+    onOpponentChange(opponent(),modelId); refresh();
   } };
 };

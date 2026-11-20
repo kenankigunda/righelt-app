@@ -4,7 +4,7 @@ import {handleLiveGameRequest} from '../src/shell-live.ts';
 import {asPreparedImportedHistory,createInitialGame,applyRevertToMove,applyServerAction} from '../src/shell-live-core.ts';
 import {persistGameState} from '../src/shell-live-db.ts';
 import {listLegalActions} from '../../game-engine/src/index.ts';
-import {CURRENT_COMPUTER_MODEL,computerModelForCreation} from '../../shared-types/src/computer-play.ts';
+import {CURRENT_COMPUTER_MODEL,CANDIDATE_A_COMPUTER_MODEL,computerModelForCreation} from '../../shared-types/src/computer-play.ts';
 import {prepareImportedHistory} from '../src/decision-archive.ts';
 import {createFakeD1} from './support/fake-d1.mjs';
 import {createFakeGameRooms} from './support/fake-game-rooms.mjs';
@@ -17,7 +17,7 @@ function fixture(){
  };
  return {env,call};
 }
-for(const [name,requested,expected]of [['legacy omission',undefined,'initial-1554'],['explicit published',CURRENT_COMPUTER_MODEL.id,CURRENT_COMPUTER_MODEL.id]]){
+for(const [name,requested,expected]of [['legacy omission',undefined,'initial-1554'],['explicit published',CURRENT_COMPUTER_MODEL.id,CURRENT_COMPUTER_MODEL.id],['explicit Candidate A',CANDIDATE_A_COMPUTER_MODEL.id,CANDIDATE_A_COMPUTER_MODEL.id]]){
  test(`creation preserves ${name} prepared model across durable reload and conflicting recreation`,async()=>{
   const {env,call}=fixture();const created=await call('games',{gameId:'pinned',computer:seats,...(requested===undefined?{}:{computerModelId:requested})});
   assert.equal(created.status,200,JSON.stringify(created.body));assert.equal(created.body.game.computer.modelId,expected);
