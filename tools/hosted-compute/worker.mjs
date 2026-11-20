@@ -101,7 +101,7 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
   }
   const hydrationStarted=performance.now();
   await hydrate(client, root, manifest.inputs);
-  client.rememberObjects?.(manifest.inputs);
+  client.rememberObjects?.(work.knownObjects??manifest.inputs);
   timing.inputHydrationMs=performance.now()-hydrationStarted;
   if (work.snapshot) await hydrate(client, root, work.snapshot.files);
   if(runtime)await fs.writeFile(await containedFile(root,`${phase.runDir}/runtime-${work.generation}.json`,{createParents:true}),canonical(runtime)+'\n',{flag:'wx',mode:0o600});

@@ -54,7 +54,8 @@ configSha256, proofDependencies, targetProbeKind:disposable-target-backend-prefl
 and passed/hash-bound coreTests, trainerTests and exactReplay evidence. It does
 not claim a future GPU result. On the admitted Pod, exploratory_cloud performs a
 bounded disposable restore, inherited-data update, checkpoint recovery and CUDA
-numerical/ABI export check. It writes a separate actual launch-gate output and
+numerical/ABI export check, including optimizer, Python/CPU/CUDA RNG and replay
+cursor restoration. It writes a separate actual launch-gate output and
 then calls the unchanged shared driver from the original checkpoint. The probe
 is not candidate learning and generates no game claims.
 
