@@ -168,7 +168,7 @@ export class Controller {
     const db = await this.load(), c = this.campaign(db, id); this.fence(c, generation);
     await this.qualifyAttempt(db,c);
     return { manifest: c.manifest, manifestSha256: c.manifestSha256, phaseIndex: c.phase, generation,
-      phase: c.manifest.phases[c.phase], resume: c.attempts.at(-1)?.recovery === true, snapshot: c.snapshot ?? null, previousOutputs: c.outputs,sealedEndpoint:c.sealedEndpoint??null,knownObjects:Object.values(c.objects),
+      phase: c.manifest.phases[c.phase], resume: c.attempts.at(-1)?.recovery === true, snapshot: c.snapshot ?? null, previousOutputs: c.outputs,sealedEndpoint:c.sealedEndpoint??null,knownObjects:Object.entries(c.objects).map(([sha256,record])=>({name:sha256,sha256,bytes:record.bytes})),
       leaseExpires: this.now() + POLICY.leaseMs,...(c.manifest.purpose===POLICY.publicTiming.purpose?{lifecycle:{acceptedAt:c.manual?.attached?.acceptedAt??null,startupVerifiedAt:c.manual?.startupSession?.verifiedAt??null,controllerWorkGrantedAt:this.now()}}:{}) };
   }
   async heartbeat(id, generation, proof = {}) {

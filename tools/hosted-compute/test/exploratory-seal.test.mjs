@@ -3,6 +3,19 @@ import assert from 'node:assert/strict';
 import {fixture} from './helpers.mjs';
 import {encode,sha256,POLICY} from '../policy.mjs';
 import {EXPLORATORY_PURPOSE} from '../exploratory-policy.mjs';
+import {Client} from '../client.mjs';
+
+test('controller work retains every object hash for restarted client upload and publication accounting',async()=>{
+ const f=await fixture();await f.launch();
+ const raw=encode('older checkpoint no longer in latest snapshot');const a=await f.upload(raw);
+ const work=await f.core.work('pilot',1);
+ const client=new Client({url:'https://compute.example',token:'fixture',id:'pilot',generation:1,fetcher:()=>{throw Error('retained bytes must not upload again');}});
+ client.rememberObjects(work.knownObjects);
+ assert.equal(client.knownObjects.size,4);
+ assert.equal(client.knownObjects.size-new Set(work.manifest.inputs.map(x=>x.sha256)).size,1);
+ assert.deepEqual(await client.upload(raw),{name:a.sha256,sha256:a.sha256,bytes:raw.length});
+ for(const input of work.manifest.inputs)assert.equal(client.knownObjects.get(input.sha256).bytes,input.bytes);
+});
 
 async function sealedFixture(){
  const f=await fixture();await f.launch();const db=await f.core.load(),c=db.campaigns.pilot;
