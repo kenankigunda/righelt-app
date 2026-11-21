@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Confirmed result ownership</title>
+<button id="finish">Finish game</button><button id="dialog">Close dialog</button><main id="view"></main>
+<script type="module">
+import {createConfirmedResultOwner} from '/apps/web/shell/confirmed-result.js';
+import {boardTurnCaption} from '/apps/web/shell/perspective-labels.js';
+import {getGameResult} from '/apps/web/shell/game-result.js';
+let identity='me',game,options,shown=false;
+const owner=createConfirmedResultOwner({getIdentityId:()=>identity});
+const render=()=>{
+ owner.observe(game);const decision=owner.evaluate(game.id,{current:true,...options});shown ||= decision.present;
+ document.querySelector('#view').innerHTML=shown?`<h1 tabindex="-1">${getGameResult(game,identity).title}</h1>`:game.board.state.outcome.status==='ongoing'?'<h1>Playing</h1>':`<h1>${boardTurnCaption(game,game.board.state,{identityId:identity}).text}</h1>${decision.allowReview||decision.notice?'<button id="manual">View result</button>':''}`;
+ document.querySelector('#manual')?.addEventListener('click',()=>{owner.present(game.id);shown=true;render();document.querySelector('h1').focus();});
+ if(decision.present)document.querySelector('h1').focus();
+};
+window.fixture={setup(values){owner.clear();shown=false;identity=values.viewer??'me';options=values.options??{};game={id:'g',player1:{identityId:'me'},player2:{identityId:'other'},board:{state:{outcome:{status:'ongoing'}}},terminalOutcome:{decisive:{turnIndex:6,actorIdentityId:values.author??'me',actorKind:values.kind??'human'}}};render();},finish(status='p1_win'){game.board.state.outcome={status};render();},close(){options={};render();},identity(value){identity=value;shown=false;render();}};
+document.querySelector('#finish').onclick=()=>fixture.finish();document.querySelector('#dialog').onclick=()=>fixture.close();fixture.setup({});
+</script></html>

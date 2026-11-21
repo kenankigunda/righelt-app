@@ -1,4 +1,4 @@
-import {isCompletedGame} from './game-lifecycle.js';
+import {isCompletedGame,completedTurnIndex} from './game-lifecycle.js';
 import {recordedActorSide} from './recorded-narration.js';
 import {COMPUTER_PROFILES} from '../generated/packages/shared-types/src/computer-play.js';
 import {activityStateActorSide,normalizeActivitySide} from './activity-affiliation.js';
@@ -72,16 +72,26 @@ export function perspectiveActorLabel(game,side,options={}) {
   return own.includes(actor)?'You':own.length?'Opponent':playerDisplayName(game,actor);
 }
 
-export const BOARD_TURN_CAPTIONS=Object.freeze(['Your turn to play','Opponent to play','Guest 1 to play','Guest 2 to play','Game complete']);
+export const BOARD_TURN_CAPTIONS=Object.freeze(['Your turn to play','Opponent to play','Guest 1 to play','Guest 2 to play']);
+export function completedGameCaption(game,identityId,turnIndex=completedTurnIndex(game)) {
+ const status=(game?.liveCurrentSnapshot??game?.board?.state)?.outcome?.status;
+ if(!isCompletedGame(game))return null;
+ if(!['p1_win','p2_win','draw'].includes(status))return {text:'Result unavailable',side:null};
+ const winner=status==='p1_win'?'P1':status==='p2_win'?'P2':null;
+ const own=Boolean(identityId&&winner&&seat(game,winner)?.identityId===identityId&&!computerSeat(game,winner));
+ const name=winner?`${own?'You':playerDisplayName(game,winner)} won`:'Draw';
+ const suffix=Number.isSafeInteger(turnIndex)?` on Turn ${turnIndex+1}`:'';
+ return {text:name+suffix,name,suffix,neutralSuffix:true,side:winner};
+}
 export function boardTurnCaption(game,state,options={}) {
   const actor=activityStateActorSide(state);
-  if(isCompletedGame(game))return {text:'Game complete',side:actor};
+  if(isCompletedGame(game))return completedGameCaption(game,options.identityId);
   const label=perspectiveActorLabel(game,actor,{...options,includeManualControl:true});
   return {text:label==='You'?'Your turn to play':`${label} to play`,side:actor,...(!['You','Opponent'].includes(label)?{name:label,suffix:' to play'}:{})};
 }
 export const boardTurnLabel = (game,state,options={}) => boardTurnCaption(game,state,options).text;
 export function liveHistoryLabel(game,state,options={}) {
-  if(isCompletedGame(game))return 'Game complete';
+  if(isCompletedGame(game))return completedGameCaption(game,options.identityId).text;
   const actor=activityStateActorSide(state);
   const label=perspectiveActorLabel(game,actor,{...options,includeManualControl:true});
   return `Live · Waiting on ${label==='You'?'you':label==='Opponent'?'opponent':label} to move`;

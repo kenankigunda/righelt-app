@@ -1,5 +1,6 @@
 @import "./loading-edge.css";
 body {display:flow-root;}
+button[data-action="view-result"][hidden] {display:none;}
 /* Loading, normal status and inspection share geometry at each text size. */
 .board-heading { min-height: 1.5em; }
 .board-preview-label { min-height: max(3.1em, 44px); font-size: 1rem; line-height: 1.5; margin-block: .25rem .65rem; }

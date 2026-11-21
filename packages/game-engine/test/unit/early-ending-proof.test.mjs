@@ -42,7 +42,7 @@ if(process.env.CLOUD13_PROOF_CONTROL==='naive-finality'){
  test('R3 required alternatives preserve complete current-legal rescue',{timeout:15000},t=>{
   const s=family(),before=structuredClone(s),hash=deterministicStateHash(s),ordered=listLegalActions(s);
   assert.equal(canCloseContinuationNow(s),false);assert.equal(settled(s).outcome.status,'p2_win');assert.equal(settled(path(s,[lower,close])).outcome.status,'p2_win');assert.equal(settled(path(s,[upper,lower,close])).outcome.status,'ongoing');
-  const r=proveRelevantContinuation(s,'P1');assert.equal(witness(s,r).outcome.status,'ongoing');assert.deepEqual(r.rootLegalActions,ordered);assert.deepEqual(s,before);assert.equal(deterministicStateHash(s),hash);diagnostic(t,s,r);
+  const r=proveRelevantContinuation(s,'P1',{rootLegalActions:true});assert.equal(witness(s,r).outcome.status,'ongoing');assert.deepEqual(r.rootLegalActions,ordered);assert.deepEqual(s,before);assert.equal(deterministicStateHash(s),hash);diagnostic(t,s,r);
  });
  // SOURCE-DERIVED proposal; Cloud17 does not execute the engine or claim a
  // verified divergence. The pinned run must establish every assertion below.
@@ -86,7 +86,7 @@ if(process.env.CLOUD13_PROOF_CONTROL==='naive-finality'){
   // it disables optional self-rescue using the later already-alive physical A.
   // The corrected root-scoped quantifier must retain the complete optional
   // witness. This control expectation is UNRUN, not observed failing-first.
-  const r=proveRelevantContinuation(s,'P1');
+  const r=proveRelevantContinuation(s,'P1',{rootLegalActions:true});
   assert.equal(r.kind,'continue');assert.equal(r.reason,'attacker-rescue');
   assert.deepEqual(r.rootLegalActions,ordered);
   assert.deepEqual(r.witness.actions,[...required,optional,close]);
@@ -98,23 +98,23 @@ if(process.env.CLOUD13_PROOF_CONTROL==='naive-finality'){
    completeWitness:r.witness.actions,endpoint:endpoint.outcome}));
  });
  test('R5 legal closure retains optional attacker rescue',{timeout:15000},t=>{
-  const s=step(family(),lower);assert.equal(canCloseContinuationNow(s),true);assert.equal(settled(s).outcome.status,'p2_win');const r=proveRelevantContinuation(s,'P1');assert.equal(r.reason,'attacker-rescue');assert.equal(witness(s,r).outcome.status,'ongoing');diagnostic(t,s,r);
+  const s=step(family(),lower);assert.equal(canCloseContinuationNow(s),true);assert.equal(settled(s).outcome.status,'p2_win');const r=proveRelevantContinuation(s,'P1',{rootLegalActions:true});assert.equal(r.reason,'attacker-rescue');assert.equal(witness(s,r).outcome.status,'ongoing');diagnostic(t,s,r);
  });
  test('optional multi-step rescue keeps a first nonrescuing prefix',{timeout:15000},t=>{
   const s=optionalMulti();assert.equal(canCloseContinuationNow(s),true);assert.equal(settled(step(s,lower)).outcome.status,'p2_win');assert.equal(settled(path(s,[lower,upper,close])).outcome.status,'ongoing');
-  const r=proveRelevantContinuation(s,'P1');assert.equal(r.reason,'attacker-rescue');assert.ok(r.witness.actions.length>=3);assert.equal(settled(step(s,r.witness.actions[0])).outcome.status,'p2_win');assert.equal(witness(s,r).outcome.status,'ongoing');diagnostic(t,s,r);
+  const r=proveRelevantContinuation(s,'P1',{rootLegalActions:true});assert.equal(r.reason,'attacker-rescue');assert.ok(r.witness.actions.length>=3);assert.equal(settled(step(s,r.witness.actions[0])).outcome.status,'p2_win');assert.equal(witness(s,r).outcome.status,'ongoing');diagnostic(t,s,r);
  });
  test('optional defender-only rescue is ignored while A already survives',{timeout:15000},t=>{
   const s=defenderOnly(),before=structuredClone(s);assert.equal(canCloseContinuationNow(s),true);assert.equal(settled(s).outcome.status,'p1_win');
   assert.equal(settled(path(s,[{type:'rush',actorId:'V0',from:{row:0,col:4},to:{row:0,col:5}},close])).outcome.status,'ongoing');
-  const r=proveRelevantContinuation(s,'P1');assert.equal(r.kind,'proven-terminal');assert.equal(r.candidateOutcome.status,'p1_win');assert.ok(r.endpointCount>0);assert.ok(r.optionalEndpointCount>0);assert.deepEqual(r.rootLegalActions,listLegalActions(s));assert.deepEqual(s,before);diagnostic(t,s,r);
+  const r=proveRelevantContinuation(s,'P1',{rootLegalActions:true});assert.equal(r.kind,'proven-terminal');assert.equal(r.candidateOutcome.status,'p1_win');assert.ok(r.endpointCount>0);assert.equal(r.optionalEndpointCount,0);assert.deepEqual(r.rootLegalActions,listLegalActions(s));assert.deepEqual(s,before);diagnostic(t,s,r);
  });
  test('all required legal endpoints agree on terminal status',{timeout:15000},t=>{
-  const s=spentExceptB(family());assert.equal(canCloseContinuationNow(s),false);const r=proveRelevantContinuation(s,'P1');assert.equal(r.kind,'proven-terminal');assert.equal(r.candidateOutcome.status,'p2_win');assert.equal(r.complete,true);assert.ok(r.endpointCount>0);assert.deepEqual(r.rootLegalActions,listLegalActions(s));diagnostic(t,s,r);
+  const s=spentExceptB(family());assert.equal(canCloseContinuationNow(s),false);const r=proveRelevantContinuation(s,'P1',{rootLegalActions:true});assert.equal(r.kind,'proven-terminal');assert.equal(r.candidateOutcome.status,'p2_win');assert.equal(r.complete,true);assert.ok(r.endpointCount>0);assert.deepEqual(r.rootLegalActions,listLegalActions(s));diagnostic(t,s,r);
  });
  test('one required win-to-draw status change prevents finality',{timeout:15000},t=>{
   const s=family();s.pieces.find(p=>p.id==='A').position.col=2;s.pieces.find(p=>p.id==='C2').position={row:7,col:3};s.pieces.push(unit('north','P1',6,3),unit('south','P1',8,3));for(const id of ['north','south'])s.continuation.frozenPieceStatesById[id]={supplied:true,commanded:true};spentExceptB(s);
-  assert.equal(settled(s).outcome.status,'p2_win');assert.equal(settled(path(s,[lower,close])).outcome.status,'draw');const r=proveRelevantContinuation(s,'P1');assert.equal(r.reason,'outcome-change');assert.equal(witness(s,r).outcome.status,'draw');diagnostic(t,s,r);
+  assert.equal(settled(s).outcome.status,'p2_win');assert.equal(settled(path(s,[lower,close])).outcome.status,'draw');const r=proveRelevantContinuation(s,'P1',{rootLegalActions:true});assert.equal(r.reason,'outcome-change');assert.equal(witness(s,r).outcome.status,'draw');diagnostic(t,s,r);
  });
  test('required defender retreat uses original A, not temporary sideToMove',{timeout:15000},t=>{
   const {state:s,push}=pushFixture();assert.equal(s.sideToMove,'P2');const r=proveRelevantContinuation(s,'P1',{push});assert.equal(r.reason,'outcome-change');assert.equal(witness(s,r).outcome.status,'ongoing');assert.equal(proveRelevantContinuation(s,'P2',{push}).kind,'unknown');diagnostic(t,s,r);
@@ -125,29 +125,29 @@ if(process.env.CLOUD13_PROOF_CONTROL==='naive-finality'){
   const r=proveRelevantContinuation(s,'P1',{push});assert.equal(r.kind,'proven-terminal');assert.equal(r.endpointCount,all.length);diagnostic(t,s,r);
  });
  test('missing/mismatched push acknowledgement is unknown, never fabricated',{timeout:15000},()=>{
-  const {state:s,push}=pushFixture(),before=structuredClone(s);assert.equal(proveRelevantContinuation(s,'P1').kind,'unknown');assert.equal(proveRelevantContinuation(s,'P1',{push:{...push,frameHash:'0'.repeat(64)}}).kind,'unknown');assert.deepEqual(s,before);
+  const {state:s,push}=pushFixture(),before=structuredClone(s);assert.equal(proveRelevantContinuation(s,'P1',{rootLegalActions:true}).kind,'unknown');assert.equal(proveRelevantContinuation(s,'P1',{push:{...push,frameHash:'0'.repeat(64)}}).kind,'unknown');assert.deepEqual(s,before);
  });
  test('ongoing candidate continues without an invented completed witness',{timeout:15000},()=>{
   const r=proveRelevantContinuation(path(family(),[upper,lower]),'P1');assert.equal(r.kind,'continue');assert.equal(r.reason,'candidate-ongoing');assert.equal(r.candidate.outcome.status,'ongoing');assert.equal('witness' in r,false);
  });
  test('completed public history is unknown while legal internal endpoints are accepted',{timeout:15000},()=>{
-  const s=spentExceptB(family());assert.equal(proveRelevantContinuation(s,'P1').kind,'proven-terminal');const historical=settled(path(s,[lower,close])),before=structuredClone(historical);assert.equal(proveRelevantContinuation(historical,'P1').kind,'unknown');assert.deepEqual(historical,before);
+  const s=spentExceptB(family());assert.equal(proveRelevantContinuation(s,'P1',{rootLegalActions:true}).kind,'proven-terminal');const historical=settled(path(s,[lower,close])),before=structuredClone(historical);assert.equal(proveRelevantContinuation(historical,'P1').kind,'unknown');assert.deepEqual(historical,before);
  });
  test('incoming Pass remains outside this evaluator',{timeout:15000},()=>{
-  const s=makeState({pieces:[commander('C1','P1',0,9),commander('C2','P2',9,0)]});assert.equal(validateAction(s,{type:'pass'}).ok,true);assert.equal(proveRelevantContinuation(s,'P1').reason,'outside-sequence');
+  const s=makeState({pieces:[commander('C1','P1',0,9),commander('C2','P2',9,0)]});assert.equal(validateAction(s,{type:'pass'}).ok,true);assert.equal(proveRelevantContinuation(s,'P1',{rootLegalActions:true}).reason,'outside-sequence');
  });
  test('tiny budget is unknown; later sufficient proof is not poisoned',{timeout:15000},()=>{
   const s=spentExceptB(family()),before=structuredClone(s);const r=proveRelevantContinuation(s,'P1',{maxExpansions:1});assert.equal(r.kind,'unknown');assert.equal(r.reason,'rules_budget_exceeded');assert.equal(proveRelevantContinuation(s,'P1',{maxExpansions:MAX_ENGINE_OPERATION_EXPANSIONS}).kind,'proven-terminal');assert.deepEqual(s,before);
  });
  test('typed interruption is unknown; genuine dependency error propagates',{timeout:15000},()=>{
-  const s=spentExceptB(family());let n=0;const r=withEngineComputationGuard(()=>{if(++n===3)throw new EngineComputationLimit();},()=>proveRelevantContinuation(s,'P1'));assert.equal(r.kind,'unknown');assert.equal(proveRelevantContinuation(s,'P1').kind,'proven-terminal');
-  const real=new Error('genuine dependency failure');n=0;assert.throws(()=>withEngineComputationGuard(()=>{if(++n===2)throw real;},()=>proveRelevantContinuation(s,'P1')),e=>e===real);
+  const s=spentExceptB(family());let n=0;const r=withEngineComputationGuard(()=>{if(++n===3)throw new EngineComputationLimit();},()=>proveRelevantContinuation(s,'P1',{rootLegalActions:true}));assert.equal(r.kind,'unknown');assert.equal(proveRelevantContinuation(s,'P1',{rootLegalActions:true}).kind,'proven-terminal');
+  const real=new Error('genuine dependency failure');n=0;assert.throws(()=>withEngineComputationGuard(()=>{if(++n===2)throw real;},()=>proveRelevantContinuation(s,'P1',{rootLegalActions:true})),e=>e===real);
  });
  for(const cap of [0,-1,1.5,NaN,Infinity,MAX_ENGINE_OPERATION_EXPANSIONS+1])test(`invalid lower-only cap ${cap}`,{timeout:15000},()=>assert.throws(()=>proveRelevantContinuation(family(),'P1',{maxExpansions:cap}),TypeError));
  test('invalid explicit owner is rejected, never inferred',{timeout:15000},()=>{assert.throws(()=>proveRelevantContinuation(family(),'P3'),TypeError);assert.equal(proveRelevantContinuation(family(),'P2').kind,'unknown');});
  test('witness actions/endpoint do not alias caller or each other',{timeout:15000},()=>{
-  const s=family(),before=structuredClone(s),r=proveRelevantContinuation(s,'P1');witness(s,r);const refs=(v,set=new Set())=>{if(v&&typeof v==='object'&&!set.has(v)){set.add(v);for(const x of Object.values(v))refs(x,set);}return set;};const seen=refs(s);
+  const s=family(),before=structuredClone(s),r=proveRelevantContinuation(s,'P1',{rootLegalActions:true});witness(s,r);const refs=(v,set=new Set())=>{if(v&&typeof v==='object'&&!set.has(v)){set.add(v);for(const x of Object.values(v))refs(x,set);}return set;};const seen=refs(s);
   for(const group of [...r.witness.actions,r.witness.endpoint]){const own=refs(group);for(const ref of own)assert.equal(seen.has(ref),false);for(const ref of own)seen.add(ref);}
-  r.witness.actions.find(a=>a.to).to.row=99;r.witness.endpoint.pieces[0].position.row=99;assert.deepEqual(s,before);witness(s,proveRelevantContinuation(s,'P1'));
+  r.witness.actions.find(a=>a.to).to.row=99;r.witness.endpoint.pieces[0].position.row=99;assert.deepEqual(s,before);witness(s,proveRelevantContinuation(s,'P1',{rootLegalActions:true}));
  });
 }

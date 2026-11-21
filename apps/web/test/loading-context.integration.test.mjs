@@ -63,7 +63,8 @@ const app=readFileSync(new URL('../shell/app.js',import.meta.url),'utf8');
 const headerItemsSource=app.slice(app.indexOf('const getHeaderAlertItems ='),app.indexOf('const renderGameAlertsHtml ='));
 const escapeHtml=value=>String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 const headerItems=({scope='route-a',contexts=[],startupError=null,gameItems=[],destinationBlocked=false,resultGame=null,identityId='red'}={})=>{
- const owner=createConfirmedResultOwner();
+ const owner=createConfirmedResultOwner({getIdentityId:()=>identityId});
+ if(resultGame)resultGame={...resultGame,terminalOutcome:{...resultGame.terminalOutcome,decisive:{...resultGame.terminalOutcome?.decisive,actorIdentityId:identityId,actorKind:"human"}}};
  if(resultGame){owner.observe({...resultGame,board:{state:{...resultGame.board.state,outcome:{status:'ongoing'}}}});owner.deliberateHistory(resultGame.id);owner.observe(resultGame);owner.evaluate(resultGame.id,{current:true,inHistory:true});}
  const transport={getAuthoritativeGame:()=>resultGame,getIdentityId:()=>identityId};
  return Function('loadingContextScope','slowLoadingContexts','accountStartupError','renderGameAlertCard','escapeHtml','getGameAlertItems','destinationLoadPresentation','confirmedResultOwner','getResultNotice','renderResultNoticeText','transport',`${headerItemsSource};return getHeaderAlertItems;`)(()=>scope,contexts,startupError,renderGameAlertCard,escapeHtml,()=>gameItems,{blocked:destinationBlocked},owner,getResultNotice,renderResultNoticeText,transport);

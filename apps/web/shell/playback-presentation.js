@@ -1,3 +1,4 @@
+import {isCompletedGame} from './game-lifecycle.js';
 import {BOARD_PROMPT} from '../board/prompt-models.js';
 import {acknowledgedContextPurpose} from './board-context-purpose.js';
 import {updateComputerBoardLoading} from './board-message-layout.js';
@@ -25,6 +26,7 @@ if(view?.confirmedPlayback){
 }
 
 export function playbackTurnIndicator(view,state,{replay,step,identityId}={}) {
+ if(isCompletedGame(view)&&view?.confirmedPlayback)return boardTurnCaption(view,state,{identityId});
  const automatic=step?.frame?.recordedMove;
  if(view?.confirmedPlayback&&automatic)return selectedHistoryPresentation({...view,inHistoryMode:true,historyTurnIndex:null,inspectedDecision:automatic},{identityId})?.caption??{text:'Move unavailable'};
  if(replay?.playing)return selectedHistoryPresentation({...view,inHistoryMode:true,historyTurnIndex:null,inspectedDecision:replay.recordedMove},{identityId})?.caption??{text:'Replay'};

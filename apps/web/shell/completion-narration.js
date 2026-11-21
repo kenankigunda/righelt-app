@@ -74,8 +74,7 @@ const provenCauseParts=(game,record,result)=>{
   return label?[label,{text:' had no legal move except Pass.'}]:null;
  }
  if(cause.kind==='commander-settlement')return commanderCause(game,record,result);
- if(cause.kind!=='relevant-continuation-finality'||!Number.isSafeInteger(cause.endpointCount)
-   ||cause.endpointCount<1||!Number.isSafeInteger(cause.optionalEndpointCount)||cause.optionalEndpointCount<0)return null;
+ if(cause.kind!=='relevant-continuation-finality')return null;
  const action=record.decisive.action,winner=side(result.winner),loser=other(winner);
  if(!winner||!loser)return null;
  const label=commander(game,loser,result);
@@ -98,9 +97,7 @@ const joinedCauseParts=(game,record,result,count,complete)=>{
   const label=sentenceActor(game,incoming,result);
   return label?[{text:' because '},label,{text:' had no legal move.'}]:null;
  }
- if(cause.kind!=='relevant-continuation-finality'||!Number.isSafeInteger(cause.endpointCount)
-   ||cause.endpointCount<1||!Number.isSafeInteger(cause.optionalEndpointCount)||cause.optionalEndpointCount<0
-   ||action?.type!=='retreat'||typeof record.decisive.decisionId!=='string'||!record.decisive.decisionId
+ if(cause.kind!=='relevant-continuation-finality'||action?.type!=='retreat'||typeof record.decisive.decisionId!=='string'||!record.decisive.decisionId
    ||side(record.decisive.actorSide)!==loser)return null;
  if(result.controlsBothSides)return [{text:' after '},{text:`you retreated as ${sideColorName(loser)}`,side:loser,colorNamed:true},{text:'.'}];
  if(result.side===loser)return [{text:' after '},{text:'you retreated',side:loser},{text:'.'}];

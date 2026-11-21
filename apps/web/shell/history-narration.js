@@ -20,7 +20,7 @@ export function selectedHistoryPresentation(game,options={}){
  if(game.historyTurnIndex!=null){
   const moves=withCausalDestructionPresentation(game.historyTurnMoves??[]),turn=game.turns?.find(turn=>turn.index===game.historyTurnIndex),side=historyTurnSide(turn,moves);
   const actor=moves.find(move=>recordedActorSide(move)===side),identity=actorIdentity(game,actor,side,options),name=identity.text;
-  const completedCaption=isCompletedWinningTurn(game)?completedTurnCaption(game,options.identityId,game.historyTurnIndex):null;
+  const completedCaption=isCompletedWinningTurn(game)?completedTurnCaption(game,options.identityId):null;
   const completion=completedCaption?completedOutcomeNarration(game,options):null;
   const narration=describeRecordedTurn(moves,name,{owned:ownedActor(game,actor,options)});
   return {caption:completedCaption??{text:`Turn ${game.historyTurnIndex+1}`,side},message:completion??{text:narration??'Historical turn details unavailable',actorName:name,actorToneSide:side,actorAccessibleName:identity.accessibleName,coordinates:recordedNarrationCoordinates(moves)},messageStrength:completion||narration?BOARD_MESSAGE_STRENGTH.SEMANTIC:BOARD_MESSAGE_STRENGTH.PLACEHOLDER};

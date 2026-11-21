@@ -13,34 +13,38 @@ export const resumeAfterDialogFocusRestore=(callback,schedule=queueMicrotask)=>s
 
 // Page-local result ownership. Authority creates eligibility; route, focus and
 // dialog state only decide when an already-confirmed result may be presented.
-export function createConfirmedResultOwner(){
+export function createConfirmedResultOwner({getIdentityId=()=>null}={}){
   const entries=new Map();
-  let historyGeneration=0;
+  let historyGeneration=0, viewerIdentity;
   const entry=gameId=>entries.get(gameId)??null;
   const observe=game=>{
     if(!game?.id||!game?.board?.state?.outcome)return {changed:false,becameTerminal:false};
+    const identity=getIdentityId() || null;
+    if(identity!==viewerIdentity){entries.clear();viewerIdentity=identity;historyGeneration++;}
+    const author=game.terminalOutcome?.decisive;
+    const ownHuman=Boolean(identity && author?.actorIdentityId===identity && author?.actorKind==='human');
     const status=game.board.state.outcome.status,terminal=isTerminalOutcome(status),key=terminalKey(game),previous=entry(game.id);
-    if(!previous){entries.set(game.id,{status,key,mode:'quiet',noticeDismissed:false,deliberateHistory:false});return {changed:true,becameTerminal:false};}
+    if(!previous){entries.set(game.id,{status,key,mode:'quiet',autoEligible:false,historyNotice:false,noticeDismissed:false,deliberateHistory:false});return {changed:true,becameTerminal:false};}
     if(!terminal){
       const changed=previous.status!==status||previous.key!==null||previous.mode!=='quiet';
-      entries.set(game.id,{status,key:null,mode:'quiet',noticeDismissed:false,deliberateHistory:previous.deliberateHistory});
+      entries.set(game.id,{status,key:null,mode:'quiet',autoEligible:false,historyNotice:false,noticeDismissed:false,deliberateHistory:previous.deliberateHistory});
       return {changed,becameTerminal:false};
     }
     if(isTerminalOutcome(previous.status)){
       const refinish=isCommitKey(previous.key)&&isCommitKey(key)&&previous.key!==key;
-      Object.assign(previous,{status,key,...(refinish?{mode:'pending',noticeDismissed:false}: {})});
+      Object.assign(previous,{status,key,...(refinish?{mode:ownHuman?'pending':'quiet',autoEligible:ownHuman,historyNotice:true,noticeDismissed:false}: {})});
       return {changed:refinish,becameTerminal:refinish};
     }
-    Object.assign(previous,{status,key,mode:'pending',noticeDismissed:false});
+    Object.assign(previous,{status,key,mode:ownHuman?'pending':'quiet',autoEligible:ownHuman,historyNotice:true,noticeDismissed:false});
     return {changed:true,becameTerminal:true};
   };
   const deliberateHistory=gameId=>{const current=entry(gameId),token={gameId,generation:++historyGeneration};if(!current)return token;current.deliberateHistory=true;current.historyGeneration=token.generation;if(current.mode==='pending')current.mode='manual';return token;};
-  const abandonHistory=token=>{const current=entry(token?.gameId);if(!current||current.historyGeneration!==token?.generation)return false;current.deliberateHistory=false;current.historyGeneration=null;if(current.mode==='manual'){current.mode='pending';current.noticeDismissed=false;return true;}return false;};
+  const abandonHistory=token=>{const current=entry(token?.gameId);if(!current||current.historyGeneration!==token?.generation)return false;current.deliberateHistory=false;current.historyGeneration=null;if(current.mode==='manual'){current.mode=current.autoEligible?'pending':'quiet';current.noticeDismissed=false;return true;}return false;};
   const live=gameId=>{const current=entry(gameId);if(current&&!isTerminalOutcome(current.status)){current.deliberateHistory=false;current.historyGeneration=null;}};
   const evaluate=(gameId,{current=false,visible=true,dialogOpen=false,inHistory=false}={})=>{
     const value=entry(gameId);
     if(!value||!isTerminalOutcome(value.status))return {present:false,allowReview:false,notice:false};
-    if(value.mode==='pending'&&(value.deliberateHistory||inHistory))value.mode='manual';
+    if((value.mode==='pending'||value.mode==='quiet'&&value.historyNotice)&&(value.deliberateHistory||inHistory))value.mode='manual';
     if(value.mode==='pending'&&current&&visible&&!dialogOpen){value.mode='presented';return {present:true,allowReview:false,notice:false};}
     return {present:false,allowReview:value.mode==='quiet'||value.mode==='reviewed'||value.mode==='presented',notice:value.mode==='manual'&&!value.noticeDismissed};
   };
@@ -48,7 +52,7 @@ export function createConfirmedResultOwner(){
   const review=gameId=>{const current=entry(gameId);if(current&&isTerminalOutcome(current.status)){current.mode='reviewed';current.noticeDismissed=true;return true;}return false;};
   const dismissNotice=gameId=>{const current=entry(gameId);if(current?.mode==='manual')current.noticeDismissed=true;};
   const snapshot=gameId=>{const current=entry(gameId);return current?{...current}:null;};
-  return {observe,evaluate,deliberateHistory,abandonHistory,live,present,review,dismissNotice,snapshot,clear:()=>entries.clear()};
+  return {observe,evaluate,deliberateHistory,abandonHistory,live,present,review,dismissNotice,snapshot,clear:()=>{entries.clear();viewerIdentity=undefined;}};
 }
 
 export {terminalKey as confirmedResultKey};
