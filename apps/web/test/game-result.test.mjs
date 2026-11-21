@@ -132,3 +132,21 @@ test('failed Start stays static through transport readiness refreshes until expl
  assert.equal(element.open,false);
  dialog.open({opponent:'self',rematchSide:'p1'});assert.equal(status.textContent,'');
 });
+
+test("a rejecting pending rematch runner keeps the dialog open with retry feedback", async () => {
+  let click;
+  let pendingOptions = null;
+  const nodes = { "[name=rematch-opponent]:checked": { value: "self" }, "[name=rematch-side]:checked": { value: "p1" }, "[data-rematch-start]": { dataset: {}, setAttribute() {} }, "[role=status]": { textContent: "", dataset: {} }, "[data-rematch-retry]": {} };
+  const element = { open: false, dataset: {}, querySelector: selector => nodes[selector], querySelectorAll: () => [], addEventListener: (_, fn) => { click = fn; } };
+  const createModal = ({ onClose }) => ({ element, open() { element.open = true; }, close() { element.open = false; onClose(); } });
+  const dialog = createRematchDialog({
+    createModal,
+    runPending: async (_trigger, fn, options) => { pendingOptions = options; return fn(); },
+    onStart: async () => { throw new Error("creation_failed"); },
+  });
+  dialog.open({ opponent: "self", rematchSide: "p1" });
+  await click({ target: { closest: selector => selector === "[data-rematch-start]" } });
+  assert.equal(element.open, true);
+  assert.deepEqual(pendingOptions, { rethrow: true });
+  assert.equal(nodes["[role=status]"].textContent, "Could not start. Try again.");
+});

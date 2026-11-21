@@ -38,6 +38,12 @@ Canonical PR: #120. The following table records the first pass at that time. Lat
 
 The independent review cleared the commander, sound confirmation, focus restoration, pending gate and pagination repairs. Its documentation contradictions were reconciled in `UX_PRINCIPLES.md`. Artwork inspection and the final combined report remain separate evidence.
 
+## Game CTA loading audit
+
+The game, invite/result, flyout, alert, rematch and board-inline surfaces use the shared visible-effect contract. Delayed join, approval, dual-seat, share, authoring, account-gate and new-game/new-tab actions pulse only their triggering CTA. In-place scenario loading and Retry saving with an unresolved local board mutation also activate the board border. Scenario loads that open a new tab do not spin the old board.
+
+Board moves, End turn, Undo, Undo approval, rejection/rescission, history navigation, panels, dialogs and route stubs remain loader-free when their intended optimistic or local effect is visible by the next paint. Locally initiated board changes use the five-second board-only and fifteen-second board-plus-status confirmation escalation. Passive hydration, remote changes, ordinary reconnects, hover/selection work and account-owned dialog internals are outside that action-confirmation treatment.
+
 ## Explicit limits
 
 The trained computer runtime is owned by its separate thread. Its unavailable state is not gameplay proof. Physical iPhone 13 mini / iOS 26.6.2 cellular performance remains unverified here. Publication and production account activation remain paused/separate. Later visual refinements belong to followup passes, not undocumented changes to these first-pass contracts.

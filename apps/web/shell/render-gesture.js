@@ -3,11 +3,13 @@ export const createRenderGestureGate = ({
   render,
   schedule = setTimeout,
   cancel = clearTimeout,
+  scheduleBeforePaint = queueMicrotask,
 }) => {
   const defaultOwner = Symbol("render-gesture"), owners = new Set();
   let held = false,
     pending = null,
     releaseTimer = null,
+    releaseQueued = false,
     flushWaiters = [];
   const settleFlush = (value, error = null) => {
     const waiters = flushWaiters;
@@ -16,6 +18,7 @@ export const createRenderGestureGate = ({
   };
   const flush = () => {
     releaseTimer = null;
+    releaseQueued = false;
     if (owners.size) return;
     held = false;
     const options = pending;
@@ -51,6 +54,14 @@ export const createRenderGestureGate = ({
       // The final matching release keeps activation ahead of the next task.
       release();
     },
+    flushBeforePaint() {
+      if (owners.size || (!held && !pending)) return;
+      cancel(releaseTimer);
+      releaseTimer = null;
+      if (releaseQueued) return;
+      releaseQueued = true;
+      scheduleBeforePaint(flush);
+    },
     waitForFlush() {
       if (!held && !pending) return Promise.resolve(false);
       return new Promise((resolve,reject) => flushWaiters.push({resolve,reject}));
@@ -65,6 +76,7 @@ export const createRenderGestureGate = ({
       owners.clear();
       held = false;
       pending = null;
+      releaseQueued = false;
       settleFlush(false);
     },
   };

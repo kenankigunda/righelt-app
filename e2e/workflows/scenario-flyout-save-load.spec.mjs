@@ -215,10 +215,12 @@ test("scenario flyout can save the current board and load that scenario into a n
 
     await page.locator('[data-scenario-save-field="title"]').fill(scenarioTitle);
     await page.locator('[data-scenario-save-field="description"]').fill(scenarioDescription);
-    await page.locator('[data-action="save-scenario"]').click();
+    const saveButton = page.locator('[data-action="save-scenario"]');
+    await saveButton.click();
 
     await expect(page.locator('[data-scenario-editable="title"]')).toContainText(scenarioTitle);
     await expect(page.locator("#scenario-select")).toContainText(scenarioTitle);
+    await expect(page.locator('[data-action="update-scenario"]')).toBeFocused();
 
     await page.goto("/");
     await expect(page.getByTestId("home-create-game")).toBeVisible();
@@ -229,9 +231,36 @@ test("scenario flyout can save the current board and load that scenario into a n
     expect(await getHistoryMoveCount(page)).toBe(0);
     await page.getByRole("button", { name: "Scenarios" }).click();
     await expect(page.locator('[data-scenario-editable="title"]')).toContainText(scenarioTitle);
-    await expect(page.locator('[data-action="load-scenario"]')).toHaveText("Load into This Game");
+    const loadButton = page.locator('[data-action="load-scenario"]');
+    await expect(loadButton).toHaveText("Load into This Game");
 
-    await page.locator('[data-action="load-scenario"]').click();
+    let releaseImport = null;
+    const importReleased = new Promise((resolve) => {
+      releaseImport = resolve;
+    });
+    await page.route("**/api/shell/scenarios/import", async (route) => {
+      await importReleased;
+      const response = await route.fetch();
+      await route.fulfill({ response });
+    });
+    const boardWrap = page.getByTestId("game-board-wrap");
+    const boardBoundsBefore = await boardWrap.boundingBox();
+    await page.emulateMedia({ reducedMotion: "reduce" });
+
+    await loadButton.click();
+
+    await expect(loadButton).toHaveAttribute("data-pending", "true");
+    await expect(loadButton).toHaveAttribute("aria-busy", "true");
+    await expect(boardWrap).toHaveAttribute("data-board-pending", "");
+    await expect(boardWrap).toHaveAttribute("aria-busy", "true");
+    const boardBoundsPending = await boardWrap.boundingBox();
+    expect(boardBoundsPending?.width).toBeCloseTo(boardBoundsBefore?.width ?? 0, 1);
+    expect(boardBoundsPending?.height).toBeCloseTo(boardBoundsBefore?.height ?? 0, 1);
+    await expect(loadButton).toBeFocused();
+    expect(await loadButton.evaluate((element) => getComputedStyle(element).animationName)).toBe("none");
+    expect(await boardWrap.evaluate((element) => getComputedStyle(element.querySelector(".board"), "::after").animationName)).toBe("none");
+
+    releaseImport?.();
 
     await expect
       .poll(async () => getHistoryMoveCount(page), {
@@ -245,6 +274,8 @@ test("scenario flyout can save the current board and load that scenario into a n
     })).toEqual(savedScenario.resultingState);
     await expect(page.locator('[data-testid="scenario-load-skeleton"]')).toHaveCount(0);
     await expect(page.locator('[data-scenario-editable="title"]')).toHaveCount(0);
+    await expect(boardWrap).not.toHaveAttribute("data-board-pending", "");
+    await expect(boardWrap).not.toHaveAttribute("aria-busy", "true");
   } finally {
     await closeContextQuietly(context);
   }
@@ -370,7 +401,7 @@ test("scenario flyout round-trips a settled post-rush board state after ending t
     await expect(page.locator('[data-testid="scenario-load-skeleton"]')).toHaveCount(0);
     await expect(page.locator("#shell-board-turn-indicator")).toHaveText("Your turn to play");
     await expect(page.locator("#shell-board-turn-indicator")).toHaveClass(/player-tone-p1/);
-    await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 7, 4");
+    await expect(page.locator("#shell-board-preview-label")).toContainText("Project new piece to 7, 4");
     await expect(page.locator("#shell-board-preview-label")).not.toContainText("Select a rush");
     await expect
       .poll(async () => getHistoryMoveCount(page), {
@@ -471,7 +502,7 @@ test("scenario flyout saves history-authored scenarios from the selected pre-mov
     await expect(page.locator('[data-testid="scenario-load-skeleton"]')).toHaveCount(0);
     await expect(page.locator("#shell-board-turn-indicator")).toHaveText("Your turn to play");
     await expect(page.locator("#shell-board-turn-indicator")).toHaveClass(/player-tone-p1/);
-    await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 5, 4");
+    await expect(page.locator("#shell-board-preview-label")).toContainText("Project new piece to 5, 4");
     await expect
       .poll(async () => getHistoryMoveCount(page), {
         message: "Expected loading the capture to start a new history at the saved pre-move position",
@@ -576,7 +607,7 @@ test("scenario flyout updates an existing scenario from the selected history pre
     await expect(page.locator('[data-testid="scenario-load-skeleton"]')).toHaveCount(0);
     await expect(page.locator("#shell-board-turn-indicator")).toHaveText("Your turn to play");
     await expect(page.locator("#shell-board-turn-indicator")).toHaveClass(/player-tone-p1/);
-    await expect(page.locator("#shell-board-preview-label")).toContainText("project new piece to 5, 4");
+    await expect(page.locator("#shell-board-preview-label")).toContainText("Project new piece to 5, 4");
     await expect
       .poll(async () => getHistoryMoveCount(page), {
         message: "Expected loading the updated capture to start a new history at the saved pre-move position",

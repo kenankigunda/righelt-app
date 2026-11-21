@@ -77,7 +77,7 @@ export const renderHistoryResult = (game,identityId,{includeRematch=false}={}) =
   return `<div class="history-result-action-row">${summary}<button class="secondary" data-action="rematch" data-game-id="${escapeResult(game.id)}">${icon('rematch')}Play again</button></div>`;
 };
 
-export const createRematchDialog = ({ createModal, document = globalThis.document, onStart, title = "Play again", labelId = "rematch-title", getReadiness = () => ({ state: 'ready', message: '' }), onOpponentChange = () => {}, onRetry = () => {}, onClose = () => {} }) => {
+export const createRematchDialog = ({ createModal, document = globalThis.document, onStart, title = "Play again", labelId = "rematch-title", getReadiness = () => ({ state: 'ready', message: '' }), onOpponentChange = () => {}, onRetry = () => {}, onClose = () => {}, runPending = (_trigger, fn) => fn() }) => {
   let session = 0, busy = false, startFailure = null, modelId = CURRENT_COMPUTER_MODEL.id;
   const modal = createModal({ document, labelId, className: "rematch-modal", onClose: () => { session++; busy = false; startFailure = null; onClose(); } });
   const opponent = () => modal.element.querySelector("[name=rematch-opponent]:checked")?.value;
@@ -113,7 +113,11 @@ export const createRematchDialog = ({ createModal, document = globalThis.documen
     const request = session;
     startFailure = null; busy = true; refresh();
     try {
-      await onStart(intent, { isCurrent: () => request === session && modal.element.open });
+      await runPending(
+        modal.element.querySelector("[data-rematch-start]"),
+        () => onStart(intent, { isCurrent: () => request === session && modal.element.open }),
+        { rethrow: true },
+      );
       if (request === session) modal.close();
     } catch {
       if (request !== session) return;

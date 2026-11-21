@@ -125,6 +125,7 @@ export const createLiveTransportStore = ({
   timing = SYNC_TIMING,
   beforeReconcile = async () => {},
   onDiagnostic = () => {},
+  onOptimisticRecalculation = () => {},
   rulesExecutor = createRulesExecutor(),
 } = {}) => {
   let active = true;
@@ -438,6 +439,7 @@ export const createLiveTransportStore = ({
   };
 
   const recalculateOptimisticGame = (gameId) => {
+    onOptimisticRecalculation(gameId);
     const optimistic = getOptimisticState(gameId);
     const authoritativeGame = optimistic.externalPreview ?? gameById.get(gameId);
     optimistic.commandResults = new Map();
@@ -569,8 +571,9 @@ export const createLiveTransportStore = ({
     }
 
     const optimistic = getOptimisticState(game.id);
-    // A snapshot/command ID alone cannot establish a command outcome.
-    recalculateOptimisticGame(game.id);
+    // upsertGame already recalculates non-stale projections. A stale snapshot still
+    // needs the current authoritative state redecorated without accepting its data.
+    if (staleSnapshotIgnored) recalculateOptimisticGame(game.id);
     if (changeType === "history_mode_changed") {
       logDiagnostic("info", "live_transport_history_mode_changed", { gameId: game.id }, { verboseOnly: true });
     }
@@ -1076,8 +1079,9 @@ export const createLiveTransportStore = ({
     if ((optimistic.retryNotBefore ?? 0) > Date.now()) {scheduleRetry(gameId,retryAttempt,reconcileFirst,optimistic.retryNotBefore-Date.now());return;}
     const command = optimistic.pendingCommands[0];
     if (!command) {
+      const statusChanged = optimistic.syncStatus !== "ready";
       optimistic.syncStatus = "ready";
-      recalculateOptimisticGame(gameId);
+      if (statusChanged) recalculateOptimisticGame(gameId);
       return;
     }
     if (command.kind === "shared" && gameById.has(gameId) && !gameById.get(gameId).sharedReceipts) { markUpgradeRequired(gameId); return; }

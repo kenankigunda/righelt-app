@@ -14,22 +14,25 @@ import {
 
 import {readProjectedGame} from '../support/computer-projection.mjs';
 
-const selectOnlyMoveUndo = async(page,gameId)=>{
+const selectOnlyMoveUndo = async(page,gameId,beforeUndoClick=null)=>{
   const moves=(await page.evaluate(readProjectedGame,{id:gameId,guest:true})).moves.filter(move=>!move.undone);
   expect(moves).toHaveLength(1);expect(moves[0].moveId).toBeTruthy();
   await switchGamePanel(page,'history');
   const row=page.locator(`[data-testid="history-move-item"][data-move-id="${moves[0].moveId}"]`);
   await row.locator(':scope > .history-move-hit').click();
   const undo=row.getByRole('button',{name:'Undo before this move',exact:true});
-  await expect(undo).toBeVisible();await undo.click();
-  return moves[0].moveId;
+  await expect(undo).toBeVisible();
+  await beforeUndoClick?.(moves[0]);
+  await undo.click();
+  return moves[0];
 };
 
-test("undo-last-move applies optimistically before the revert request response returns", async ({ browser }) => {
+test("self-play undo applies by the next paint before the revert response returns", async ({ browser }) => {
   const { context, page } = await createIsolatedPage(browser);
+  let release;
 
   try {
-    let delivered,release;const delivery=new Promise(resolve=>{delivered=resolve;});
+    let delivered;const delivery=new Promise(resolve=>{delivered=resolve;});
     const blocked=new Promise(resolve=>{release=resolve;});
     await page.route(/\/api\/shell\/games\/[^/]+\/(shared|revert-request)$/, async (route) => {
       if (!isOperationRequest(route.request(),"revert-request")) {
@@ -41,11 +44,32 @@ test("undo-last-move applies optimistically before the revert request response r
     });
 
     const {gameId}=await createGameFromHome(page);
+    let releaseSeats;const seatsBlocked=new Promise(resolve=>{releaseSeats=resolve;});
+    await page.route(/\/api\/shell\/games\/[^/]+\/play-as-both$/,async route=>{await seatsBlocked;await route.continue();});
+    const playBoth=page.locator('[data-action="play-as-both-players"]');
+    await playBoth.click();
+    await expect(playBoth).toHaveAttribute('aria-busy','true');
+    await expect(page.getByTestId('game-board-wrap')).toHaveAttribute('data-board-pending','');
+    releaseSeats();
+    await expect(page.locator('[data-action="play-as-both-players"]')).toHaveCount(0);
     await makeAnyLegalMove(page);
 
-    await selectOnlyMoveUndo(page,gameId);
+    const move=await selectOnlyMoveUndo(page,gameId,async selected=>page.evaluate(({moveId})=>{
+      const undo=document.querySelector(`[data-testid="history-move-item"][data-move-id="${CSS.escape(moveId)}"] [data-action="revert-to-move"]`);
+      window.__undoFirstPaint=new Promise(resolve=>undo.addEventListener('click',()=>requestAnimationFrame(()=>resolve({
+        undoApplied:/Latest: (Move undone|Undo applied)/.test(document.body.textContent),
+        undoAvailable:Boolean(document.querySelector('[data-action="undo-last-move"], [data-action="revert-to-move"]')),
+        boardPending:document.querySelector('[data-testid="game-board-wrap"]')?.hasAttribute('data-board-pending')??false,
+        approvalPending:/pending approval/i.test(document.body.textContent),
+      })),{once:true,capture:true}));
+    },{moveId:selected.moveId}));
+    const firstPaint=await page.evaluate(()=>window.__undoFirstPaint);
+    expect(firstPaint).toMatchObject({undoApplied:true,undoAvailable:false,boardPending:false,approvalPending:false});
 
-    await expect(page.getByText("Latest: Move undone")).toBeVisible({ timeout: 700 });
+    await expect(page.getByText(/Latest: (Move undone|Undo applied)/)).toBeVisible({ timeout: 700 });
+    await expect(page.getByTestId("game-board-wrap")).not.toHaveAttribute("data-board-pending", "true");
+    await expect(page.getByTestId("game-board-wrap")).not.toHaveAttribute("aria-busy", "true");
+    await expect(page.getByText(/pending approval/i)).toHaveCount(0);
 
     release();await delivery;
     await expect.poll(()=>page.evaluate(async gameId=>{const identity=localStorage.getItem("righelt.identity.id.v1");const body=await(await fetch(`/api/shell/games/${gameId}?identityId=${identity}`)).json();return body.game.moves.every(move=>move.undone);},gameId)).toBe(true);
@@ -53,6 +77,7 @@ test("undo-last-move applies optimistically before the revert request response r
     await expect(page.getByText(/Latest: (Move undone|Undo request accepted)/)).toBeVisible();
     await expect(page.locator('[data-action="revert-to-move"]')).toHaveCount(0);
   } finally {
+    release?.();
     await closeContextQuietly(context);
   }
 });
@@ -89,7 +114,7 @@ test("undo-last-move keeps the optimistic revert request id aligned when approva
       return isOperationRequest(request,"revert-request");
     });
 
-    const targetMoveId=await selectOnlyMoveUndo(owner.page,created.gameId);
+    const targetMoveId=(await selectOnlyMoveUndo(owner.page,created.gameId)).moveId;
 
     const rescindButton = owner.page.locator('[data-action="rescind-revert-request"]');
     await expect(rescindButton).toBeVisible({ timeout: 700 });

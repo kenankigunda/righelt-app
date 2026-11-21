@@ -879,11 +879,13 @@ const buildLocalGameView = ({
   };
 };
 
-const createCurrentTurnFromState = (game, stableState, createdAt, activeMoves) => {
+const createCurrentTurnFromState = (game, stableState, createdAt, activeMoves, movesByTurn = null) => {
   const turnIndex = stableState.turnIndex ?? 0;
   const existingTurns = Array.isArray(game.turns) ? game.turns : [];
   const existingTurn = existingTurns.find((turn) => turn?.index === turnIndex) ?? null;
-  const currentTurnMoves = activeMoves.filter((move) => move?.turnIndex === turnIndex);
+  const currentTurnMoves = movesByTurn
+    ? (movesByTurn.get(turnIndex) ?? [])
+    : activeMoves.filter((move) => move?.turnIndex === turnIndex);
   return {
     index: turnIndex,
     startedAt: existingTurn?.startedAt ?? currentTurnMoves[0]?.at ?? game.createdAt ?? createdAt,
@@ -895,13 +897,19 @@ const createCurrentTurnFromState = (game, stableState, createdAt, activeMoves) =
   };
 };
 
-const buildTurnsAfterRevert = (game, stableState, activeMoves, revertedAt) => {
-  const currentTurn = createCurrentTurnFromState(game, stableState, revertedAt, activeMoves);
+export const buildTurnsAfterRevert = (game, stableState, activeMoves, revertedAt) => {
+  const movesByTurn = new Map();
+  for (const move of activeMoves) {
+    const turnMoves = movesByTurn.get(move.turnIndex) ?? [];
+    turnMoves.push(move);
+    movesByTurn.set(move.turnIndex, turnMoves);
+  }
+  const currentTurn = createCurrentTurnFromState(game, stableState, revertedAt, activeMoves, movesByTurn);
   const existingTurns = Array.isArray(game.turns) ? game.turns : [];
   const priorTurns = existingTurns
     .filter((turn) => turn && typeof turn.index === "number" && turn.index < currentTurn.index)
     .map((turn) => {
-      const turnMoves = activeMoves.filter((move) => move?.turnIndex === turn.index);
+      const turnMoves = movesByTurn.get(turn.index) ?? [];
       return {
         ...clone(turn),
         moveIndexes: turnMoves.map((move) => move.index),
@@ -954,31 +962,24 @@ const buildOptimisticApprovedRevertGame = ({
 }) => {
   const pendingRevertRequest = game.pendingRevertRequest ?? game.myPendingRevertRequest ?? game.approvableRevertRequest ?? null;
   const targetMoveId = explicitTargetMoveId ?? pendingRevertRequest?.targetMoveId ?? null;
-  const targetMoveIndex =
-    typeof pendingRevertRequest?.targetMoveIndex === "number"
-      ? pendingRevertRequest.targetMoveIndex
-      : Array.isArray(game.moves)
-        ? game.moves.findIndex((move) => move?.moveId === targetMoveId)
-        : -1;
+  const targetMoveIndex = Array.isArray(game.moves)
+    ? game.moves.findIndex((move) => move?.moveId === targetMoveId)
+    : -1;
   const targetMove = targetMoveIndex >= 0 ? game.moves[targetMoveIndex] ?? null : null;
   if (targetMoveId && !targetMove?.selectionSnapshot && game.historyProjection === LIVE_HISTORY.snapshotValue) return game;
   if (!targetMoveId || !targetMove?.selectionSnapshot) {
     throw createOperationError("The undo target could not be resolved for local prediction.", "move_not_found");
   }
   const revertedAt = new Date().toISOString();
-  const moves = Array.isArray(game.moves)
-    ? game.moves.map((move, index) =>
-        index >= targetMoveIndex && move.undone !== true
-          ? {
-              ...clone(move),
-              undone: true,
-              undoneAt: revertedAt,
-              undoneByIdentityId: requesterIdentityId,
-              pendingUndoRequestId: requestId,
-            }
-          : clone(move),
-      )
-    : [];
+  const nextGame = clone(game);
+  const moves = Array.isArray(nextGame.moves) ? nextGame.moves : [];
+  for (let index = targetMoveIndex; index < moves.length; index += 1) {
+    if (moves[index].undone === true) continue;
+    moves[index].undone = true;
+    moves[index].undoneAt = revertedAt;
+    moves[index].undoneByIdentityId = requesterIdentityId;
+    moves[index].pendingUndoRequestId = requestId;
+  }
   const activeMoves = moves.filter((move) => move?.undone !== true);
   const stableState = resolveToStability(clone(targetMove.selectionSnapshot), { artifactMode: "full" });
   const currentTurn = createCurrentTurnFromState(game, stableState, revertedAt, activeMoves);
@@ -992,7 +993,7 @@ const buildOptimisticApprovedRevertGame = ({
   const legalActions = listLegalActions(stableState);
 
   return {
-    ...clone(game),
+    ...nextGame,
     moves,
     pendingRevertRequest: null,
     myPendingRevertRequest: null,
@@ -1001,7 +1002,7 @@ const buildOptimisticApprovedRevertGame = ({
     inHistoryMode: false,
     currentSnapshot: clone(stableState),
     board: {
-      ...(game.board ? clone(game.board) : {}),
+      ...(nextGame.board ?? {}),
       state: clone(stableState),
     },
     currentTurn,

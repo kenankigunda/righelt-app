@@ -42,6 +42,9 @@ listen(window,"keyup", event => {
 for (const type of ["pointerup", "pointercancel", "lostpointercapture"])
   listen(window,type, event => retireRenderPress(pointerPresses.get(pointerKey(event))?.owner), true);
 listen(window,"mouseup", event => retireRenderPress(mousePresses.get(mouseButton(event))), true);
+// Activation handlers may enqueue an optimistic render after pointer/key release.
+// Flush that render in a microtask so it is visible by the next browser paint.
+listen(window,"click", () => renderGesture.flushBeforePaint(), true);
 listen(window,"touchcancel", () => {
   for (const press of [...pointerPresses.values()]) if (press.kind === "touch") retireRenderPress(press.owner);
 }, true);

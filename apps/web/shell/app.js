@@ -145,6 +145,7 @@ import { createForegroundRecoveryWait } from './foreground-recovery.js';
 import { renderGameAlertCard } from "./game-alert.js";
 import { createNotificationStack, recoveryActivity } from "./notification-state.js";
 import {replaceMainPreservingHeader} from "./notification-dom.js";
+import { createGameActionFeedback } from "./game-action-feedback.js";
 import { assertGameBoardAdapter } from "../board-adapter-contract.js";
 import { createEngineBoardAdapter, createInitialBoardSnapshot, listBoardLegalActions } from "../board-adapters/engine-board-adapter.js";
 import { createMiniBoardPreview, syncMiniBoardPreviews } from "../board/mini-board-preview.js";
@@ -242,7 +243,19 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', () => foregroundRecoveryWait.reset());
 const updateRecoveryAnnouncement = (game) => {
   const failures = game ? [...new Set((transport.getFailedOperations?.(game.id) ?? []).map((operation) => operation.error?.message).filter(Boolean))] : [];
-  const text = game ? [presentedRecoveryMessage(game), game.historyNotice, ...failures].filter(Boolean).join(" ") : "";
+  const recovery = game ? presentedRecoveryMessage(game) : "";
+  const actionableRecovery = Boolean(game && needsRecoveryAction(game, Date.now(), recoveryPresentationOptions(game)));
+  const hasLocalConfirmation = Boolean(game && typeof gameActionFeedbackSnapshot !== "undefined"
+    && gameActionFeedbackSnapshot.operations.some(
+      operation => operation.gameId === game.id && operation.affectsBoard && operation.phase !== "waiting-visible-effect",
+    ));
+  const overdueConfirmation = game
+    && typeof gameActionFeedbackSnapshot !== "undefined"
+    && gameActionFeedbackSnapshot.overdueGameIds.has(game.id)
+    ? "Your board change is still being confirmed."
+    : "";
+  const primary = overdueConfirmation || (actionableRecovery || !hasLocalConfirmation ? recovery : "");
+  const text = game ? [primary, game.historyNotice, ...failures].filter(Boolean).join(" ") : "";
   if (syncAnnouncement.textContent !== text) syncAnnouncement.textContent = text;
 };
 const pendingUndoAdmissions = new Map();
@@ -447,8 +460,31 @@ const ignoredApprovalRequests = new Set();
 const ignoredRevertRequests = new Set();
 const expandedUndoneGroups = new Set();
 const expandedImportedHistory = new Set();
-const pendingButtonKeys = new Set();
 const pendingHomeSectionKeys = new Set();
+let gameActionFeedbackSnapshot = { ctaKeys: new Set(), boardGameIds: new Set(), overdueGameIds: new Set(), operations: [] };
+let lastFeedbackOverdueKey = "";
+const createFeedbackController = typeof createGameActionFeedback === "function"
+  ? createGameActionFeedback
+  : ({ onChange = () => {} } = {}) => ({
+      begin: () => null,
+      markVisible: () => false,
+      finish: () => false,
+      retire: () => {},
+      snapshot: () => ({ ctaKeys: new Set(), boardGameIds: new Set(), overdueGameIds: new Set(), operations: [] }),
+    });
+const gameActionFeedback = createFeedbackController({
+  onChange: (snapshot) => {
+    gameActionFeedbackSnapshot = snapshot;
+    syncGameActionFeedbackDom();
+    const overdueKey = [...snapshot.overdueGameIds].sort().join("|");
+    if (overdueKey !== lastFeedbackOverdueKey) {
+      lastFeedbackOverdueKey = overdueKey;
+      if (accountInitialized) queueMicrotask(() => render({ animatePanels: false, includeBoard: false }));
+    }
+  },
+});
+const confirmationFeedbackTokenByOperationId = new Map();
+const confirmationTimingByOperationId = new Map();
 let lastRenderedMarkup = "";
 let lastRenderedMainMarkup = "";
 let lastRenderedFlyoutMarkup = "";
@@ -539,11 +575,11 @@ const escapeHtml = (value) =>
 const getJoinButtonKey = (mode, gameId) => `join:${mode}:${gameId}`;
 const getPlayAsBothButtonKey = (gameId) => `play-as-both:${gameId}`;
 const getApproveRequestButtonKey = (gameId, requesterIdentityId) => `approve-request:${gameId}:${requesterIdentityId}`;
-const getCopyInviteButtonKey = (gameId) => `copy-invite:${gameId}`;
+const getCopyInviteButtonKey = (gameId, role = "viewer") => `copy-invite:${gameId}:${role || "viewer"}`;
 const SCENARIO_LOAD_PENDING_KEY = "scenario:load";
 const SCENARIO_UPDATE_PENDING_KEY = "scenario:update";
 const SCENARIO_SAVE_PENDING_KEY = "scenario:save";
-const isButtonPending = (key) => Boolean(key) && pendingButtonKeys.has(key);
+const isButtonPending = (key) => Boolean(key) && gameActionFeedbackSnapshot.ctaKeys.has(key);
 const isHomeSectionPending = (sectionKey) => Boolean(sectionKey) && pendingHomeSectionKeys.has(sectionKey);
 const renderButtonStateAttributes = ({ className = "", pendingKey = null, disabled = false } = {}) => {
   const classes = className
@@ -554,9 +590,11 @@ const renderButtonStateAttributes = ({ className = "", pendingKey = null, disabl
     classes.push("button-pending");
   }
   const classAttr = classes.length > 0 ? ` class="${classes.join(" ")}"` : "";
+  const feedbackKeyAttr = pendingKey ? ` data-feedback-key="${escapeHtml(pendingKey)}"` : "";
   const pendingAttr = isButtonPending(pendingKey) ? ' data-pending="true" aria-busy="true"' : "";
-  const disabledAttr = disabled || isButtonPending(pendingKey) ? " disabled" : "";
-  return `${classAttr}${pendingAttr}${disabledAttr}${pendingKey ? ` data-loading-key="${escapeHtml(pendingKey)}"` : ""}`;
+  const disabledAttr = disabled ? " disabled" : "";
+  const loadingKeyAttr = pendingKey ? ` data-loading-key="${escapeHtml(pendingKey)}"` : "";
+  return `${classAttr}${feedbackKeyAttr}${pendingAttr}${disabledAttr}${loadingKeyAttr}`;
 };
 const renderPendingStateAttributes = ({ className = "", pending = false, disabled = false } = {}) => {
   const classes = className
@@ -571,6 +609,54 @@ const renderPendingStateAttributes = ({ className = "", pending = false, disable
   const disabledAttr = disabled || pending ? " disabled" : "";
   return `${classAttr}${pendingAttr}${disabledAttr} data-loading-state="${pending ? "pending" : "idle"}"`;
 };
+
+const setDirectButtonPending = (element, pending, pendingLabel = "") => {
+  if (!(element instanceof HTMLElement)) return;
+  element.classList.toggle("button-pending", pending);
+  if (pending) {
+    element.setAttribute("data-pending", "true");
+    element.setAttribute("aria-busy", "true");
+    if (!element.hasAttribute("data-feedback-original-html")) element.setAttribute("data-feedback-original-html", element.innerHTML);
+    if (pendingLabel) element.textContent = pendingLabel;
+  } else {
+    element.removeAttribute("data-pending");
+    element.removeAttribute("aria-busy");
+    const originalHtml = element.getAttribute("data-feedback-original-html");
+    if (originalHtml !== null) {
+      element.innerHTML = originalHtml;
+      element.removeAttribute("data-feedback-original-html");
+    }
+  }
+};
+
+function syncGameActionFeedbackDom() {
+  if (!(appEl instanceof HTMLElement)) return;
+  appEl.querySelectorAll("[data-feedback-key]").forEach((element) => {
+    const pending = gameActionFeedbackSnapshot.ctaKeys.has(element.getAttribute("data-feedback-key"));
+    element.classList.toggle("button-pending", pending);
+    if (pending) {
+      element.setAttribute("data-pending", "true");
+      element.setAttribute("aria-busy", "true");
+    } else {
+      element.removeAttribute("data-pending");
+      element.removeAttribute("aria-busy");
+    }
+  });
+  const viewedGameId = currentRoute.name === "game"
+    ? currentRoute.gameId
+    : currentRoute.name === "invite"
+      ? resolvedInvite?.gameId ?? null
+      : null;
+  const boardWrap = appEl.querySelector("[data-testid='game-board-wrap']");
+  if (!(boardWrap instanceof HTMLElement)) return;
+  const pending = Boolean(viewedGameId && gameActionFeedbackSnapshot.boardGameIds.has(viewedGameId));
+  boardWrap.toggleAttribute("data-board-pending", pending);
+  if (pending) boardWrap.setAttribute("aria-busy", "true");
+  else boardWrap.removeAttribute("aria-busy");
+}
+if (typeof MutationObserver === "function") {
+  new MutationObserver(() => syncGameActionFeedbackDom()).observe(appEl, { childList: true, subtree: true });
+}
 
 const formatStatus = (connected) => renderConnectionStatusIcon(connected ? "connected" : "disconnected", connected ? "Connected" : "Disconnected");
 const getNextSeat = (seat) => (seat === "Player 1" ? "Player 2" : "Player 1");
@@ -1532,7 +1618,7 @@ const getFailedOperationsKey = (gameId) =>
     .map((operation) => `${operation.id}:${operation.status}`)
     .join("|");
 
-const getGameAlertItems = createGameAlertItems(()=>({transport,maybeUpdateUndoRequestOutcomeFeedback,presentedRecoveryMessage,needsRecoveryAction,recoveryPresentationOptions,issueDiagnostics,isDiagnosticOpen,dismissedRecoveryNotices,escapeHtml,recoveryActivity,activityActorSide,playbackRecoveryWait,viewingScope,liveBoardVisible,SYNC_TIMING,renderComputerProgress,computerSession,getActiveRevertRequest,getActivePendingRevertRequest,undoApprovalActorSide,undoRequestFeedback,undoRequestFeedbackGameId,boardContextScope,boardContexts,contextReplayEnabled}));
+const getGameAlertItems = createGameAlertItems(()=>({transport,maybeUpdateUndoRequestOutcomeFeedback,presentedRecoveryMessage,needsRecoveryAction,recoveryPresentationOptions,issueDiagnostics,isDiagnosticOpen,dismissedRecoveryNotices,escapeHtml,recoveryActivity,activityActorSide,playbackRecoveryWait,viewingScope,liveBoardVisible,SYNC_TIMING,renderComputerProgress,computerSession,getActiveRevertRequest,getActivePendingRevertRequest,undoApprovalActorSide,undoRequestFeedback,undoRequestFeedbackGameId,boardContextScope,boardContexts,contextReplayEnabled,gameActionFeedbackSnapshot}));
 
 const focusCurrentAlertStackCard = (gameId) => {
   if (!gameId) {
@@ -1582,7 +1668,7 @@ const renderHeader = () => `
     ${renderHeaderAlertZone()}
     ${account.snapshot().enabled && (account.snapshot().maintenance || !account.snapshot().available) ? '<p role="status">Play is temporarily paused. You can still browse and watch games.</p>' : ''}
     ${account.snapshot().pendingLogout ? '<span role="status">Sign-out pending</span>' : ''}
-    ${accountContinuationError || homeReadRecovery?.error ? `<div role="alert" data-testid="account-continuation-error"><p>We couldn’t finish loading. Please try again.</p><button class="secondary" data-action="${accountContinuation ? "retry-account-continuation" : "retry-home-read"}">Try again</button>${renderDiagnosticDisclosure(accountContinuationIncidentId)}</div>` : issueDiagnostics.list().filter(report => report.key === "account-continuation" && isDiagnosticOpen(report.id)).map(report => renderDiagnosticDisclosure(report.id)).join("")}
+    ${accountContinuationError || homeReadRecovery?.error ? `<div role="alert" data-testid="account-continuation-error"><p>We couldn’t finish loading. Please try again.</p><button data-action="${accountContinuation ? "retry-account-continuation" : "retry-home-read"}"${renderButtonStateAttributes({className:"secondary",pendingKey:accountContinuation ? "account:retry-continuation" : "account:retry-home-read"})}>Try again</button>${renderDiagnosticDisclosure(accountContinuationIncidentId)}</div>` : issueDiagnostics.list().filter(report => report.key === "account-continuation" && isDiagnosticOpen(report.id)).map(report => renderDiagnosticDisclosure(report.id)).join("")}
     <div class="shell-header-actions">
       <div class="nav-row${isNarrowHeaderMode() ? " nav-row-single" : ""}">
         ${soundToggle(gameSound.enabled())}
@@ -2110,7 +2196,6 @@ const renderGameSummaryPanel = (game) => {
 const renderJoinInvitePanel = (game, inviteLink) => {
   const joinPlayerButtonKey = getJoinButtonKey("player", game.id);
   const playAsBothButtonKey = getPlayAsBothButtonKey(game.id);
-  const copyInviteButtonKey = getCopyInviteButtonKey(game.id);
   // Pending approval is explained once in the blocking invitation surface.
   const pendingSeatNotice = "";
   const pendingRows =
@@ -2139,7 +2224,10 @@ const renderJoinInvitePanel = (game, inviteLink) => {
           pendingKey: joinPlayerButtonKey,
         })}>${icon("play")}Join as player</button>`
       : "",
-    ...invitationOptions(game).filter(option=>option.role!=="viewer" && !isCompletedGame(game)).map(option => `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-invite-role="${option.role}" ${option.role==='viewer'?'data-testid="copy-viewer-invite"':'data-testid="copy-invite"'}${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:copyInviteButtonKey,disabled:!game.canInvite})}>${icon('invite')}${option.label}</button>`),
+    ...invitationOptions(game).filter(option=>option.role!=="viewer" && !isCompletedGame(game)).map(option => {
+      const copyInviteButtonKey = getCopyInviteButtonKey(game.id, option.role);
+      return `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-invite-role="${option.role}" ${option.role==='viewer'?'data-testid="copy-viewer-invite"':'data-testid="copy-invite"'}${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:copyInviteButtonKey,disabled:!game.canInvite})}>${icon('invite')}${option.label}</button>`;
+    }),
     game.canPlayAsBothPlayers && !isCompletedGame(game)
       ? `<button data-action="play-as-both-players" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({
           className: "secondary",
@@ -2173,7 +2261,7 @@ const renderViewersSection = game => {
       className: "secondary",
       pendingKey: joinViewerButtonKey,
     })}>${icon('players')}Join as viewer</button>` : '',
-    ...invitationOptions(game).filter(option=>option.role==='viewer').map(option=>`<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-invite-role="viewer" data-testid="copy-viewer-invite"${renderButtonStateAttributes({className:'invite-action invite-viewer secondary',pendingKey:getCopyInviteButtonKey(game.id),disabled:!game.canInvite})}>${icon('invite')}${option.label}</button>`),
+    ...invitationOptions(game).filter(option=>option.role==='viewer').map(option=>{const key=getCopyInviteButtonKey(game.id,'viewer');return `<button data-action="copy-invite" data-game-id="${escapeHtml(game.id)}" data-invite-role="viewer" data-testid="copy-viewer-invite"${renderButtonStateAttributes({className:'invite-action invite-viewer secondary',pendingKey:key,disabled:!game.canInvite})}>${icon('invite')}${option.label}</button>`;}),
   ]);
   return renderViewersPanel(game,{
     identityId:transport.getIdentityId(),expanded:expandedViewerGames.has(game.id),icon,formatStatus,
@@ -2735,7 +2823,7 @@ const updateMountedGameShell = ({ game, inviteFromRole = null, inviteToken = nul
           target.focus({preventScroll:true});
           if(savedFocus.selection && target instanceof HTMLInputElement)target.setSelectionRange(...savedFocus.selection);
           panelPendingFocus.delete(joinEl);
-        }else if(!isButtonPending(getCopyInviteButtonKey(game.id)))panelPendingFocus.delete(joinEl);
+        }else if(!joinEl.querySelector('[data-pending="true"]'))panelPendingFocus.delete(joinEl);
       }
       if (animateJoin) animatePanelHeightChange(joinEl,oldHeight);
       else {
@@ -3360,8 +3448,18 @@ mountRenderGestureOwner({appEl,window,document,renderGesture});
 // Background shell updates must not interrupt an in-progress scenario draft.
 const captureScenarioDraftFocus = (baseRouteKey) => {
   const active = document.activeElement;
-  if (baseRouteKey !== lastRenderedBaseRouteKey ||
-      !(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)) return null;
+  if (baseRouteKey !== lastRenderedBaseRouteKey || !(active instanceof HTMLElement)) return null;
+  const action = active.getAttribute("data-action");
+  if (action === "save-scenario" || action === "update-scenario") {
+    return () => {
+      const replacement = appEl.querySelector(`[data-action="${action}"]`);
+      const successor = action === "save-scenario" && replacement?.disabled
+        ? appEl.querySelector('[data-action="update-scenario"]')
+        : replacement;
+      successor?.focus({ preventScroll: true });
+    };
+  }
+  if (!(active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)) return null;
   const field = active.getAttribute("data-scenario-save-field");
   if (field !== "title" && field !== "description") return null;
   const { selectionStart, selectionEnd, selectionDirection } = active;
@@ -3584,27 +3682,85 @@ const renderContent = ({ animatePanels, includeBoard }) => {
   }
 };
 
-const withPendingButton = async (pendingKey, fn, { renderStart = true, renderEnd = true } = {}) => {
-  if (!pendingKey || pendingButtonKeys.has(pendingKey)) {
+const withPendingButton = async (
+  pendingKey,
+  fn,
+  { trigger = null, pendingLabel = "", gameId = null, affectsBoard = false, renderEnd = true, rethrow = false } = {},
+) => {
+  if (!pendingKey || isButtonPending(pendingKey)) {
     return;
   }
   const pendingGeneration=account.snapshot().generation;
-  pendingButtonKeys.add(pendingKey);
-  if (renderStart) {
-    render({ animatePanels: false, includeBoard: false });
-  }
+  const token = gameActionFeedback.begin({ key: pendingKey, gameId, affectsBoard, generation: pendingGeneration });
+  setDirectButtonPending(trigger, true, pendingLabel);
   try {
     return await fn();
   } catch (error) {
     window.__righeltLastError = error instanceof Error ? error.message : String(error);
+    if (rethrow) throw error;
     return undefined;
   } finally {
-    if(pendingGeneration!==account.snapshot().generation)return;
-    pendingButtonKeys.delete(pendingKey);
-    if (renderEnd) {
+    gameActionFeedback.finish(token);
+    if (!isButtonPending(pendingKey)) setDirectButtonPending(trigger, false);
+    if (pendingGeneration === account.snapshot().generation && renderEnd) {
       render({ animatePanels: false, includeBoard: false });
     }
   }
+};
+
+const startBoardConfirmation = (operationId, gameId) => {
+  if (!operationId || !gameId) return null;
+  const existing = confirmationFeedbackTokenByOperationId.get(operationId);
+  if (existing) return existing;
+  const token = gameActionFeedback.begin({
+    id: `confirmation:${operationId}`,
+    gameId,
+    affectsBoard: true,
+    generation: account.snapshot().generation,
+  });
+  confirmationFeedbackTokenByOperationId.set(operationId, token);
+  gameActionFeedback.markVisible(token, { awaitingConfirmation: true });
+  return token;
+};
+
+const finishBoardConfirmation = (operationId) => {
+  const token = confirmationFeedbackTokenByOperationId.get(operationId);
+  if (!token) return;
+  confirmationFeedbackTokenByOperationId.delete(operationId);
+  gameActionFeedback.finish(token);
+  const timing = confirmationTimingByOperationId.get(operationId);
+  if (timing) {
+    timing.confirmationMs = performance.now() - timing.startedAt;
+    liveSyncMetricCounts.lastGameActionTiming = { ...timing };
+    if (Number.isFinite(timing.firstEffectPaintMs)) confirmationTimingByOperationId.delete(operationId);
+  }
+};
+
+const trackImmediateBoardConfirmation = (handle, { gameId, id = null, startedAt = null, path = "board_action" } = {}) => {
+  if (!handle?.committed || !gameId) return handle;
+  const operationId = id || handle.id || `board-confirmation:${gameId}:${Date.now()}`;
+  startBoardConfirmation(operationId, gameId);
+  if (Number.isFinite(startedAt)) {
+    const timing = {
+      path,
+      historyLength: Number(handle.result?.moves?.length ?? 0),
+      startedAt,
+      predictionMs: performance.now() - startedAt,
+    };
+    confirmationTimingByOperationId.set(operationId, timing);
+    requestAnimationFrame(() => {
+      const trackedTiming = confirmationTimingByOperationId.get(operationId);
+      if (!trackedTiming) return;
+      trackedTiming.firstEffectPaintMs = performance.now() - startedAt;
+      liveSyncMetricCounts.lastGameActionTiming = { ...trackedTiming };
+      if (Number.isFinite(trackedTiming.confirmationMs)) confirmationTimingByOperationId.delete(operationId);
+    });
+  }
+  Promise.resolve(handle.committed).then(
+    () => finishBoardConfirmation(operationId),
+    () => finishBoardConfirmation(operationId),
+  );
+  return handle;
 };
 
 const routeReadKey = hash => {
@@ -3987,7 +4143,7 @@ const renderHostInvite = game => renderInvitationSurface({host:true,background:r
   ${renderDismissButton({label:"Close invite",className:"invite-close",attributes:{"data-action":"close-invite"}})}
   <p class="small invite-gate-kicker">Your game is ready</p><h2 id="invite-surface-title">Invite a friend</h2>
   <p>Copy a link and send it their way.</p>
-  <div class="invite-choice-list">${invitationOptions(game).filter(option=>option.role!=="viewer").map(option=>`<button data-action="share-invite" data-invite-role="${option.role}" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:getCopyInviteButtonKey(game.id)})}>${icon('copy')}${option.label}</button>`).join('')}</div>
+  <div class="invite-choice-list">${invitationOptions(game).filter(option=>option.role!=="viewer").map(option=>`<button data-action="share-invite" data-invite-role="${option.role}" data-game-id="${escapeHtml(game.id)}"${renderButtonStateAttributes({className:`invite-action invite-${option.role}${option.role==='viewer'?' secondary':''}`,pendingKey:getCopyInviteButtonKey(game.id,option.role)})}>${icon('copy')}${option.label}</button>`).join('')}</div>
   ${renderInviteFeedback("invite-modal")}
   ${inviteFallback?.gameId===game.id?`<input class="invite-link-field" aria-label="Invitation link" value="${escapeHtml(inviteFallback.link)}" readonly>`:''}
 `});
@@ -4012,7 +4168,7 @@ const prepareOpponent = (owner, opponent, modelId=selectedComputerModel(owner)) 
   if (getComputerReadiness(owner).state !== 'unavailable' && !document.hidden) return preparation.start(owner,modelId);
 };
 const readinessForChoice = (owner, opponent, modelId=selectedComputerModel(owner)) => COMPUTER_PROFILES[opponent] ? getComputerReadiness(owner,modelId) : { state: 'ready', message: '' };
-const rematchDialog = createRematchDialog({createModal,getReadiness:(opponent,modelId)=>readinessForChoice('rematch',opponent,modelId),onOpponentChange:(opponent,modelId)=>prepareOpponent('rematch',opponent,modelId),onRetry:(opponent,modelId)=>prepareOpponent('rematch',opponent,modelId),onClose:()=>{preparation.cancel('rematch');resumePendingResult();},onStart:async({opponent,side,modelId},{isCurrent})=>{
+const rematchDialog = createRematchDialog({createModal,getReadiness:(opponent,modelId)=>readinessForChoice('rematch',opponent,modelId),onOpponentChange:(opponent,modelId)=>prepareOpponent('rematch',opponent,modelId),onRetry:(opponent,modelId)=>prepareOpponent('rematch',opponent,modelId),onClose:()=>{preparation.cancel('rematch');resumePendingResult();},runPending:(trigger,fn,options)=>withPendingButton("rematch:start",fn,{trigger,pendingLabel:"Starting…",gameId:activeResultGameId,renderEnd:false,...options}),onStart:async({opponent,side,modelId},{isCurrent})=>{
   if(!await waitForAccountGate() || !isCurrent())return;
   if(!account.canPlay())throw new Error('Sign in to start another game.');
   if(readinessForChoice('rematch',opponent,modelId).state!=='ready')throw new Error('Prepare your opponent first.');
@@ -4156,6 +4312,12 @@ const subscribeToTransport = () => transport.subscribe((change) => {
   queueMicrotask(() => { void computerSession?.tick(); void forcedFollowSession?.tick(); });
   if (['authoritative_update', 'history_mode_changed'].includes(change?.type) && change.gameId) gameSound.authoritative(transport.getAuthoritativeGame(change.gameId), { sequence: transport.getLastEventSeq(change.gameId), scope: viewingScope(), deferComputer:Boolean(transport.getGameViewModel(change.gameId)?.confirmedPlayback), unseen:!liveBoardVisible(), silent: !routeHydrated || currentRoute.name !== 'game' || currentRoute.gameId !== change.gameId });
   gameSound.local(change, transport.getGameViewModel(change?.gameId), {silent:currentRoute.name!=='game' || currentRoute.gameId!==change?.gameId || Boolean(transport.getGameViewModel(change?.gameId)?.inHistoryMode) || forcedFollowSession?.ownsEnqueue(change,transport.getGameViewModel(change?.gameId))});
+  if (change?.type === "optimistic_enqueue" && change.clientCommandId && change.gameId) {
+    startBoardConfirmation(change.clientCommandId, change.gameId);
+  }
+  if (change?.clientCommandId && ["authoritative_update", "optimistic_rollback", "optimistic_queue_cleared"].includes(change.type)) {
+    finishBoardConfirmation(change.clientCommandId);
+  }
   const visibleGameId = getCurrentViewedGameId();
   gameSound.viewing({gameId:visibleGameId,live:liveBoardVisible(),playbackFinished:!confirmedPlayback.snapshot().playing});
   const game = transport.getGameViewModel(visibleGameId);
@@ -4205,7 +4367,7 @@ function resetAccountTransport(next) {
   routeSyncRequestId++;
   destinationRecovery.reset();
   pendingRoutePosition = null;destinationRestoreFocus = false;
-  pendingButtonKeys.clear();pendingHomeSectionKeys.clear();inviteChoiceCommittedByGameId.clear();ignoredApprovalRequests.clear();ignoredRevertRequests.clear();
+  gameActionFeedback.retire({ generation: next.generation });confirmationFeedbackTokenByOperationId.clear();confirmationTimingByOperationId.clear();pendingHomeSectionKeys.clear();inviteChoiceCommittedByGameId.clear();ignoredApprovalRequests.clear();ignoredRevertRequests.clear();
   consumedInitialSelectionActionKeyByGameId.clear();
   transport.retire?.();
   destroyMountedBoardRuntime();
@@ -4284,6 +4446,10 @@ window.addEventListener("hashchange", event => {
   preparePanelTransition(previousRoute, enteringRoute);
   if(enteringRoute.name==='game'&&(previousRoute.name!=='game'||previousRoute.gameId!==enteringRoute.gameId))completedReviewEntryGeneration++;
   currentRoute = enteringRoute;
+  if (typeof gameActionFeedback !== "undefined") gameActionFeedback.retire({
+    generation: account.snapshot().generation,
+    gameId: currentRoute.name === "game" ? currentRoute.gameId : null,
+  });
   if(previousRoute.name !== 'game' && currentRoute.name === 'game' && !routeTransition && (previousRoute.name !== 'home' || prefersReducedMotion()))gameSound.play('enter');
   else if(previousRoute.name === 'game' && currentRoute.name !== 'game' && (currentRoute.name !== 'home' || prefersReducedMotion()))gameSound.play('leave');
   if(previousRoute.name === 'game' && currentRoute.name === 'home') {
@@ -4362,6 +4528,21 @@ const waitForAccountGate = async () => {
   const state = account.snapshot();
   return hash === window.location.hash && state.ready && !state.pendingLogout
     && (!awaitedLogout || !state.session.authenticated);
+};
+const waitForAccountGateWithFeedback = async (action, gameId, trigger) => {
+  let allowed = false;
+  const activeGame = gameId ? transport.getGameViewModel(gameId) : null;
+  const runPending = typeof withPendingButton === "function" ? withPendingButton : async (_key, work) => work();
+  await runPending(`account-gate:${action}:${gameId || "global"}`, async () => {
+    allowed = await waitForAccountGate();
+  }, {
+    trigger,
+    pendingLabel: "Checking account…",
+    gameId,
+    affectsBoard: action === "load-scenario" && Boolean(activeGame && activeGame.moves?.length === 0),
+    renderEnd: false,
+  });
+  return allowed;
 };
 const openBoardAccountGate = async source => {
   if (!await waitForAccountGate()) return;
@@ -4482,10 +4663,10 @@ appEl.addEventListener("click", async (event) => {
   if (action === "refresh-game") { window.location.reload(); return; }
   if (action === "reconnect-safely") { void transport.reconnectSafely(actionGameId).catch(() => {}); return; }
   if (action === "public-profile") { void inlineProfiles.open(actionEl.getAttribute("data-username"), actionEl); return; }
-  if (action === "retry-account-continuation") { void retryAccountContinuation(); return; }
-  if (action === "retry-home-read") { startRouteSync(); return; }
+  if (action === "retry-account-continuation") { void withPendingButton("account:retry-continuation",()=>retryAccountContinuation(),{trigger:actionEl,pendingLabel:"Retrying…"}); return; }
+  if (action === "retry-home-read") { void withPendingButton("account:retry-home-read",()=>startRouteSync(),{trigger:actionEl,pendingLabel:"Retrying…"}); return; }
   if (action === "retry-game-load") { startRouteSync(); return; }
-  if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void initialRender(); return; }
+  if (action === "retry-account-startup") { if (accountStartupError.includes("refresh")) window.location.reload(); else void withPendingButton("account:retry-startup",()=>initialRender(),{trigger:actionEl,pendingLabel:"Retrying…"}); return; }
   if (action === "account-open") {
     if (accountDialog.isOpen()) { void accountDialog.close(); return; }
     await closeUtilityFlyouts();
@@ -4500,7 +4681,7 @@ appEl.addEventListener("click", async (event) => {
   const accountGatedActions = new Set(["create-game","create-self-play","rematch","join-player","accept-invite-player","play-as-both-players","load-scenario","launch-history-branch","computer-watch","computer-control","debug-analyze","debug-save-note","computer-branch","debug-branch","debug-delete-note"]);
   if (accountGatedActions.has(action) && (!account.snapshot().ready || account.snapshot().pendingLogout)) {
     event.preventDefault();
-    if (!await waitForAccountGate()) return;
+    if (!await waitForAccountGateWithFeedback(action,actionGameId,actionEl)) return;
   }
   if (accountGatedActions.has(action) && !account.canPlay()) {
     event.preventDefault();
@@ -4658,7 +4839,10 @@ appEl.addEventListener("click", async (event) => {
   }
 
   if(action==='close-invite'){closeFriendInvite();return;}
-  if(action==='share-invite'){await withPendingButton(getCopyInviteButtonKey(actionEl.dataset.gameId),()=>copyGameInvitation(actionEl.dataset.gameId,actionEl.dataset.inviteRole,true));return;}
+  if(action==='share-invite'){
+    const gameId=actionEl.dataset.gameId,role=actionEl.dataset.inviteRole || 'viewer';
+    await withPendingButton(getCopyInviteButtonKey(gameId,role),()=>copyGameInvitation(gameId,role,true),{trigger:actionEl,pendingLabel:'Preparing link…',gameId});return;
+  }
   if (action === 'guest-profile') { void inlineProfiles.open(null,actionEl);return; }
   if(action==='retry-confirmed-playback'){confirmedPlayback?.retry();return;}
   if (action === 'toggle-sound') { const enabled=gameSound.toggle();gameSound.preparePaper(event);actionEl.innerHTML=icon(enabled?'sound':'muted');actionEl.setAttribute('aria-label',enabled?'Mute sound':'Enable sound');actionEl.setAttribute('aria-pressed',String(enabled));actionEl.title=`Sound ${enabled?'on':'off'}`;return; }
@@ -4702,7 +4886,12 @@ appEl.addEventListener("click", async (event) => {
     const requestId = actionEl.getAttribute("data-request-id");
     if (!gameId || !requestId) return;
     ignoredRevertRequests.delete(getRevertRequestKey(gameId, requestId));
-    transport.approveRevertRequest({ gameId, requestId });
+    if (typeof trackImmediateBoardConfirmation === "function") {
+      const startedAt = performance.now();
+      trackImmediateBoardConfirmation(transport.approveRevertRequest({ gameId, requestId }), { gameId, startedAt, path: "undo_approve" });
+    } else {
+      transport.approveRevertRequest({ gameId, requestId });
+    }
     return;
   }
 
@@ -4765,7 +4954,11 @@ appEl.addEventListener("click", async (event) => {
         }
         if (!undoScopeIsCurrent()) return false;
         undoToken.targetMoveId = targetMoveId;
+        const startedAt = typeof trackImmediateBoardConfirmation === "function" ? performance.now() : null;
         const handle = undoTransport.requestRevertToMove({ gameId, targetMoveId });
+        if (!handle?.result?.pendingRevertRequest && typeof trackImmediateBoardConfirmation === "function") {
+          trackImmediateBoardConfirmation(handle, { gameId, startedAt, path: "undo_request_auto_approve" });
+        }
         void handle.committed.then(() => { viewingIntent.commitUndo(gameId, undoToken); maybeReturnAfterUndo(gameId); }, () => viewingIntent.cancelUndo(gameId, undoToken));
         if (computerUndo) await handle.committed;
         return true;
@@ -4776,7 +4969,7 @@ appEl.addEventListener("click", async (event) => {
       try { reverted = computerUndo ? await computerSession.withMutation(revert, { completedUndo: isCompletedGame(game), undoAdmission }) : await revert(); }
       catch {
         viewingIntent.cancelUndo(gameId, undoToken);
-        if (undoScopeIsCurrent()) setUndoRequestFeedback(gameId, "Undo could not finish");
+        if (undoScopeIsCurrent() && typeof setUndoRequestFeedback === "function") setUndoRequestFeedback(gameId, "Undo could not finish");
         return;
       }
       if (!reverted) viewingIntent.cancelUndo(gameId, undoToken);
@@ -4820,7 +5013,7 @@ appEl.addEventListener("click", async (event) => {
       }
       await syncRouteDataAndLiveChannels();
       } catch(error) { joinFeedback.fail(joinAttempt);throw error; }
-    });
+    }, { trigger: actionEl, pendingLabel: "Joining...", gameId });
     return;
   }
 
@@ -4847,7 +5040,7 @@ appEl.addEventListener("click", async (event) => {
       }
       await syncRouteDataAndLiveChannels();
       } catch(error) { joinFeedback.fail(joinAttempt);throw error; }
-    });
+    }, { trigger: actionEl, pendingLabel: "Joining...", gameId, affectsBoard: true });
     return;
   }
 
@@ -4857,7 +5050,7 @@ appEl.addEventListener("click", async (event) => {
     void withPendingButton(getPlayAsBothButtonKey(gameId), async () => {
       await transport.playAsBothPlayers({ gameId });
       await syncRouteDataAndLiveChannels();
-    });
+    }, { trigger: actionEl, pendingLabel: "Claiming seats...", gameId, affectsBoard: true });
     return;
   }
 
@@ -4869,7 +5062,7 @@ appEl.addEventListener("click", async (event) => {
     void withPendingButton(getApproveRequestButtonKey(gameId, requester), async () => {
       await transport.approvePendingRequest({ gameId, requesterIdentityId: requester });
       await syncRouteDataAndLiveChannels();
-    });
+    }, { trigger: actionEl, pendingLabel: "Approving...", gameId, affectsBoard: true });
     return;
   }
 
@@ -4880,8 +5073,9 @@ appEl.addEventListener("click", async (event) => {
     }
     const invitationPanel = actionEl.closest('[data-game-panel="join"]');
     if (invitationPanel instanceof HTMLElement) panelPendingFocus.delete(invitationPanel);
-    pendingInvitationFocus.begin(actionEl, getCopyInviteButtonKey(gameId));
-    await withPendingButton(getCopyInviteButtonKey(gameId),()=>copyGameInvitation(gameId,actionEl.dataset.inviteRole || 'viewer'));
+    const role = actionEl.dataset.inviteRole || 'viewer';
+    pendingInvitationFocus.begin(actionEl, getCopyInviteButtonKey(gameId,role));
+    await withPendingButton(getCopyInviteButtonKey(gameId,role),()=>copyGameInvitation(gameId,role),{trigger:actionEl,pendingLabel:'Preparing link…',gameId});
 
     return;
   }
@@ -4889,8 +5083,10 @@ appEl.addEventListener("click", async (event) => {
   if (action === "retry-saving") {
     const gameId = actionEl.getAttribute("data-game-id");
     dismissedRecoveryNotices.delete(gameId);
-    await transport.retrySaving(gameId).catch(() => {});
-    render({ animatePanels: false, includeBoard: false });
+    const game = transport.getGameViewModel(gameId);
+    await withPendingButton(`retry-saving:${gameId}`,()=>transport.retrySaving(gameId),{
+      trigger:actionEl,pendingLabel:"Retrying…",gameId,affectsBoard:Boolean(game?.pendingCommandCount),renderEnd:true,
+    });
     return;
   }
   if (action === "dismiss-recovery-notice") {
@@ -5164,7 +5360,13 @@ appEl.addEventListener("click", async (event) => {
           window.__righeltLastError = error instanceof Error ? error.message : String(error);
         }
       },
-      { renderEnd: true },
+      {
+        trigger: actionEl,
+        pendingLabel: "Loading scenario…",
+        gameId: activeGameId,
+        affectsBoard: shouldApplyInPlace,
+        renderEnd: true,
+      },
     );
     return;
   }
@@ -5243,7 +5445,7 @@ appEl.addEventListener("click", async (event) => {
           }
           render({ animatePanels: false, includeBoard: false });
         },
-        { renderEnd: true },
+        { trigger: actionEl, pendingLabel: "Updating…", gameId: activeGame.id, renderEnd: false },
       );
       return;
     }
@@ -5282,7 +5484,7 @@ appEl.addEventListener("click", async (event) => {
         setSelectedScenarioFeedback("");
         render({ animatePanels: false, includeBoard: false });
       },
-      { renderEnd: true },
+      { trigger: actionEl, pendingLabel: "Saving…", gameId: activeGame.id, renderEnd: false },
     );
   }
 });

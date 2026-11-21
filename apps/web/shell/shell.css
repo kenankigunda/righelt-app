@@ -533,6 +533,59 @@ button.secondary:disabled {
   color: #8a8375;
 }
 
+@keyframes shell-button-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.58;
+  }
+}
+
+button.button-pending,
+.button-link.button-pending {
+  animation: shell-button-pulse 1.15s ease-in-out infinite;
+}
+
+@property --board-pending-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes shell-board-border-spin {
+  to {
+    --board-pending-angle: 360deg;
+  }
+}
+
+.board-wrap[data-board-pending] .board::after {
+  content: "";
+  position: absolute;
+  inset: -0.35rem;
+  z-index: 8;
+  padding: 3px;
+  border-radius: 0.55rem;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--board-pending-angle),
+    transparent 0 24%,
+    color-mix(in srgb, var(--player-p1) 72%, white) 34%,
+    color-mix(in srgb, var(--player-p2) 72%, white) 50%,
+    transparent 62% 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: shell-board-border-spin 1.1s linear infinite;
+}
+
 @keyframes pulse {
   0%,
   100% {
@@ -1387,6 +1440,19 @@ button.button-release-bounce,
   .history-return-live > .history-selection-pending { opacity: .68; }
   .history-turn:has(> .history-selection-pending) > .history-list-nested { border-left-color:color-mix(in srgb,currentColor 68%,transparent); }
   .history-turn.history-selection-pending > .history-list-nested { border-left-color:color-mix(in srgb,currentColor 68%,transparent); }
+
+  button.button-pending,
+  .button-link.button-pending {
+    animation: none;
+    outline: 2px solid color-mix(in srgb, currentColor 52%, transparent);
+    outline-offset: 2px;
+  }
+
+  .board-wrap[data-board-pending] .board::after {
+    animation: none;
+    background: color-mix(in srgb, var(--player-p1) 55%, var(--player-p2));
+  }
+
   .history-item[data-action].history-item-release {
     animation: none;
   }

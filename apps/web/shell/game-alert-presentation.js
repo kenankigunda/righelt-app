@@ -17,7 +17,7 @@ export const renderRecoveryActions=({game,dismissed,recoveryNeedsAction,escapeHt
 export function createGameAlertItems(getDependencies) {
  const recoveryPresentation=createRecoveryPresentation(getDependencies);
  return (game) => {
-  const {transport,maybeUpdateUndoRequestOutcomeFeedback,presentedRecoveryMessage,needsRecoveryAction,recoveryPresentationOptions,issueDiagnostics,isDiagnosticOpen,dismissedRecoveryNotices,escapeHtml,recoveryActivity,activityActorSide,playbackRecoveryWait,viewingScope,liveBoardVisible,SYNC_TIMING,renderComputerProgress,computerSession,getActiveRevertRequest,getActivePendingRevertRequest,undoApprovalActorSide,boardContextScope,boardContexts,contextReplayEnabled}=getDependencies();
+  const {transport,maybeUpdateUndoRequestOutcomeFeedback,presentedRecoveryMessage,needsRecoveryAction,recoveryPresentationOptions,issueDiagnostics,isDiagnosticOpen,dismissedRecoveryNotices,escapeHtml,recoveryActivity,activityActorSide,playbackRecoveryWait,viewingScope,liveBoardVisible,SYNC_TIMING,renderComputerProgress,computerSession,getActiveRevertRequest,getActivePendingRevertRequest,undoApprovalActorSide,boardContextScope,boardContexts,contextReplayEnabled,gameActionFeedbackSnapshot={operations:[],overdueGameIds:new Set()}}=getDependencies();
   const failedOperations = transport.getFailedOperations?.(game.id) ?? [];
   maybeUpdateUndoRequestOutcomeFeedback(game);
 
@@ -31,8 +31,18 @@ export function createGameAlertItems(getDependencies) {
     }),
   }));
 
-  const message = presentedRecoveryMessage(game);
   const recoveryNeedsAction = needsRecoveryAction(game, Date.now(), recoveryPresentationOptions(game));
+  const hasLocalConfirmation = gameActionFeedbackSnapshot.operations.some(
+    operation => operation.gameId === game.id && operation.affectsBoard && operation.phase !== "waiting-visible-effect",
+  );
+  const confirmationOverdue = gameActionFeedbackSnapshot.overdueGameIds.has(game.id);
+  const message = recoveryNeedsAction
+    ? presentedRecoveryMessage(game)
+    : confirmationOverdue
+      ? "Your board change is still being confirmed."
+      : hasLocalConfirmation
+        ? ""
+        : presentedRecoveryMessage(game);
   for (const report of issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.key.startsWith("operation:"))) if (!failedOperations.some(op => `operation:${op.id}` === report.key)) issueDiagnostics.resolve(report.key);
   const retained = issueDiagnostics.list().filter(r => r.initial.gameId === game.id && r.resolvedAt
     && !r.key.startsWith('recovery:') && isDiagnosticOpen(r.id));

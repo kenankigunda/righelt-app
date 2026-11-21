@@ -148,51 +148,6 @@ test("home game-card links trigger the branded game-entry transition before same
   assert.match(source, /startGameEntryRouteTransition\(gameId, "home"\);/);
 });
 
-test("revert actions bypass the blocking busy wrapper and use optimistic sync-store handles", () => {
-  assert.match(source, /if \(action === "accept-revert-request"\) \{[\s\S]*transport\.approveRevertRequest\(\{ gameId, requestId \}\);/s);
-  assert.match(source, /if \(action === "reject-revert-request"\) \{[\s\S]*transport\.rejectRevertRequest\(\{ gameId, requestId \}\);/s);
-  assert.match(source, /if \(action === "rescind-revert-request"\) \{[\s\S]*transport\.rescindRevertRequest\(\{ gameId, requestId \}\);/s);
-  assert.match(source, /if \(action === "revert-to-move" \|\| action === "undo-last-move"\) \{[\s\S]*undoTransport\.requestRevertToMove\(\{ gameId, targetMoveId \}\);/s);
-  assert.doesNotMatch(source, /if \(action === "accept-revert-request"\) \{[\s\S]*await transport\.approveRevertRequest/s);
-  assert.doesNotMatch(source, /if \(action === "revert-to-move" \|\| action === "undo-last-move"\) \{[\s\S]*await undoTransport\.requestRevertToMove/s);
-});
-
-test("join, approval, and pending invite copy use localized button pending instead of the global busy gate", () => {
-  assert.match(source, /const getJoinButtonKey = \(mode, gameId\) => `join:\$\{mode\}:\$\{gameId\}`;/);
-  assert.match(source, /const getApproveRequestButtonKey = \(gameId, requesterIdentityId\) => `approve-request:\$\{gameId\}:\$\{requesterIdentityId\}`;/);
-  assert.match(source, /const getCopyInviteButtonKey = \(gameId\) => `copy-invite:\$\{gameId\}`;/);
-  assert.match(source, /const withPendingButton = async \(pendingKey, fn, \{ renderStart = true, renderEnd = true \} = \{\}\) => \{/);
-  assert.match(source, /const renderButtonStateAttributes = \(\{ className = "", pendingKey = null, disabled = false \} = \{\}\) => \{/);
-  assert.match(source, /data-testid="join-viewer"[^`]*renderButtonStateAttributes\(\{\s*className: "secondary",\s*pendingKey: joinViewerButtonKey,/s);
-  assert.match(source, /data-testid="join-player"[^`]*renderButtonStateAttributes\(\{\s*pendingKey: joinPlayerButtonKey,/s);
-  assert.match(source, /data-testid="approve-request-inline"[^`]*renderButtonStateAttributes\(/s);
-  assert.match(source, /pendingKey:copyInviteButtonKey,disabled:!game.canInvite/);
-  assert.match(source, /if \(action === "join-viewer" \|\| action === "accept-invite-viewer"\) \{[\s\S]*withPendingButton\(getJoinButtonKey\("viewer", gameId\), async \(\) => \{/s);
-  assert.match(source, /if \(action === "join-player" \|\| action === "accept-invite-player"\) \{[\s\S]*withPendingButton\(getJoinButtonKey\("player", gameId\), async \(\) => \{/s);
-  assert.match(source, /if \(action === "approve-request" \|\| action === "accept-request"\) \{[\s\S]*withPendingButton\(getApproveRequestButtonKey\(gameId, requester\), async \(\) => \{/s);
-  assert.match(source, /withPendingButton\(getCopyInviteButtonKey\(gameId\),\(\)=>copyGameInvitation/);
-  assert.match(syncStoreSource, /getGameHandle: \(gameId\) => \{/);
-  assert.match(syncStoreSource, /operationManager\.getHandle\(`create:\$\{gameId\}`\)/);
-  assert.match(syncStoreSource, /operationManager\.getHandle\(`branch:\$\{gameId\}`\)/);
-  assert.doesNotMatch(source, /data-testid="join-viewer"[^`]*busy \? "disabled" : ""/s);
-  assert.doesNotMatch(source, /data-testid="join-player"[^`]*busy \? "disabled" : ""/s);
-  assert.doesNotMatch(source, /data-testid="invite-join-player"[^`]*busy \? "disabled" : ""/s);
-  assert.doesNotMatch(source, /data-testid="invite-join-viewer"[^`]*busy \? "disabled" : ""/s);
-  assert.doesNotMatch(source, /data-testid="copy-invite"[^`]*busy \? "disabled" : ""/s);
-});
-
-test("scenario actions use localized pending controls instead of ad hoc button locking", () => {
-  assert.match(source, /const SCENARIO_LOAD_PENDING_KEY = "scenario:load";/);
-  assert.match(source, /const SCENARIO_UPDATE_PENDING_KEY = "scenario:update";/);
-  assert.match(source, /const SCENARIO_SAVE_PENDING_KEY = "scenario:save";/);
-  assert.match(source, /data-action="load-scenario"[^`]*renderButtonStateAttributes\(\{\s*pendingKey: SCENARIO_LOAD_PENDING_KEY,/s);
-  assert.match(source, /data-action="update-scenario"[^`]*renderButtonStateAttributes\(\{\s*className: "secondary",\s*pendingKey: SCENARIO_UPDATE_PENDING_KEY,/s);
-  assert.match(source, /data-action="save-scenario"[^`]*renderButtonStateAttributes\(\{\s*className: "secondary",\s*pendingKey: SCENARIO_SAVE_PENDING_KEY,/s);
-  assert.match(source, /if \(action === "load-scenario"\) \{[\s\S]*await withPendingButton\(\s*SCENARIO_LOAD_PENDING_KEY,/s);
-  assert.match(source, /if \(action === "update-scenario" \|\| action === "save-scenario"\) \{[\s\S]*withPendingButton\(\s*SCENARIO_UPDATE_PENDING_KEY,/s);
-  assert.match(source, /if \(action === "update-scenario" \|\| action === "save-scenario"\) \{[\s\S]*withPendingButton\(\s*SCENARIO_SAVE_PENDING_KEY,/s);
-});
-
 test("home uses per-section pagination and renders the smoke section only in debug mode", () => {
   assert.match(source, /const isPlayerRole = \(role\) => role === "Player 1" \|\| role === "Player 2";/);
   assert.equal(HOME_SECTION_SERVER_PAGE_SIZE,4);

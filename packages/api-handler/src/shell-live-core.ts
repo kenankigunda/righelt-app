@@ -1240,7 +1240,7 @@ const defaultNotationForAction = (action: Action) => {
   return `${action.type.toUpperCase()} ${formatCoordinate(action.from)} -> ${formatCoordinate(action.to)}`;
 };
 
-const renumberHistory = (game: LiveGame, preservedMoves?: Set<MoveEntry>) => {
+const normalizeHistoryMoves = (game: LiveGame, preservedMoves?: Set<MoveEntry>) => {
   let activeMoveCounter = 0;
   game.moves.forEach((move, index) => {
     if (preservedMoves?.has(move)) return;
@@ -1258,6 +1258,10 @@ const renumberHistory = (game: LiveGame, preservedMoves?: Set<MoveEntry>) => {
       move.displayMoveNumber = activeMoveCounter;
     }
   });
+};
+
+const renumberHistory = (game: LiveGame) => {
+  normalizeHistoryMoves(game);
   game.turns.forEach((turn) => {
     turn.moveIndexes = game.moves
       .filter((move) => !isMoveUndone(move) && move.turnIndex === turn.index)
@@ -1368,7 +1372,7 @@ const restoreRecordedTarget = (game: LiveGame, targetMoveId: string, requesterId
   game.pendingRevertRequest = null;
   delete game.terminalOutcome;
   game.historyIndexByIdentity = {};
-  renumberHistory(game, previouslyUndone);
+  normalizeHistoryMoves(game, previouslyUndone);
   rebuildTurnsFromActiveMoves(game, game.board.state);
   game.lastMoveAt = getActiveMoves(game).at(-1)?.at ?? null;
   game.updatedAt = revertedAt;

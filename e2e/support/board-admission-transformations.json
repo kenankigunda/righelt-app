@@ -265,52 +265,52 @@
   },
   "/shell/live-transport.js": {
     "file": "apps/web/shell/live-transport.js",
-    "sourceSha256": "24eacd839f4ce97adce2fb1bebb5827cd2e74545ec8d01523d80efca1fbddd36",
-    "outputSha256": "92b5fe6f3f43ee9d8a32491646de6c929f043931607ab5a4438c3574e97b1534",
+    "sourceSha256": "c9adab7bc1b06ae94834b437a40429d055928adbdfab5caac571d8c1ec1ced37",
+    "outputSha256": "3543c648bcefe55ec63d64c1258f7d00cee127ef6873c54a0036b329a1f4a01c",
     "operations": [
       {
-        "start": 66747,
-        "end": 66747,
+        "start": 66951,
+        "end": 66951,
         "before": "",
         "after": "    boardAdmissionProbe(\"transport-send-entry\", () => ({retryAttempt,reconcileFirst}));\n",
         "anchor": "const sendNextPendingCommand = async (gameId, { retryAttempt = 0, reconcileFirst = false } = {}) => {\n    if (!active) return;",
         "anchorCount": 1
       },
       {
-        "start": 79453,
-        "end": 79453,
+        "start": 79739,
+        "end": 79739,
         "before": "",
         "after": "    boardAdmissionProbe(\"transport-enqueue\", () => ({ kind: command.kind, type: command.action?.type ?? null }));\n",
         "anchor": "const enqueueOptimisticCommand = async ({ gameId, command }) => {\n    const contextEpoch = rulesEpoch;",
         "anchorCount": 1
       },
       {
-        "start": 79619,
-        "end": 79619,
+        "start": 79905,
+        "end": 79905,
         "before": "",
         "after": "      boardAdmissionProbe(\"transport-admission-entry\");\n",
         "anchor": "const admission = optimistic.admission.catch(() => {}).then(async () => {\n      assertActive();\n      assertRulesContext(contextEpoch, gameId);",
         "anchorCount": 1
       },
       {
-        "start": 80035,
-        "end": 80171,
+        "start": 80321,
+        "end": 80457,
         "before": "      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) {\n",
         "after": "      if (boardAdmissionValue(\"transport-position-only\", current?.positionOnly === true) || (boardAdmissionValue(\"transport-computer\", command.computer) ? boardAdmissionValue(\"transport-shared-blocked\", current?.sharedMutationsBlocked) : boardAdmissionValue(\"transport-gameplay-blocked\", current?.gameplayMutationsBlocked))) {\n",
         "anchor": "k_in_progress'),{code:'playback_in_progress'});\n      if (current?.positionOnly === true || (command.computer ? current?.sharedMutationsBlocked : current?.gameplayMutationsBlocked)) {\n        reportRecoveryDiagnostic(gameId, 'admiss",
         "anchorCount": 1
       },
       {
-        "start": 84085,
-        "end": 84132,
+        "start": 84371,
+        "end": 84418,
         "before": "        if (!projection.ok) return projection;\n",
         "after": "        if (!boardAdmissionValue(\"transport-admission-projection-ok\", projection.ok)) return projection;\n",
         "anchor": "overing'), {code:'sync_recovering'});\n        }\n        if (!projection.ok) return projection;\n        if (latest !== base) projection = rebase",
         "anchorCount": 1
       },
       {
-        "start": 84219,
-        "end": 84273,
+        "start": 84505,
+        "end": 84559,
         "before": "        try { await commandJournal.admit(envelope); }\n",
         "after": "        try { boardAdmissionProbe(\"transport-before-journal\"); await commandJournal.admit(envelope); boardAdmissionProbe(\"transport-after-journal\"); }\n",
         "anchor": "on = rebaseProjectedMetadata(projection, latest);\n        try { await commandJournal.admit(envelope); }\n        catch (error) { optimistic.unsavedCommand ",
@@ -337,44 +337,44 @@
   },
   "/shell/app.js": {
     "file": "apps/web/shell/app.js",
-    "sourceSha256": "459e107eaab582bbc957eb870691f7cb40d79941a81b8efef752766d4a882cb2",
-    "outputSha256": "b1f59bf8f907cf8e623624a6fe05b445870dc09c9280d98c3132bf51c6f41f3a",
+    "sourceSha256": "28bd769ed849896e6d6ba772d99d45a0947d343596bc5022b17e75b2e6d5209e",
+    "outputSha256": "c041afb0faa20293840e7f5485d4c4c3d452f3be2a392cbdd0462fdd8c930872",
     "operations": [
       {
-        "start": 166429,
-        "end": 166429,
+        "start": 170798,
+        "end": 170798,
         "before": "",
         "after": "    boardAdmissionProbe(\"shell-runtime-replace\", () => ({hadRuntime:Boolean(boardRuntime)}), boardRuntime);\n",
         "anchor": "ountedBoardGameId !== game.id || !boardRuntime) {\n    if (boardRuntime) {\n      boardRuntime.destroy",
         "anchorCount": 1
       },
       {
-        "start": 182628,
-        "end": 182702,
+        "start": 187484,
+        "end": 187558,
         "before": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;\n",
         "after": "  if (boardAdmissionValue(\"shell-render-deferred\", renderGesture.defer({ animatePanels, includeBoard }))) return false;\n",
         "anchor": "  if (renderGesture.defer({ animatePanels, includeBoard })) return false;\n",
         "anchorCount": 1
       },
       {
-        "start": 246940,
-        "end": 247010,
+        "start": 255752,
+        "end": 255822,
         "before": "  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n",
         "after": "  if (boardAdmissionValue(\"shell-on-board\", event.target.closest?.(\"#shell-board\")) && boardAdmissionValue(\"shell-account-denied\", !account.canPlay())) {\n",
         "anchor": "\nappEl.addEventListener(\"pointerdown\", event => {\n  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n    event.preventDefault();event.stopImmediateProp",
         "anchorCount": 1
       },
       {
-        "start": 247205,
-        "end": 247275,
+        "start": 256017,
+        "end": 256087,
         "before": "  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n",
         "after": "  if (boardAdmissionValue(\"shell-on-board\", event.target.closest?.(\"#shell-board\")) && boardAdmissionValue(\"shell-account-denied\", !account.canPlay())) {\n",
         "anchor": "true);\nappEl.addEventListener(\"click\", event => {\n  if (event.target.closest?.(\"#shell-board\") && !account.canPlay()) {\n    event.preventDefault();event.stopImmediateProp",
         "anchorCount": 1
       },
       {
-        "start": 295447,
-        "end": 295447,
+        "start": 306180,
+        "end": 306180,
         "before": "",
         "after": "    boardAdmissionProbe(\"shell-release-bounce\", () => ({connected:Boolean(pressedControlEl.isConnected)}), pressedControlEl);\n",
         "anchor": "\n  if (pressedControlEl instanceof HTMLElement) {\n    playControlReleaseBounce(pressedControlEl);\n  ",
