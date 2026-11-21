@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {actualFixture} from './actual-spend-fixture.mjs';
 import {fixture} from './helpers.mjs';
-import {CLOUD_REPAIR as P,validateCloudRepairWindow} from '../cloud-repair-policy.mjs';
+import {CLOUD_REPAIR as P,CLOUD_LAUNCH as L,validateCloudRepairWindow} from '../cloud-repair-policy.mjs';
 import {cloudRepairAuthority,consumeCloudRepairCreate} from '../cloud-repair-episode.mjs';
 import {spendBinding,actualEnvelope} from '../actual-spend.mjs';
 import {validateManualIntent} from '../manual-authority.mjs';
@@ -10,33 +10,36 @@ import {canonical,encode,sha256,reserveCents} from '../policy.mjs';
 import {EXPLORATORY_PURPOSE} from '../exploratory-policy.mjs';
 const hash=value=>sha256(encode(canonical(value)));
 
-async function setup(){
- const f=await actualFixture();await f.core.reconcileActualSpend('pilot',f.ref);f.config.authorizedCents=10000;f.advance(P.repairStartedAt+60000-f.now());
+async function setup({launch=false}={}){
+ const f=await actualFixture();await f.core.reconcileActualSpend('pilot',f.ref);f.config.authorizedCents=10000;f.advance((launch?L.authorizedAt:P.repairStartedAt)+60000-f.now());
  const db=await f.core.load();db.exploratoryWindow={schema:1,authority:{id:'historical'},creates:[{campaignId:'old-create'}]};
  const oldWindow=structuredClone(db.exploratoryWindow),oldManual=structuredClone(db.manualProgram);
  const c=structuredClone(db.campaigns['actual-next']);c.manifest.id='repair-1';c.manifest.checkpointSha256=P.checkpointSha256;
  const trainingStop=f.now()+10*3600000,artifactDeadline=trainingStop+P.artifactAfterTrainingMs;
  c.manifest.exploratory={schema:2,episodeId:P.id,allocationStart:f.now(),trainingStop,artifactDeadline,
   maximumSameAllocationResumes:0,artifactAfterTrainingMs:P.artifactAfterTrainingMs,handoffAt:trainingStop-300000};
+ if(launch)Object.assign(c.manifest.exploratory,{launchAuthorityId:L.id,launchAuthorizedAt:L.authorizedAt,launchAdmissionDeadline:L.admissionDeadline,additionalRepairMs:0});
  c.manifestSha256=await hash(c.manifest);db.campaigns[c.manifest.id]=c;
- const r={schema:2,kind:'bounded-exploratory-training-window',id:P.id,preserveHistoricalAuthorities:true,
+ const r={schema:launch?3:2,kind:'bounded-exploratory-training-window',id:P.id,preserveHistoricalAuthorities:true,
   maximumCreates:3,maximumAllocationMs:P.maximumAllocationMs,artifactAfterTrainingMs:P.artifactAfterTrainingMs,
-  maximumSameAllocationResumes:0,repairStartedAt:P.repairStartedAt,admissionDeadline:P.repairDeadline,
+  maximumSameAllocationResumes:0,repairStartedAt:P.repairStartedAt,admissionDeadline:launch?L.admissionDeadline:P.repairDeadline,
   createdAt:f.now(),allocationStart:f.now(),trainingStop,artifactDeadline,liabilityUntil:artifactDeadline+7200000,
   accountId:'test-account',sourceRevision:c.manifest.sourceRevision,seed:c.manifest.seed,
   executionRecipeSha256:c.manifest.executionRecipeSha256,recipeSha256:c.manifest.recipeSha256,
   dataSha256:c.manifest.corpusSha256,reviewSha256:'a'.repeat(64),repairMaxCents:10000,lagContingencyCents:50,
   ledgerSha256:(await spendBinding(db)).ledgerSha256};
+ if(launch)Object.assign(r,{launchAuthorityId:L.id,launchAuthorizedAt:L.authorizedAt,repairDeadline:P.repairDeadline,additionalRepairMs:0});
  const intent={...f.intent,campaignId:c.manifest.id,manifestSha256:c.manifestSha256,exploratoryEpisode:P.id,
   createdAt:f.now(),expiresAt:f.now()+300000,runtimeWindowMs:P.maximumAllocationMs,
-  repairDeadline:P.repairDeadline,repairMaxCents:10000,liabilityUntil:r.liabilityUntil,
+  repairDeadline:launch?L.admissionDeadline:P.repairDeadline,repairMaxCents:10000,liabilityUntil:r.liabilityUntil,
   startup:{schema:1,kind:'confirmed-pod-startup',maximumMs:900000,deadline:f.now()+900000}};
+ if(launch)intent.exploratoryLaunch=L.id;
  intent.exploratoryWindow=await f.receipt(r,'c');
  return {...f,db,c,r,intent,oldWindow,oldManual};
 }
 
-async function manualRepairFixture(){
- const f=await setup(),{c,intent,r}=f,m=c.manifest,host=m.phases[0].host;
+async function manualRepairFixture(options){
+ const f=await setup(options),{c,intent,r}=f,m=c.manifest,host=m.phases[0].host;
  // Compose the admission boundary with synthetic, already-staged input records.
  // This does not claim cryptographic original-checkpoint staging or CUDA proof.
  m.purpose=EXPLORATORY_PURPOSE;m.deadline=r.artifactDeadline;m.maxCents=2000;m.cash.computeUsageCapCents=2000;
@@ -130,4 +133,38 @@ test('work is granted once durably and a new controller cannot reopen the same a
   await assert.rejects(f.controller().work('pilot',1),/no worker restart/);
  }
  assert.equal(f.providers.creates,1);
+});
+
+
+test('fresh launch composes prepare and attach without reopening expired repair or separate create pools',async()=>{
+ const f=await manualRepairFixture({launch:true}),before=await f.core.load();
+ validateManualIntent(f.intent);validateCloudRepairWindow(f.c.manifest.exploratory);
+ const prepared=await f.core.manualPrepare(f.c.manifest.id,f.intent),db=await f.core.load();
+ assert.equal(db.exploratoryEpisodes[P.id].creates.length,1);
+ assert.equal(db.exploratoryEpisodes[P.id].scheduleAuthorities[L.id].authority.additionalRepairMs,0);
+ assert.deepEqual(db.manualProgram,before.manualProgram);assert.deepEqual(db.campaigns.pilot,before.campaigns.pilot);
+ f.providers.resources.set('launch-pod',{id:'launch-pod',name:f.intent.name,host:f.c.manifest.phases[0].host});
+ await f.core.manualAttach(f.c.manifest.id,{intentSha256:prepared.intentSha256,podId:'launch-pod',acceptedAt:f.now(),accountId:f.intent.accountId});
+ assert.equal((await f.core.load()).campaigns[f.c.manifest.id].programAnchor.deadline,f.r.artifactDeadline);
+ for(const mutate of [g=>g.advance(L.admissionDeadline-g.now()),g=>{delete g.intent.exploratoryLaunch;},g=>{g.c.manifest.exploratory.additionalRepairMs=1;}]){
+  const g=await manualRepairFixture({launch:true});mutate(g);
+  if(g.c.manifest.exploratory.additionalRepairMs) {const d=await g.core.load();d.campaigns[g.c.manifest.id].manifest.exploratory.additionalRepairMs=1;await g.core.save(d);}
+  const unchanged=await g.core.load();await assert.rejects(g.core.manualPrepare(g.c.manifest.id,g.intent));assert.deepEqual(await g.core.load(),unchanged);
+ }
+});
+
+test('prospective schedule retains the prior episode authority and consumes only the remaining shared allowance',async()=>{
+ const f=await setup({launch:true}),oldAuthority={id:'retained-old-authority'},oldReference={sha256:'e'.repeat(64)};
+ const prior=structuredClone(f.c);prior.manifest.id='earlier-create';prior.attempts=[{endedAt:f.now()-1000,uncertain:false}];prior.cleanupVerified=true;f.db.campaigns[prior.manifest.id]=prior;
+ f.db.exploratoryEpisodes={[P.id]:{schema:2,authority:oldAuthority,reference:oldReference,creates:[{campaignId:prior.manifest.id}]}};
+ f.r.ledgerSha256=(await spendBinding(f.db)).ledgerSha256;f.intent.exploratoryWindow=await f.receipt(f.r,'c');
+ const w=await cloudRepairAuthority(f.core,f.db,f.c,f.intent);consumeCloudRepairCreate(f.core,f.db,f.c,f.intent,w,'d'.repeat(64));
+ const episode=f.db.exploratoryEpisodes[P.id];assert.equal(episode.creates.length,2);assert.deepEqual(episode.authority,oldAuthority);assert.deepEqual(episode.reference,oldReference);
+ Object.assign(f.c,{cleanupVerified:true,attempts:[{endedAt:f.now(),uncertain:false}]});
+ const next=structuredClone(f.c);next.manifest.id='last-create';next.manifestSha256=await hash(next.manifest);f.db.campaigns[next.manifest.id]=next;
+ const intent={...f.intent,campaignId:next.manifest.id,manifestSha256:next.manifestSha256};
+ consumeCloudRepairCreate(f.core,f.db,next,intent,await cloudRepairAuthority(f.core,f.db,next,intent),'d'.repeat(64));
+ const fourth=structuredClone(next);fourth.manifest.id='fourth-create';
+ await assert.rejects(cloudRepairAuthority(f.core,f.db,fourth,{...intent,campaignId:fourth.manifest.id}),/allowances consumed/);
+ assert.equal(episode.creates.length,3);assert.deepEqual(episode.authority,oldAuthority);
 });

@@ -143,6 +143,10 @@ def main():
     plan_path=directory/'plan.json'
     if plan_path.exists() and read(plan_path)!=plan:raise ValueError('cloud plan changed')
     atomic_json(plan_path,plan)
+    from .cloud_launch import is_prospective
+    if is_prospective(plan):
+        from .cloud_launch import qualify
+        qualify(directory,plan,gate_path)
     atomic_json(state_path,{**state,'status':'ready','preflightCompleted':True,'productiveWorkStarted':False})
     print(json.dumps(drive(plan,gate_path)))
 
