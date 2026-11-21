@@ -1,4 +1,5 @@
 """One immutable training recipe choice for each authorized initial allocation."""
+import json
 from pathlib import Path
 
 from .allocation import Allocation
@@ -6,6 +7,7 @@ from .continuation_policy import INITIAL_PHASES, FOLLOWUP_PHASE
 from .development_probe import checked_ref, reference
 from .exploration_receipt import validate_receipt
 from .sequence import immutable, read
+from .portable import read_bound
 from .training_recipe import recipe_binding, record_recipe, validate_recipe, validate_decision_recipe
 
 PROTOCOL = 'screen-selection-v1'
@@ -47,7 +49,9 @@ def publish(directory, receipt_path):
 
 
 def read_binding(binding):
-    value = read(checked_ref(binding))
+    if not isinstance(binding,dict) or not isinstance(binding.get('path'),str) or not Path(binding['path']).is_absolute():
+        raise ValueError('invalid evidence reference')
+    value = json.loads(read_bound(binding))
     if (value.get('schema') != 1 or value.get('kind') != PROTOCOL
             or Path(binding['path']) != Path(value['allocation']) / 'recipe-adoption.json'):
         raise ValueError('invalid recipe adoption identity')
