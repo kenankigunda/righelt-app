@@ -17,7 +17,7 @@ export const completedReviewTurnIndex = game => {
   return recorded.length?recorded.at(-1).index:null;
 };
 export const isCompletedWinningTurn = game =>
-  isCompletedGame(game) && Number.isSafeInteger(game?.historyTurnIndex) && game.historyTurnIndex === completedReviewTurnIndex(game);
+  isCompletedGame(game) && Number.isSafeInteger(game?.historyTurnIndex) && (game.historyTurnIndex === completedReviewTurnIndex(game) || game.historyTurnIndex === completedTurnIndex(game));
 
 export function createCompletedReviewOwner({getTransport,onError=()=>{}}) {
   let owner=null;
