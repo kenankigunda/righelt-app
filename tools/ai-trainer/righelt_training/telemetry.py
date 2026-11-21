@@ -54,6 +54,7 @@ class Telemetry:
         self.process=psutil.Process();self.processes={}
         self.device_memory_file=Path(device_memory_file) if device_memory_file else None
         self.runner_pid=runner_pid
+        self.memory_reader=None
         psutil.cpu_percent()
 
     def sample(self):
@@ -83,7 +84,22 @@ class Telemetry:
             result=subprocess.run(['/usr/sbin/sysctl','-n','kern.memorystatus_vm_pressure_level'],capture_output=True,text=True,timeout=2,check=True)
             pressure={'1':'normal','2':'warning','4':'critical'}.get(result.stdout.strip(),'unknown')
         except (OSError,subprocess.SubprocessError):pass
-        if sys.platform.startswith('linux'):
+        memory_diagnostics=None;available=psutil.virtual_memory().available;container_swap=None
+        if sys.platform.startswith('linux') and os.environ.get('RIGHELT_HOSTED_MEMORY_SCOPE'):
+            from .linux_memory import MemoryReader,SCOPE
+            if os.environ['RIGHELT_HOSTED_MEMORY_SCOPE']!=SCOPE:raise RuntimeError('unknown workload memory scope')
+            if self.memory_reader is None:self.memory_reader=MemoryReader()
+            try:memory_diagnostics=self.memory_reader.sample(available)
+            except (OSError,ValueError,KeyError,IndexError) as error:
+                from .checkpoint import atomic_json
+                directory=self.device_memory_file.parent if self.device_memory_file else self.artifacts
+                atomic_json(directory/'memory-telemetry-failure.json',{'schema':1,'reason':str(error),
+                    'observedAt':time.time(),'diagnostics':self.memory_reader.diagnostics})
+                raise RuntimeError('workload memory telemetry unavailable: '+str(error)) from error
+            pressure=memory_diagnostics['workloadPressure'];available=memory_diagnostics['effectiveAvailable']
+            container_swap=memory_diagnostics['swapCurrent']
+            memory_diagnostics.update(ownedCpuPercent=owned_cpu,ownedRssBytes=rss,ownedDeviceBytes=0)
+        elif sys.platform.startswith('linux'):
             # Available memory and swap-growth remain enforced by ResourcePolicy.
             # Linux has no Darwin pressure sysctl. PSI is an additional signal.
             try:
@@ -99,14 +115,17 @@ class Telemetry:
         if self.device_memory_file:
             amount,device_known=read_device_memory(self.device_memory_file,self.runner_pid)
             rss+=amount
+            if memory_diagnostics is not None:memory_diagnostics['ownedDeviceBytes']=amount
         size=artifact_bytes(self.artifacts)
+        if memory_diagnostics is not None:memory_diagnostics['deviceMemoryKnown']=device_known
         # Track allocated swap growth across runner restarts. On Darwin psutil's
         # sout can reflect general page-outs, so it is not a swap-growth signal.
         # Stable historical usage is not pressure; unavailable usage fails closed.
         try:
             swap_used=psutil.swap_memory().used
+            if container_swap is not None:swap_used=max(swap_used,container_swap)
         except (OSError,psutil.Error):
             swap_used=None
         return Sample(now,observed,active,max(0,psutil.cpu_percent()*psutil.cpu_count()-owned_cpu),pressure,rss,
-                      psutil.virtual_memory().available,psutil.disk_usage(self.artifacts).free,size,device_known,
-                      swap_used,ramp)
+                      available,psutil.disk_usage(self.artifacts).free,size,device_known,
+                      swap_used,ramp,memory_diagnostics)

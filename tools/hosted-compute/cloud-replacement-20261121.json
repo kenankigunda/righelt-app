@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "id": "cloud-replacement-20261121",
+  "episodeId": "cloud-repair-20261120",
+  "authorizedAt": 1795292502000,
+  "repairDeadline": 1795297902000,
+  "qualificationDeadline": 1795300602000,
+  "maximumQualificationMs": 2700000,
+  "additionalRepairMs": 0,
+  "maximumReplacementOrdinal": 2,
+  "maximumAdditionalCreates": 1,
+  "consumedCampaignId": "cloud-repair-20261120-p3",
+  "memoryScope": "cgroup-v2-v1",
+  "minimumNextJob": 355,
+  "consumptionEvidenceSha256": "c5d431430926ffde3653414ffe44d76b85d1c9a43a67bdd70fb09b0ad6a80e27",
+  "resourceInterruptionReasons": [
+    "resource-interrupted",
+    "resource-pressure-stop",
+    "telemetry-failed",
+    "invalid-telemetry",
+    "memory-pressure",
+    "swap-growth",
+    "disk-reserve",
+    "artifact-cap",
+    "device-memory-startup-timeout",
+    "operation-timeout"
+  ]
+}

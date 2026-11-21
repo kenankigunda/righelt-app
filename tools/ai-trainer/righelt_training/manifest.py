@@ -114,9 +114,9 @@ ADOPTION_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for n
 
 HOSTED_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for name in (
     'backup_closure','device','hosted_receipts','source_image','hosted_cleanup','hosted_snapshot','execution_recipe','hosted_canary',
-    'portable','cloud_launch','cloud_episode','exploratory_contract','exploratory_window','attention_method','attention_audit','export_runtime','policy_pool','runtime_probe','pilot_recipe','architecture','board_attention','sequence_targets','hosted_science',
+    'portable','linux_memory','consumption_transfer','cloud_launch','cloud_episode','exploratory_contract','exploratory_window','attention_method','attention_audit','export_runtime','policy_pool','runtime_probe','pilot_recipe','architecture','board_attention','sequence_targets','hosted_science',
     'prospective_durability','evaluation_start','development_assessment','comparison_report','evaluation','arena','search_parity')) + (
-    'tools/hosted-compute/cloud-repair-20261120.json','tools/hosted-compute/cloud-launch-20261121.json',
+    'tools/hosted-compute/cloud-repair-20261120.json','tools/hosted-compute/cloud-launch-20261121.json','tools/hosted-compute/cloud-replacement-20261121.json',
     'tools/ai-trainer/righelt_training/local-teaching-v2.json','tools/ai-trainer/righelt_training/followup-teaching-v1.json',
     'tools/ai-trainer/training-teaching.mjs','tools/ai-trainer/evaluation-protection.mjs','tools/ai-trainer/public-evaluation-profiles.mjs',
     'tools/ai-trainer/verify-teacher-exit.mjs','tools/ai-trainer/turn-certificate.mjs','tools/ai-trainer/evaluation-start.mjs',

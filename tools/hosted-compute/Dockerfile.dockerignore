@@ -41,6 +41,7 @@
 !tools/ai-benchmark/search-proof.mjs
 !tools/hosted-compute/
 !tools/hosted-compute/worker.mjs
+!tools/hosted-compute/resource-outcome.mjs
 !tools/hosted-compute/runtime.mjs
 !tools/hosted-compute/client.mjs
 !tools/hosted-compute/result.mjs
@@ -55,5 +56,6 @@
 !tools/hosted-compute/development-suite.mjs
 !tools/hosted-compute/development-suite-assessment.mjs
 !tools/hosted-compute/cloud-launch-20261121.json
+!tools/hosted-compute/cloud-replacement-20261121.json
 !tools/hosted-compute/Dockerfile
 !tools/hosted-compute/Dockerfile.dockerignore

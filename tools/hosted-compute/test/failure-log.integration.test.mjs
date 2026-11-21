@@ -40,3 +40,29 @@ test('a failed subprocess retains diagnostic logs before its host is deleted', a
   await f.protect(receipt);await f.core.clear('pilot',receipt);
   assert.equal((await f.state()).latestLog, null);
 });
+
+test('actual failed worker child carries a bound resource cause into controller finish',async t=>{
+ const {CLOUD_REPAIR}=await import('../cloud-repair-policy.mjs');
+ for(const valid of [true,false]){
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),'compute-resource-child-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
+  const f=await fixture();f.manifest.phases[0].device='cpu';
+  f.manifest.phases[0].argv=[process.execPath,'-e',`require('node:fs').writeFileSync('.ai-runs/pilot/run/driver-result.json',JSON.stringify({reason:'telemetry-failed',planSha256:'${(valid?'a':'b').repeat(64)}'}));process.exit(1)`];
+  await f.launch();
+  const db=await f.core.load();db.campaigns.pilot.manifest.exploratory={schema:2,episodeId:CLOUD_REPAIR.id,canonicalPlanSha256:'a'.repeat(64)};
+  db.campaigns.pilot.manifestSha256=await sha256(encode(canonical(db.campaigns.pilot.manifest)));await f.core.save(db);
+  await fs.writeFile(path.join(root,'.compute-source.json'),JSON.stringify({sourceRevision:f.manifest.sourceRevision,dependencySha256:f.manifest.dependencySha256}));
+  let finish;
+  const client={json:async(action,body)=>{
+   if(action==='work')return f.core.work('pilot',1);
+   if(action==='heartbeat')return f.core.heartbeat('pilot',1,body);
+   if(action==='progress')return f.core.progress('pilot',1,body);
+   if(action==='finish'){finish=body;return f.core.finish('pilot',1,body);}
+   throw Error('unexpected action');
+  },upload:async raw=>{const hash=await sha256(raw);return f.core.putObject('pilot',{name:hash,sha256:hash,bytes:raw.length},raw,1);},
+  download:async a=>new Uint8Array(await(await f.bucket.get(`pilot/${a.sha256}`)).arrayBuffer())};
+  const result=await runWorker({env:process.env,root,client,clock:f.now,cleanup:async()=>{}});
+  assert.equal(result.kind,valid?'resource-interrupted':'correctness');assert.equal(finish.kind,result.kind);
+  if(valid){assert.equal(finish.resourceReason,'telemetry-failed');assert.equal((await f.state()).resourceInterruption.reason,'telemetry-failed');}
+  assert.equal((await f.state()).nextStatus,'failed');assert.equal(f.providers.creates,1);
+ }
+});

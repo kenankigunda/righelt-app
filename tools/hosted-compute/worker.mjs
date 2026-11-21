@@ -1,4 +1,5 @@
-import {isCloudRepair} from './cloud-repair-policy.mjs';
+import {isCloudRepair,CLOUD_REPLACEMENT} from './cloud-repair-policy.mjs';
+import {resourceOutcome} from './resource-outcome.mjs';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { promises as fs, createWriteStream } from 'node:fs';
@@ -277,6 +278,15 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
     if(logFailure&&!failure)failure='correctness';
   }
   const outputs = {}, files = []; let reason;
+  if(manifest.exploratory&&exitCode!==0&&failure!=='infrastructure'){
+    try{
+      const result=JSON.parse(await fs.readFile(await containedFile(root,`${phase.runDir}/driver-result.json`)));
+      const outcome=resourceOutcome(manifest,result);
+      if(outcome){
+        failure=outcome.kind;reason=outcome.resourceReason;
+      }
+    }catch(error){if(error.code!=='ENOENT')throw error;}
+  }
   if(manifest.exploratory&&exitCode!==0){
     try{
       const markerPath=await containedFile(root,`${phase.runDir}/preflight-state.json`),marker=JSON.parse(await fs.readFile(markerPath));
@@ -328,7 +338,8 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
       }
     }
   } catch { /* Original failure classification survives a failed evidence upload. */ }
-  await client.json('finish', { kind: failure ?? (exitCode === 0 ? 'complete' : 'correctness'), outputs, files });
+  await client.json('finish', { kind: failure ?? (exitCode === 0 ? 'complete' : 'correctness'), outputs, files,
+    ...(failure==='resource-interrupted'?{resourceReason:reason}:{}) });
   return { exitCode, reason, kind: failure ?? (exitCode === 0 ? 'complete' : 'correctness') };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -22,6 +22,10 @@ def read(path):
 
 def configure(plan):
     from .config import ROOT
+    from .cloud_launch import REPLACEMENT
+    if plan.get('launchAuthorityId')==REPLACEMENT['id']:
+        os.environ['RIGHELT_HOSTED_MEMORY_SCOPE']=REPLACEMENT['memoryScope']
+    else:os.environ.pop('RIGHELT_HOSTED_MEMORY_SCOPE',None)
     closure=plan['portableClosure']
     os.environ['RIGHELT_TRAINING_DEVICE']=plan['nativeManifest']['executionBackend']
     os.environ.update(RIGHELT_RESOURCE_POLICY='adaptive-headroom-v2',
