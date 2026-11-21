@@ -13,7 +13,7 @@ import sys
 import time
 import uuid
 
-from .exploratory_contract import validate,digest,TRAINING_STOP,ARTIFACT_DEADLINE
+from .exploratory_contract import validate,digest
 
 
 def read(path):
@@ -57,6 +57,8 @@ def context(directory,plan,recipe):
 
 
 def verify(directory,plan):
+    training_stop=plan['trainingStopWall']
+    artifact_deadline=plan['artifactDeadlineWall']
     import math
     import numpy as np
     import torch
@@ -73,6 +75,10 @@ def verify(directory,plan):
     manifest=read(directory/'manifest.json')
     latest=read(directory/'latest.json');checkpoint=resolve_reference(latest['checkpoint'],expected_sha256=latest['sha256'])
     result=read(directory/'runner-result.json')
+    if plan['schema']==2:
+        from .cloud_episode import artifact_deadline as endpoint_deadline
+        artifact_deadline=endpoint_deadline(plan,result)
+    if time.time()>=artifact_deadline:raise TimeoutError('artifact deadline expired')
     if result.get('reason') not in ('budget-or-resource-stop','insufficient-generation-runway','validation-handoff'):
         raise ValueError('unplanned endpoint cannot qualify')
     model=model_from_record(manifest['manifest']).to(selected_device());optimizer=make_optimizer(model)
@@ -101,17 +107,19 @@ def verify(directory,plan):
     report={'schema':1,'kind':'exploratory-candidate','qualified':True,'lane':plan['lane'],
         'planSha256':digest(plan),'sourceRevision':plan['sourceRevision'],'checkpoint':latest,
         'modelSha256':hashlib.sha256(output.read_bytes()).hexdigest(),'modelBytes':output.stat().st_size,
-        'trainingStopWall':TRAINING_STOP,'artifactDeadlineWall':ARTIFACT_DEADLINE,
+        'trainingStopWall':training_stop,'artifactDeadlineWall':artifact_deadline,
+        **({'trainingStoppedAtMs':result['trainingStoppedAtMs']} if plan['schema']==2 else {}),
         'updates':data['updates']-initial['updates'],'parameterDelta':delta,'learning':proof,
         'availableFutureFactLabels':sum(sum(p.get('futureFacts',{}).get('mask',[])) for p in buffer.positions),
         'recoveryPassed':True,'numericParityPassed':True,'browserAcceptance':'pending',
         'strengthEstablished':False,'defaultPromotion':False,'observedAt':time.time()}
-    if time.time()>=ARTIFACT_DEADLINE:raise TimeoutError('artifact deadline expired')
+    if time.time()>=artifact_deadline:raise TimeoutError('artifact deadline expired')
     atomic_json(directory/'candidate-report.json',report)
     return report
 
 
 def drive(plan,gate):
+    training_stop=plan['trainingStopWall'];artifact_deadline=plan['artifactDeadlineWall']
     os.environ['RIGHELT_RESOURCE_POLICY']='adaptive-headroom-v2'
     from .config import ROOT
     from .checkpoint import atomic_json
@@ -145,9 +153,9 @@ def drive(plan,gate):
         else:manifest_hash=write_manifest(manifest_path,native)
         allocation=Allocation(directory.parent,directory)
         if not allocation.events():
-            if time.time()>=TRAINING_STOP-600:raise ValueError('no initial training runway')
+            if time.time()>=training_stop-600:raise ValueError('no initial training runway')
             append(allocation.path,{'event':'created','allocation':str(directory),'stage':'initial',
-                'seconds':ARTIFACT_DEADLINE-time.time(),'id':uuid.uuid4().hex,'observedAt':time.time(),
+                'seconds':artifact_deadline-time.time(),'id':uuid.uuid4().hex,'observedAt':time.time(),
                 'exploratoryPlanSha256':digest(plan),'authorization':plan['authorizationReference']})
         if allocation.accounting()[0].get('exploratoryPlanSha256')!=digest(plan):raise ValueError('allocation changed')
         allocation.recover_abandoned(cleanup_owned)
@@ -156,16 +164,17 @@ def drive(plan,gate):
         if sys.platform=='darwin':awake=subprocess.Popen(['/usr/bin/caffeinate','-is','-w',str(os.getpid())])
         install_stop_handlers()
         try:
-            if time.time()<TRAINING_STOP and not (directory/'runner-result.json').exists():
+            if time.time()<training_stop and not (directory/'runner-result.json').exists():
                 if (directory/'latest.json').exists():
                     from .exploratory_contract import consume_resume
                     prior=read(directory/'driver-result.json') if (directory/'driver-result.json').exists() else {}
                     consume_resume(directory,prior.get('reason'),time.time())
                 interval,_,_=allocation.begin('training')
-                now=time.monotonic();remaining=TRAINING_STOP-time.time()
+                now=time.monotonic();remaining=training_stop-time.time()
                 runtime={'schema':2,'seed':plan['seed'],'stage':'initial','manifestSha256':manifest_hash,
+                    **({'episodeId':plan['episodeId']} if plan['schema']==2 else {}),
                     'command':'training','startedMonotonic':now,'deadlineMonotonic':now+remaining,
-                    'deadlineWall':TRAINING_STOP,'reserveSeconds':min(300,remaining/4),
+                    'deadlineWall':training_stop,'reserveSeconds':min(300,remaining/4),
                     'allocationId':allocation.accounting()[0]['id'],'allocationInterval':interval['id'],
                     'supervisorPid':os.getpid(),'bootTime':psutil.boot_time(),'exploratoryPlanSha256':digest(plan)}
                 atomic_json(directory/'runtime.json',runtime);context(directory,plan,recipe)
@@ -176,14 +185,18 @@ def drive(plan,gate):
                     reason='unclassified-interruption'
                     with (directory/'runner.log').open('a') as log:
                         reason,_=run_phase(argv,{**os.environ,'PYTHONPATH':str(ROOT/'tools/ai-trainer')},log,
-                            Budget(now,remaining,TRAINING_STOP),runtime,directory,directory.parent,
+                            Budget(now,remaining,training_stop),runtime,directory,directory.parent,
                             plan.get('activityFile',str(directory/'absent-activity.json')))
                     if reason!='completed':raise RuntimeError('training stopped: '+reason)
                 finally:
                     atomic_json(directory/'driver-result.json',{'reason':reason,'observedAt':time.time(),
-                        'planSha256':digest(plan),'trainingStopWall':TRAINING_STOP})
+                        'planSha256':digest(plan),'trainingStopWall':training_stop})
                     cleanup_owned(directory);allocation.finish(interval['id'],reason='exploratory-training-ended')
             if not (directory/'runner-result.json').exists():raise ValueError('no complete endpoint')
+            if plan['schema']==2:
+                from .cloud_episode import artifact_deadline as endpoint_deadline
+                artifact_deadline=endpoint_deadline(plan,read(directory/'runner-result.json'))
+            if time.time()>=artifact_deadline:raise TimeoutError('artifact deadline expired')
             context(directory,plan,recipe)
             process=None
             try:
@@ -193,7 +206,7 @@ def drive(plan,gate):
                         env={**os.environ,'PYTHONPATH':str(ROOT/'tools/ai-trainer')},stdout=log,stderr=log)
                     register_owned(directory,process)
                     while process.poll() is None:
-                        if time.time()>=ARTIFACT_DEADLINE:raise TimeoutError('artifact deadline expired')
+                        if time.time()>=artifact_deadline:raise TimeoutError('artifact deadline expired')
                         time.sleep(.25)
                     if process.returncode:raise RuntimeError('candidate verification failed; inspect verification.log')
             finally:

@@ -1,3 +1,4 @@
+import {isCloudRepair,cloudRepairAuthority,consumeCloudRepairCreate} from './cloud-repair-episode.mjs';
 // One new authority, never an amendment of the historical manual program.
 import {POLICY,assert,canonical,encode,sha256,safeName} from './policy.mjs';
 import {readOperatorReceipt,sameReference} from './manual-authority.mjs';
@@ -7,6 +8,7 @@ import {TRAINING_STOP,ARTIFACT_DEADLINE,LIABILITY_END,EXPLORATORY_PURPOSE} from 
 const hex=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
 export async function exploratoryAuthority(core,db,c,intent){
  assert(intent.exploratoryWindow&&c.manifest.purpose===EXPLORATORY_PURPOSE&&db.actualSpendBasis&&intent.startup,'typed actual-funded exploratory window required');
+ if(isCloudRepair(c.manifest))return cloudRepairAuthority(core,db,c,intent);
  const r=await readOperatorReceipt(core.externalControl(c.manifest).store,intent.exploratoryWindow),now=core.now(),e=c.manifest.exploratory;
  assert(r.schema===1&&r.kind==='bounded-exploratory-training-window'&&r.id==='overnight-20261119'&&r.preserveHistoricalAuthorities===true&&r.maximumCreates===2,'exact new training window authority required');
  assert(r.trainingStop===TRAINING_STOP&&r.artifactDeadline===ARTIFACT_DEADLINE&&Number.isSafeInteger(r.liabilityUntil)&&r.liabilityUntil>=ARTIFACT_DEADLINE+7200000&&r.liabilityUntil<=LIABILITY_END,'exploratory absolute windows differ');
@@ -50,6 +52,7 @@ export async function exploratoryAuthority(core,db,c,intent){
   receiptSha256:intent.exploratoryWindow.sha256,admissionDeadline:r.admissionDeadline,executionDeadline:r.artifactDeadline}};
 }
 export function consumeExploratoryCreate(core,db,c,intent,window,intentSha256){
+ if(isCloudRepair(c.manifest))return consumeCloudRepairCreate(core,db,c,intent,window,intentSha256);
  db.exploratoryWindow??={schema:1,reference:structuredClone(window.reference),authority:structuredClone(window.authority),
   originalManualProgram:structuredClone(db.manualProgram??null),creates:[]};
  assert(!db.exploratoryWindow.creates.some(x=>x.campaignId===c.manifest.id)&&db.exploratoryWindow.creates.length<2,'exploratory dispatch allowance already consumed');

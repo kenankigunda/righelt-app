@@ -1,3 +1,4 @@
+import {isCloudRepair} from './cloud-repair-policy.mjs';
 import {programWindowBinding,amendProgramWindow} from './program-window.mjs';
 import { validateOperatorAttestation } from './operator-attestation.mjs';
 import { qualifyPilot } from './report.mjs';
@@ -167,6 +168,11 @@ export class Controller {
   async work(id, generation) {
     const db = await this.load(), c = this.campaign(db, id); this.fence(c, generation);
     await this.qualifyAttempt(db,c);
+    if(isCloudRepair(c.manifest)){
+      const attempt=c.attempts.at(-1);
+      assert(c.generation===1&&!attempt.recovery&&!c.snapshot&&!attempt.workGrantedAt,'new cloud episode permits no worker restart or same-allocation resume');
+      attempt.workGrantedAt=this.now();this.event(c,'cloud-repair-work-granted');await this.save(db);
+    }
     return { manifest: c.manifest, manifestSha256: c.manifestSha256, phaseIndex: c.phase, generation,
       phase: c.manifest.phases[c.phase], resume: c.attempts.at(-1)?.recovery === true, snapshot: c.snapshot ?? null, previousOutputs: c.outputs,sealedEndpoint:c.sealedEndpoint??null,knownObjects:Object.entries(c.objects).map(([sha256,record])=>({name:sha256,sha256,bytes:record.bytes})),
       leaseExpires: this.now() + POLICY.leaseMs,...(c.manifest.purpose===POLICY.publicTiming.purpose?{lifecycle:{acceptedAt:c.manual?.attached?.acceptedAt??null,startupVerifiedAt:c.manual?.startupSession?.verifiedAt??null,controllerWorkGrantedAt:this.now()}}:{}) };

@@ -1,3 +1,4 @@
+import {isCloudRepair,CLOUD_REPAIR} from './cloud-repair-policy.mjs';
 import {assert,canonical,encode,sha256} from './policy.mjs';
 import {TRAINING_STOP,ARTIFACT_DEADLINE,EXPLORATORY_PURPOSE} from './exploratory-policy.mjs';
 export const currentSealedEndpoint=c=>c.manifest.purpose===EXPLORATORY_PURPOSE&&c.sealedEndpoint?.generation===c.generation&&c.sealedEndpoint.phaseIndex===c.phase;
@@ -14,7 +15,10 @@ export async function verifyExploratoryResult(result,{manifest,phase,read,sealed
  const report=decode(artifacts.get('candidate-report').raw),numeric=decode(artifacts.get('numeric').raw),
   sidecar=decode(artifacts.get('recovery-sidecar').raw),metadata=decode(artifacts.get('checkpoint-metadata').raw),runner=decode(artifacts.get('runner-result').raw);
  assert(report.schema===1&&report.kind==='exploratory-candidate'&&report.qualified===true&&report.sourceRevision===manifest.sourceRevision&&report.planSha256===manifest.exploratory.canonicalPlanSha256,'candidate source/plan qualification differs');
- assert(report.trainingStopWall===TRAINING_STOP/1000&&report.artifactDeadlineWall===ARTIFACT_DEADLINE/1000&&report.observedAt*1000<ARTIFACT_DEADLINE&&report.strengthEstablished===false&&report.defaultPromotion===false,'candidate deadline or promotion scope differs');
+ const repair=isCloudRepair(manifest),trainingStop=repair?manifest.exploratory.trainingStop:TRAINING_STOP;
+ const artifactDeadline=repair?Math.min(manifest.exploratory.artifactDeadline,runner.trainingStoppedAtMs+CLOUD_REPAIR.artifactAfterTrainingMs):ARTIFACT_DEADLINE;
+ if(repair)assert(Number.isSafeInteger(runner.trainingStoppedAtMs)&&runner.trainingStoppedAtMs>=CLOUD_REPAIR.repairStartedAt&&runner.trainingStoppedAtMs<=trainingStop&&report.trainingStoppedAtMs===runner.trainingStoppedAtMs,'actual training stop binding missing');
+ assert(report.trainingStopWall===trainingStop/1000&&report.artifactDeadlineWall===artifactDeadline/1000&&report.observedAt*1000<artifactDeadline&&report.strengthEstablished===false&&report.defaultPromotion===false,'candidate deadline or promotion scope differs');
  assert(Number.isSafeInteger(report.updates)&&report.updates>0&&Number.isFinite(report.parameterDelta)&&report.parameterDelta>0&&report.learning?.freshExamplesUsed===true&&report.learning.freshPolicySamples>0&&report.learning.freshFiniteNonzeroUpdates>0,'no checkpoint-bound actual fresh-policy update');
  const cp=artifacts.get('checkpoint').record.sha256,model=artifacts.get('model').record.sha256;
  if(sealedEndpoint)assert(cp===sealedEndpoint.checkpointSha256&&artifacts.get('runner-result').record.sha256===sealedEndpoint.runnerResultSha256&&report.checkpoint?.updates===sealedEndpoint.updates,'completed candidate differs from sealed endpoint');
@@ -36,7 +40,7 @@ export async function verifyExploratoryResult(result,{manifest,phase,read,sealed
 
 export async function sealExploratoryEndpoint(core,id,generation,body){
  const db=await core.load(),c=core.campaign(db,id);core.fence(c,generation);
- assert(c.manifest.purpose===EXPLORATORY_PURPOSE&&c.snapshot?.generation===generation&&c.snapshot.phaseIndex===c.phase&&core.now()<ARTIFACT_DEADLINE,'current exploratory snapshot required');
+ assert(c.manifest.purpose===EXPLORATORY_PURPOSE&&c.snapshot?.generation===generation&&c.snapshot.phaseIndex===c.phase&&core.now()<(isCloudRepair(c.manifest)?c.manifest.exploratory.artifactDeadline:ARTIFACT_DEADLINE),'current exploratory snapshot required');
  if(c.sealedEndpoint){assert(c.sealedEndpoint.checkpointSha256===body.checkpointSha256&&c.sealedEndpoint.snapshotId===body.snapshotId,'endpoint already sealed');return c.sealedEndpoint;}
  assert(body.snapshotId===c.snapshot.id,'sealed snapshot identity differs');
  const phase=c.manifest.phases[c.phase];
@@ -48,7 +52,16 @@ export async function sealExploratoryEndpoint(core,id,generation,body){
  const latest=await load('latest.json'),report=await load('runner-result.json');
  assert(latest.value.sha256===body.checkpointSha256&&report.value.status==='stopped'&&report.value.state?.updates===latest.value.updates&&['validation-handoff','insufficient-generation-runway','budget-or-resource-stop'].includes(report.value.reason),'complete fixed endpoint required');
  assert(c.snapshot.files.some(a=>a.sha256===body.checkpointSha256&&a.path.endsWith('.pt')),'sealed checkpoint payload missing');
- c.sealedEndpoint={snapshotId:c.snapshot.id,checkpointSha256:body.checkpointSha256,latestSha256:latest.a.sha256,
+ let delivery={};
+ if(isCloudRepair(c.manifest)){
+  const stopped=report.value.trainingStoppedAtMs;
+  assert(Number.isSafeInteger(stopped)&&stopped>=c.manual.attached.acceptedAt&&stopped<=core.now()&&stopped<=c.manifest.exploratory.trainingStop,'actual sealed training stop differs');
+  const artifactDeadline=Math.min(c.manifest.exploratory.artifactDeadline,stopped+CLOUD_REPAIR.artifactAfterTrainingMs);
+  assert(core.now()<artifactDeadline,'actual-end artifact deadline expired');
+  c.phaseDeadline=Math.min(c.phaseDeadline??Infinity,artifactDeadline);c.manual.campaignDeadline=Math.min(c.manual.campaignDeadline,artifactDeadline);
+  delivery={trainingStoppedAt:stopped,artifactDeadline};
+ }
+ c.sealedEndpoint={...delivery,snapshotId:c.snapshot.id,checkpointSha256:body.checkpointSha256,latestSha256:latest.a.sha256,
   runnerResultSha256:report.a.sha256,updates:latest.value.updates,generation,phaseIndex:c.phase,sealedAt:core.now(),reason:report.value.reason};
  core.event(c,'exploratory-endpoint-sealed',{checkpointSha256:body.checkpointSha256});await core.save(db);return c.sealedEndpoint;
 }

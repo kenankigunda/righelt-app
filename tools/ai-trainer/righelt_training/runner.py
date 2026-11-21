@@ -694,12 +694,14 @@ class Runner:
             self.state['generationLaunched'] = 0
             self.state['generationStartedMonotonic'] = None
             self.checkpoint()
+        training_stopped_ms=int(time.time()*1000)
         if handoff:
             self.state['lastHandoffId']=handoff['id']
             self.event('checkpoint-handoff',reason=handoff['reason'],requestId=handoff['id'],deadlineMonotonic=self.deadline)
         self.checkpoint()
         atomic_json(self.directory / 'runner-result.json', {'schema': 1, 'state': self.state,
                     'status': 'stopped', 'elapsedSeconds': time.monotonic() - self.started,
+                    **({'trainingStoppedAtMs':training_stopped_ms} if self.manifest['manifest'].get('exploratoryWindow',{}).get('schema')==2 else {}),
                     'reason':f"{handoff['reason']}-handoff" if handoff else self.state.get('admissionStop','budget-or-resource-stop'),
                     'trainingHealthOnly': True, 'productionGatesPassed': False})
 

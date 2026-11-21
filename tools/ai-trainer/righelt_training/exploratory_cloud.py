@@ -46,6 +46,9 @@ def main():
         if source.get('checks',{}).get(name,{}).get('passed') is not True:raise ValueError('source proof missing')
         read_bound(source['checks'][name]['evidence'])
     directory=contained(ROOT,plan['runDir']);directory.mkdir(parents=True,exist_ok=True)
+    if plan['schema']==2:
+        from .cloud_episode import start_repair
+        start_repair(directory,plan,time.time())
     state_path=directory/'preflight-state.json'
     state={'schema':1,'kind':'cloud-preflight-disposition','campaignId':os.environ['COMPUTE_ID'],
         'generation':int(os.environ['COMPUTE_GENERATION']),'sourceRevision':plan['sourceRevision'],

@@ -1,3 +1,4 @@
+import {exploratoryWindowFor} from './cloud-repair-policy.mjs';
 import {assert,canonical,encode,sha256,reserveCents,POLICY} from './policy.mjs';
 import {readOperatorReceipt,operatorAttemptBinding} from './manual-authority.mjs';
 import {latchRefusalContradiction,allRefusals,needsOwnershipWatch} from './refusal-state.mjs';
@@ -17,6 +18,7 @@ export async function spendBinding(db){
     providerRefusalResolution:db.providerRefusalResolution??null,providerRefusalContradictions:db.providerRefusalContradictions??[],capacityRecoveryShort:db.capacityRecoveryShort??null,
     additionalProviderRefusalResolutions:db.additionalProviderRefusalResolutions??{},exploratoryWindow:db.exploratoryWindow??null,
     priorBasisSha256:db.actualSpendBasis?.receiptSha256??null};
+  if(db.exploratoryEpisodes)state.exploratoryEpisodes=db.exploratoryEpisodes;
   return {schema:1,kind:'actual-spend-binding',ledgerSha256:await hash(state),priorBasisSha256:state.priorBasisSha256,
     financialBasis:db.actualSpendBasis?'verified-account-observation':'legacy-reservations',observedDebitCents:db.actualSpendBasis?.observedDebitCents??null,
     creditAllocatedCents:state.creditAllocatedCents,pilotReservedCents:state.pilotReservedCents,observedActiveResourceCount:db.actualSpendBasis?.activeResources.length??null};
@@ -79,7 +81,7 @@ export async function reconcileActualSpend(core,id,reference){
   return {receiptSha256:reference.sha256,reconciled:true,observedDebitCents:balance.debitsCents};
 }
 
-export function actualEnvelope(core,db,c,intent,windowAuthority=db.exploratoryWindow?.authority){
+export function actualEnvelope(core,db,c,intent,windowAuthority=exploratoryWindowFor(db,c)?.authority){
   const basis=db.actualSpendBasis;
   assert(basis&&intent.actualSpendBasisSha256===basis.receiptSha256&&basis.priorCampaignId===intent.priorCampaignId&&basis.accountId===intent.accountId,'actual-spend admission basis differs');
   assert(intent.priorRiskReserveCents===0&&intent.repairMaxCents<=basis.authority.repairCeilingCents,'actual-spend repair authority differs');

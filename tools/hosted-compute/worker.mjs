@@ -1,3 +1,4 @@
+import {isCloudRepair} from './cloud-repair-policy.mjs';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { promises as fs, createWriteStream } from 'node:fs';
@@ -86,6 +87,7 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
   client ??= new Client({ url: env.COMPUTE_URL, id: env.COMPUTE_ID, token: env.COMPUTE_WORKER_TOKEN, generation: Number(env.COMPUTE_GENERATION) });
   const workerStartedAt=Date.now(),workFetchStarted=performance.now();
   const work = await client.json('work'), { manifest, phase } = work;
+  assert(!isCloudRepair(manifest)||!work.resume&&!work.snapshot,'new cloud episode cannot restore productive worker state');
   const timing={workerStartedAt,workFetchMs:performance.now()-workFetchStarted,...(work.lifecycle??{})};
   assert(await sha256(encode(canonical(manifest))) === work.manifestSha256, 'campaign manifest changed');
   const imageIdentity = JSON.parse(await fs.readFile(path.join(root, '.compute-source.json'), 'utf8'));
@@ -192,7 +194,8 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
     const { stdout } = await exec('tools/ai-trainer/.venv/bin/python', args, { cwd: root, env: { ...env, PYTHONPATH: 'tools/ai-trainer' }, timeout: 30000 });
     const snapshotRoot = JSON.parse(stdout).directory;
     const renew = snapshotLeaseRenewal(async () => {
-      lease = (await client.json('heartbeat', { restoredSnapshotId: work.snapshot?.id })).leaseExpires;
+      const beat=await client.json('heartbeat', { restoredSnapshotId: work.snapshot?.id });
+      lease=beat.leaseExpires;if(beat.phaseDeadline)ready.phaseDeadline=Math.min(ready.phaseDeadline,beat.phaseDeadline);
     }, clock);
     try {
       const extras=manifest.exploratory?await nativeParentLedgers(snapshotRoot,phase.runDir):[];
@@ -204,7 +207,8 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
         const endpoint=snapshot.files.find(f=>f.path===phase.runDir+'/runner-result.json');
         if(endpoint){
           const latest=JSON.parse(await fs.readFile(await containedFile(root,`${phase.runDir}/latest.json`)));
-          await client.json('seal-endpoint',{snapshotId:snapshot.id,checkpointSha256:latest.sha256});
+          const sealed=await client.json('seal-endpoint',{snapshotId:snapshot.id,checkpointSha256:latest.sha256});
+          if(sealed.artifactDeadline)ready.phaseDeadline=Math.min(ready.phaseDeadline,sealed.artifactDeadline);
           sealedSnapshot=snapshot;sealedCheckpointSha=latest.sha256;
         }
       }
@@ -233,7 +237,8 @@ export async function runWorker({ env = process.env, root = process.cwd(), clien
       await Promise.race([exited, delay]);
       if (done) break;
       try {
-        lease = (await client.json('heartbeat', { restoredSnapshotId: work.snapshot?.id })).leaseExpires;
+        const beat=await client.json('heartbeat', { restoredSnapshotId: work.snapshot?.id });
+        lease=beat.leaseExpires;if(beat.phaseDeadline)ready.phaseDeadline=Math.min(ready.phaseDeadline,beat.phaseDeadline);
         if(manifest.exploratory&&!sealedSnapshot){
           const eventsPath=await containedFile(root,`${phase.runDir}/resource-events.jsonl`);
           let resourceEvents=[];try{resourceEvents=(await fs.readFile(eventsPath,'utf8')).trim().split('\n').filter(Boolean).map(line=>JSON.parse(line)).filter(e=>e.event==='resource-compute-stopped');}catch(error){if(error.code!=='ENOENT')throw error;}

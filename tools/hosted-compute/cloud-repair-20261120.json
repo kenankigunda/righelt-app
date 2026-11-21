@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "id": "cloud-repair-20261120",
+  "repairStartedAt": 1795230840000,
+  "repairDeadline": 1795241640000,
+  "maximumCreates": 3,
+  "maximumAllocationMs": 43200000,
+  "artifactAfterTrainingMs": 7200000,
+  "maximumSameAllocationResumes": 0,
+  "maximumRepairCents": 10000,
+  "allInHourlyCeilingCents": 200,
+  "checkpointSha256": "fece7b0b299f3980e257c6c1f29e6f5e5162e32026d73875e78e6c38719c4e44"
+}
