@@ -70,7 +70,7 @@ for(const width of [390,1440])test(`Home separates completed games and names con
   expect(['p1_win','p2_win']).toContain(status);
   const expected=status==='p1_win'?'rgb(194, 69, 47)':'rgb(45, 103, 199)';
   const paint=await card(game.id).evaluate(link=>{
-   const strong=link.querySelector('.home-card-result > strong');
+   const strong=link.querySelector('.home-card-result strong');
    const detail=link.querySelector('.home-card-result > .small');
    const rail=getComputedStyle(link,'::before');
    return {winner:getComputedStyle(strong).color,card:getComputedStyle(link).color,detail:detail?getComputedStyle(detail).color:null,railContent:rail.content};
@@ -226,7 +226,7 @@ test('manual completed Retry learns an uncached off-page completion and repairs 
  await page.addInitScript(()=>{window.__RIGHELT_VERBOSE_CLIENT_LOGS=true;});
  await page.goto('/#/');
  const lastMove=homeGames.source.moves.at(-1);
- const {game:offPage}=await request(page,'/api/shell/history/branch',{sourceGameId:homeGames.source.id,sourceMoveIndex:homeGames.source.moves.length-1,creatorSide:'p1',selfPlayMode:true});
+ const {game:offPage}=await request(page,'/api/shell/history/branch',{sourceGameId:homeGames.source.id,sourceGameplayRevision:homeGames.source.gameplayRevision,sourceMoveIndex:homeGames.source.moves.length-1,creatorSide:'p1',selfPlayMode:true});
  expect(offPage.board.state.outcome.status).toBe('ongoing');
  for(let index=0;index<8;index++)await request(page,'/api/shell/games',{selfPlayMode:true});
  await page.goto('about:blank');await page.setViewportSize({width:1440,height:1100});

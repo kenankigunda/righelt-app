@@ -52,24 +52,24 @@ for(const width of [390,1440])test(`completed computer games stay read-only and 
   const body=value.postDataJSON();
   if(path.endsWith('/shared')&&body.payload?.operation==='computer-control'||path.endsWith('/decision-attempt')&&body.operation==='write'&&body.kind==='computer'||path.endsWith('/apply')&&body.payload?.computer)automatic.push({path,body});
  });
- await page.goto(`/#/game/${finished.id}`);await expect(page.getByTestId('game-board')).toBeVisible();await expect(page).toHaveTitle(`game-${finished.id.slice(5,11)} | Righelt`);
+ await page.goto(`/#/game/${finished.id}`);await expect(page.getByTestId('game-board')).toBeVisible();await expect(page).toHaveTitle(/^vs\. Horus \| [A-Z][a-z]{2} \d{1,2} [a-z]+(?: [a-z]+)* \| Righelt$/);
  await switchGamePanel(page,'players');
  const computer=page.getByRole('button',{name:'Horus, Blue, Computer player, Game finished',exact:true});await expect(computer).toBeVisible();await expect(computer).toHaveAccessibleName('Horus, Blue, Computer player, Game finished');
  const bot=computer.locator('.computer-status-badge > .righelt-icon');await expect(bot).toBeVisible();expect((await bot.boundingBox()).width).toBe(22);const mark=computer.locator('.computer-status-mark');await expect(mark).toBeVisible();expect((await mark.boundingBox()).width).toBe(15);await expect(computer.locator('[data-computer-activity]')).toHaveAttribute('data-computer-activity','finished');
  await expect(computer).not.toContainText('Computer');await computer.click();await expect(page.getByRole('button',{name:'Resume here',exact:true})).toHaveCount(0);
  await page.screenshot({path:info.outputPath('completed-computer-players.png')});
  await switchGamePanel(page,'history');const summary=page.getByTestId('history-result-summary');await expect(summary).toContainText('You won');await expect(summary).toContainText('Red');
- expect(await summary.evaluate(element=>Boolean(element.compareDocumentPosition(element.parentElement.querySelector('[data-testid="history-list"]'))&Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
- await page.getByRole('button',{name:'View result',exact:true}).click();await page.getByRole('button',{name:'Review game',exact:true}).click();await expect(summary).toBeVisible();
+ expect(await summary.evaluate(element=>Boolean(element.compareDocumentPosition(element.closest('[data-game-panel="history"]').querySelector('[data-testid="history-list"]'))&Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+ await expect(page.getByRole('button',{name:'View result',exact:true})).toHaveCount(1);await page.locator('[data-game-panel="history"]').getByRole('button',{name:'View result',exact:true}).click();await page.getByRole('button',{name:'Review game',exact:true}).click();await expect(summary).toBeVisible();
  await page.reload();await expect(summary).toBeVisible();await expect(summary).toContainText('You won');
  await page.screenshot({path:info.outputPath('completed-history-result.png')});
- await switchGamePanel(page,'board');await expect(page.locator('#shell-board-turn-indicator')).toHaveText(/^You won on Turn \d+$/);await expect(page.locator('#shell-board-preview-label')).toHaveText('Review the game in History');await expect(page.locator('[data-alert-stack-card].is-active [data-board-context] .board-context-content').filter({hasText:/^Game complete$/})).toHaveCount(0);await expect(page.locator('.board-message-activity')).toHaveAttribute('data-loading-state','idle');
+ await switchGamePanel(page,'board');await expect(page.locator('#shell-board-turn-indicator')).toHaveText(/^You won on Turn \d+$/);await expect(page.locator('[data-alert-stack-card].is-active [data-board-context] .board-context-content').filter({hasText:/^Game complete$/})).toHaveCount(0);await expect(page.locator('.board-message-activity')).toHaveAttribute('data-loading-state','idle');
  await expect(page.locator('#shell-board-preview-label [data-board-message-action="pass"],#shell-board-preview-label [data-board-preview-action="pass"],#shell-board-preview-label [data-board-preview-action="end-turn"]')).toHaveCount(0);
  const revision=finished.gameplayRevision;await page.waitForTimeout(COMPUTER_TIMING.renewAfterMs+250);
  const {game:after}=await request(page,`/api/shell/games/${finished.id}?identityId=${encodeURIComponent(identityId)}`);expect(after.gameplayRevision).toBe(revision);expect(automatic).toEqual([]);
  const {game:guests}=await request(page,'/api/shell/games',{selfPlayMode:true});await page.goto(`/#/game/${guests.id}`);await switchGamePanel(page,'players');
  for(const [index,color]of [[1,'Red'],[2,'Blue']]){
-  const row=page.getByTestId(`participant-player-${index}`);await expect(row.locator('.player-name')).toHaveText(`Guest ${index}`);await expect(row.getByRole('button')).toHaveAccessibleName(new RegExp(`Guest ${index}, you, ${color}`));
+  const row=page.getByTestId(`participant-player-${index}`);await expect(row.locator('.player-name')).toHaveText(`You · ${color}`);await expect(row.getByRole('button')).toHaveAccessibleName(new RegExp(`Guest ${index}, you, ${color}`));
  }
  await page.screenshot({path:info.outputPath('guest-player-identities.png')});
  await info.attach('completed-game-authority',{contentType:'application/json',body:JSON.stringify({gameId:finished.id,before:revision,after:after.gameplayRevision,automatic})});
