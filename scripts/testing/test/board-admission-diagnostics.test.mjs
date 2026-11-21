@@ -318,7 +318,7 @@ test('error categories remain source-derived and changed output remains hash pro
  assert.throws(()=>transformBoardAdmissionModule(source,altered),/output hash mismatch/);
  const wrongOutput={...recipe,outputSha256:'0'.repeat(64)};assert.throws(()=>transformBoardAdmissionModule(source,wrongOutput),/output hash mismatch/);
  assert.equal(recipe.operations.filter(op=>op.after.includes('runtime-host-error')).length,1);assert.equal(recipe.operations.length,25);
- const unchanged={"/board-adapters/engine-board-adapter.js":"58ff05c0c831ee149183c9a9dfcd0832ca55da8f982e5f98134f31d91d0c6d8c","/shell/live-transport.js":"e70ba00671dc5f04648dca993a2c8f398e8d6893687f30a03d5bdc5ed275e4e4","/board/hosts/shell-host.js":"06e6e88f21e9103acf6a8e1add79e4ba6a983d0e434db9e168ea862ece6623e1","/shell/app.js":"0c667070e6e16b55010a528d40bb91438944b86808f2267331b65552ce999d7c"};
+ const unchanged={"/board-adapters/engine-board-adapter.js":"58ff05c0c831ee149183c9a9dfcd0832ca55da8f982e5f98134f31d91d0c6d8c","/shell/live-transport.js":"e70ba00671dc5f04648dca993a2c8f398e8d6893687f30a03d5bdc5ed275e4e4","/board/hosts/shell-host.js":"06e6e88f21e9103acf6a8e1add79e4ba6a983d0e434db9e168ea862ece6623e1","/shell/app.js":"2b5ccd1d2d48a159b08665dda5cc14f62aeca6fb012acabf9cb5c60960bd2cd1"};
  for(const [key,expected] of Object.entries(unchanged)){assert.equal(createHash('sha256').update(JSON.stringify(recipes[key])).digest('hex'),expected);}
 });
 

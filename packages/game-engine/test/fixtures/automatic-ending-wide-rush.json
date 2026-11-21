@@ -1,0 +1,495 @@
+{
+  "description": "Anonymized broad optional rush regression. Red cuts Blue supply while its own commander survives. R4 permits immediate Red victory.",
+  "initialState": {
+    "boardSize": 10,
+    "sideToMove": "P1",
+    "turnIndex": 56,
+    "pieces": [
+      {
+        "id": "C1",
+        "owner": "P1",
+        "kind": "commander",
+        "position": {
+          "row": 4,
+          "col": 6
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "red-1",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 3,
+          "col": 7
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "red-2",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 6,
+          "col": 8
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "red-3",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 5,
+          "col": 5
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "red-4",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 8,
+          "col": 3
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "red-5",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 8,
+          "col": 6
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "red-6",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 9,
+          "col": 1
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "red-7",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 8,
+          "col": 1
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "red-8",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 6,
+          "col": 5
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "red-9",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 2,
+          "col": 8
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "red-10",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 1,
+          "col": 7
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "red-11",
+        "owner": "P1",
+        "kind": "unit",
+        "position": {
+          "row": 9,
+          "col": 2
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "C2",
+        "owner": "P2",
+        "kind": "commander",
+        "position": {
+          "row": 4,
+          "col": 4
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-13",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 5,
+          "col": 3
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-14",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 4,
+          "col": 0
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-15",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 5,
+          "col": 2
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-16",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 6,
+          "col": 0
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-17",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 8,
+          "col": 0
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-18",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 3,
+          "col": 6
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-19",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 2,
+          "col": 0
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-20",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 7,
+          "col": 3
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-21",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 7,
+          "col": 0
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-22",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 0,
+          "col": 7
+        },
+        "supplied": true,
+        "commanded": false,
+        "displaySupplied": true,
+        "displayCommanded": false,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-23",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 3,
+          "col": 8
+        },
+        "supplied": true,
+        "commanded": false,
+        "displaySupplied": true,
+        "displayCommanded": false,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-24",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 4,
+          "col": 5
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-25",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 2,
+          "col": 6
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-26",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 1,
+          "col": 8
+        },
+        "supplied": true,
+        "commanded": false,
+        "displaySupplied": true,
+        "displayCommanded": false,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-27",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 5,
+          "col": 0
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-28",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 7,
+          "col": 4
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-29",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 7,
+          "col": 2
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      },
+      {
+        "id": "blue-30",
+        "owner": "P2",
+        "kind": "unit",
+        "position": {
+          "row": 5,
+          "col": 4
+        },
+        "supplied": true,
+        "commanded": true,
+        "displaySupplied": true,
+        "displayCommanded": true,
+        "shifted": false,
+        "pushed": false
+      }
+    ],
+    "continuation": null,
+    "outcome": {
+      "status": "ongoing"
+    }
+  },
+  "decisiveAction": {
+    "type": "rush",
+    "actorId": "red-7",
+    "from": {
+      "row": 8,
+      "col": 1
+    },
+    "to": {
+      "row": 9,
+      "col": 0
+    }
+  },
+  "expectedOutcome": {
+    "status": "p1_win",
+    "reason": "p2_commander_unsupplied"
+  }
+}

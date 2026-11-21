@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createConfirmedResultOwner,confirmedResultKey,resumeAfterDialogFocusRestore} from '../shell/confirmed-result.js';
+import {createConfirmedResultOwner as createResultOwner,confirmedResultKey,resumeAfterDialogFocusRestore} from '../shell/confirmed-result.js';
 
-const game=(status='ongoing',revision=1,extra={})=>({id:'g',gameplayRevision:revision,board:{state:{outcome:{status,reason:status==='ongoing'?null:'p2_commander_unsupplied'}}},...extra});
+const createConfirmedResultOwner=()=>createResultOwner({getIdentityId:()=> 'me'});
+const game=(status='ongoing',revision=1,extra={})=>({id:'g',gameplayRevision:revision,board:{state:{outcome:{status,reason:status==='ongoing'?null:'p2_commander_unsupplied'}}},...extra,terminalOutcome:{...extra.terminalOutcome,decisive:{actorIdentityId:'me',actorKind:'human',...extra.terminalOutcome?.decisive}}});
 
 test('only an observed authoritative ongoing-to-terminal transition becomes eligible',()=>{
  const owner=createConfirmedResultOwner();
@@ -73,4 +74,39 @@ test('a later authoritative completion commit is eligible even when disconnected
 test('clearing the page/account scope retires late eligibility',()=>{
  const owner=createConfirmedResultOwner();owner.observe(game());owner.observe(game('draw',2));owner.clear();
  assert.deepEqual(owner.evaluate('g',{current:true}),{present:false,allowReview:false,notice:false});
+});
+
+for(const [name,author] of [['opponent',{actorIdentityId:'other',actorKind:'human'}],['computer',{actorIdentityId:'me',actorKind:'computer'}],['legacy',{}]]){
+ test(`${name} completion stays on the board with manual result entry`,()=>{
+  const owner=createConfirmedResultOwner();owner.observe(game());
+  const terminal=game('p1_win',2);terminal.terminalOutcome.decisive=author;
+  assert.equal(owner.observe(terminal).becameTerminal,true,'playback still sees terminal transition');
+  assert.deepEqual(owner.evaluate('g',{current:true}),{present:false,allowReview:true,notice:false});
+  assert.equal(owner.present('g'),true,'explicit View result stays available');
+ });
+}
+test('author identity rather than winner determines automatic entry',()=>{
+ for(const status of ['p1_win','p2_win','draw']){const owner=createConfirmedResultOwner();owner.observe(game());owner.observe(game(status,2));assert.equal(owner.evaluate('g',{current:true}).present,true);}
+});
+test('remote refinish retires a deferred own result and late attribution never reopens',()=>{
+ const owner=createConfirmedResultOwner();const committed=(n,who)=>game('p1_win',n,{terminalOutcome:{commit:{eventSeq:n,gameplayRevision:n,clientCommandId:`v2:${n}`},decisive:{actorIdentityId:who,actorKind:'human'}}});
+ owner.observe(game());owner.observe(committed(2,'me'));
+ assert.equal(owner.evaluate('g',{current:true,dialogOpen:true}).present,false);
+ owner.observe(committed(4,'other'));assert.equal(owner.evaluate('g',{current:true}).present,false);
+ owner.observe(committed(4,'me'));assert.equal(owner.evaluate('g',{current:true}).present,false);
+});
+test('identity change retires pending automatic entry even on the same game and commit',()=>{
+ let identity='me';const owner=createResultOwner({getIdentityId:()=>identity});owner.observe(game());const terminal=game('draw',2);owner.observe(terminal);
+ identity='other';owner.observe(terminal);assert.deepEqual(owner.evaluate('g',{current:true}),{present:false,allowReview:true,notice:false});
+ identity='me';owner.observe(terminal);assert.equal(owner.evaluate('g',{current:true}).present,false);
+});
+
+for(const author of [{actorIdentityId:'me',actorKind:'human'},{actorIdentityId:'other',actorKind:'human'},{actorIdentityId:'me',actorKind:'computer'}])test(`History preserves its selection and notifies for ${author.actorIdentityId}/${author.actorKind}`,()=>{
+ const owner=createConfirmedResultOwner();owner.observe(game());owner.deliberateHistory('g');
+ const terminal=game('p1_win',2);terminal.terminalOutcome.decisive=author;owner.observe(terminal);
+ assert.deepEqual(owner.evaluate('g',{current:true,inHistory:true}),{present:false,allowReview:false,notice:true});
+ owner.dismissNotice('g');assert.deepEqual(owner.evaluate('g',{current:true,inHistory:true}),{present:false,allowReview:false,notice:false});
+});
+test('cold completed hydration in History never announces a new finish',()=>{
+ const owner=createConfirmedResultOwner();owner.observe(game('p1_win',2));assert.deepEqual(owner.evaluate('g',{current:true,inHistory:true}),{present:false,allowReview:true,notice:false});
 });

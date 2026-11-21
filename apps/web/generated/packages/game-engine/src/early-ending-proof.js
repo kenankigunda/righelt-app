@@ -1,5 +1,6 @@
 import { probeTerminalSettlement } from './terminal-settlement.js';
-import { listLegalActions } from './legal.js';
+import { DecisionRuleCache, withDecisionRuleCache } from './decision-cache.js';
+import { listLegalActions, validateAction } from './legal.js';
 import { applyAction } from './apply.js';
 import { canCloseContinuationNow } from './continuation.js';
 import { serializeState } from './serialize.js';
@@ -9,14 +10,14 @@ const unknown = (reason) => ({ kind: 'unknown', reason });
 const prepend = (action, fact) => fact.kind === 'witness'
     ? { ...fact, witness: { ...fact.witness, actions: [structuredClone(action), ...fact.witness.actions.map(value => structuredClone(value))] } }
     : fact;
-/** Inactive same-sequence proof only. No incoming Pass rule or authoritative write. */
+/** Pure same-sequence proof. Only an authorized caller can commit its settlement. */
 export function proveRelevantContinuation(state, originalTurnOwner, options = {}) {
     if (originalTurnOwner !== 'P1' && originalTurnOwner !== 'P2')
         throw new TypeError('Invalid original turn owner');
     const cap = options.maxExpansions ?? MAX_ENGINE_OPERATION_EXPANSIONS;
     if (!Number.isSafeInteger(cap) || cap < 1 || cap > MAX_ENGINE_OPERATION_EXPANSIONS)
         throw new TypeError('Invalid early-ending expansion budget');
-    const counts = { visitedNodes: 0, cacheHits: 0 };
+    const counts = { visitedNodes: 0, cacheHits: 0, settlementCalls: 0 };
     if (state.outcome.status !== 'ongoing')
         return { ...counts, kind: 'unknown', reason: 'historical-completed' };
     if (!state.continuation)
@@ -24,6 +25,7 @@ export function proveRelevantContinuation(state, originalTurnOwner, options = {}
     const completed = new Map();
     const visiting = new Set();
     let candidateKey;
+    let rootSettlement;
     // The source of survival is the real settled shared outcome, never a frozen
     // or display flag from the protected ongoing frame. Reason text is irrelevant.
     const alive = (settled) => {
@@ -50,7 +52,9 @@ export function proveRelevantContinuation(state, originalTurnOwner, options = {}
         // state actually produced on an internal legal edge is a trusted endpoint.
         if (value.outcome.status !== 'ongoing')
             return structuredClone(value);
-        const result = probeTerminalSettlement(value, root ? options.push : undefined);
+        if (!root)
+            counts.settlementCalls++;
+        const result = root ? rootSettlement : probeTerminalSettlement(value);
         return result.kind === 'settled' ? result.frame.occupancy : undefined;
     };
     function visit(value, mode, initialCandidateKillsOriginalOwner, root = false) {
@@ -58,19 +62,19 @@ export function proveRelevantContinuation(state, originalTurnOwner, options = {}
         counts.visitedNodes++;
         if (!ownership(value))
             return unknown('original-owner-linkage');
-        const physical = settle(value, root);
-        if (!physical)
-            return unknown('unsupported-settlement-or-unlinked-push');
-        const key = JSON.stringify([serializeState(value), originalTurnOwner, mode, originalTurnOwner, initialCandidateKillsOriginalOwner]);
+        const key = JSON.stringify([serializeState(value), originalTurnOwner, mode, initialCandidateKillsOriginalOwner]);
         const cached = completed.get(key);
         if (cached) {
             counts.cacheHits++;
-            return structuredClone(cached);
+            return cached;
         }
         if (visiting.has(key))
             return unknown('path-cycle');
         visiting.add(key);
         try {
+            const physical = settle(value, root);
+            if (!physical)
+                return unknown('unsupported-settlement-or-unlinked-push');
             if (value.outcome.status !== 'ongoing' || !value.continuation) {
                 const changed = mode === 'required' && physical.outcome.status !== candidateKey;
                 const rescued = mode === 'self-rescue' && initialCandidateKillsOriginalOwner && alive(physical);
@@ -78,16 +82,21 @@ export function proveRelevantContinuation(state, originalTurnOwner, options = {}
                     ? { kind: 'witness', reason: changed ? 'outcome-change' : 'attacker-rescue',
                         witness: { actions: [], endpoint: structuredClone(physical), complete: true } }
                     : { kind: 'complete', endpoints: 1, optionalEndpoints: 0 };
-                completed.set(key, structuredClone(fact));
+                completed.set(key, fact);
                 return fact;
             }
-            // Always enumerate the complete current engine list, in its native order.
-            const actions = listLegalActions(value);
-            if (root)
-                counts.rootLegalActions = actions.map(action => structuredClone(action));
+            const closable = value.sideToMove === originalTurnOwner && canCloseContinuationNow(value);
+            // R4/R5: optional extensions matter only if the ORIGINAL attacker needs rescue.
+            // Still execute the real close and compare its settled endpoint. Required
+            // alternatives and root-losing/draw searches retain their native order.
+            const directClose = !initialCandidateKillsOriginalOwner && closable
+                && validateAction(value, { type: 'end_turn' }).ok;
+            const actions = directClose ? [{ type: 'end_turn' }] : listLegalActions(value);
+            if (root && options.rootLegalActions)
+                counts.rootLegalActions = directClose
+                    ? listLegalActions(value) : actions.map(action => structuredClone(action));
             if (actions.length === 0)
                 return unknown('empty-completion');
-            const closable = canCloseContinuationNow(value) && value.sideToMove === originalTurnOwner;
             let endpoints = 0, optionalEndpoints = 0, incomplete;
             for (const action of actions) {
                 const next = applyAction(value, action).state;
@@ -119,7 +128,7 @@ export function proveRelevantContinuation(state, originalTurnOwner, options = {}
             if (endpoints === 0)
                 return unknown('empty-completion');
             const fact = { kind: 'complete', endpoints, optionalEndpoints };
-            completed.set(key, structuredClone(fact)); // Unknown/interrupted facts never enter this local cache.
+            completed.set(key, fact); // Unknown/interrupted facts never enter this local cache.
             return fact;
         }
         finally {
@@ -127,11 +136,16 @@ export function proveRelevantContinuation(state, originalTurnOwner, options = {}
         }
     }
     try {
-        return boundedEngineOperation(() => {
+        return withDecisionRuleCache(options.cache === false ? undefined : new DecisionRuleCache(), () => boundedEngineOperation(() => {
             checkEngineComputation(true);
             if (!ownership(state))
                 return { ...counts, kind: 'unknown', reason: 'original-owner-linkage' };
-            const candidate = settle(state, true);
+            counts.settlementCalls++;
+            const admission = probeTerminalSettlement(state, options.push);
+            if (admission.kind !== 'settled')
+                return { ...counts, kind: 'unknown', reason: 'unsupported-settlement-or-unlinked-push' };
+            rootSettlement = admission;
+            const candidate = rootSettlement.frame.occupancy;
             if (!candidate)
                 return { ...counts, kind: 'unknown', reason: 'unsupported-settlement-or-unlinked-push' };
             if (candidate.outcome.status === 'ongoing')
@@ -143,9 +157,9 @@ export function proveRelevantContinuation(state, originalTurnOwner, options = {}
                 return { ...counts, kind: 'unknown', reason: fact.reason };
             if (fact.kind === 'witness')
                 return { ...counts, kind: 'continue', reason: fact.reason, witness: structuredClone(fact.witness) };
-            return { ...counts, kind: 'proven-terminal', candidateOutcome: structuredClone(candidate.outcome),
+            return { ...counts, kind: 'proven-terminal', candidateOutcome: structuredClone(candidate.outcome), settlement: rootSettlement,
                 endpointCount: fact.endpoints, optionalEndpointCount: fact.optionalEndpoints, complete: true };
-        }, cap);
+        }, cap));
     }
     catch (error) {
         if (error instanceof EngineComputationLimit)

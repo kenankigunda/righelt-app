@@ -104,8 +104,8 @@ test('transport confirmation stays quiet so the eligible result entry owns the c
 test('confirmed presentation sounds once on immediate or deferred entry and explicit replay sounds again',()=>{
  const notes=[];const node=()=>({connect(){},disconnect(){},frequency:{value:0},Q:{},gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},start(){},stop(){}});
  const audio={state:'running',currentTime:0,sampleRate:8000,destination:{},createBuffer:(_,n)=>({getChannelData:()=>new Float32Array(n)}),createBufferSource:node,createBiquadFilter:node,createGain:node,createOscillator:()=>{const value=node();value.start=()=>notes.push(value.frequency.value);return value;}};
- const sound=createGameSound({createAudio:()=>audio});sound.gesture();const presentation=createResultPresentation({onEnter:kind=>sound.play(kind)}),owner=createConfirmedResultOwner();
- const game=status=>({id:'g',player1:{identityId:'red'},player2:{identityId:'blue'},board:{state:{outcome:{status,reason:'p2_commander_unsupplied'}}}});
+ const sound=createGameSound({createAudio:()=>audio});sound.gesture();const presentation=createResultPresentation({onEnter:kind=>sound.play(kind)}),owner=createConfirmedResultOwner({getIdentityId:()=> "red"});
+ const game=status=>({id:'g',terminalOutcome:{decisive:{actorIdentityId:'red',actorKind:'human'}},player1:{identityId:'red'},player2:{identityId:'blue'},board:{state:{outcome:{status,reason:'p2_commander_unsupplied'}}}});
  owner.observe(game('ongoing'));owner.observe(game('p1_win'));
  assert.equal(owner.evaluate('g',{current:true,dialogOpen:true}).present,false);assert.deepEqual(notes,[]);
  const decision=owner.evaluate('g',{current:true,dialogOpen:false});assert.equal(decision.present,true);presentation.enter('g',{tone:'victory'});assert.deepEqual(notes,[560,700,840]);

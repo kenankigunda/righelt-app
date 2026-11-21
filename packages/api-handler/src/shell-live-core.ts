@@ -98,6 +98,8 @@ export type TerminalOutcomeRecord = {
   decisive: {
     action: Action;
     actorSide: "P1" | "P2";
+    actorIdentityId?: string;
+    actorKind?: "human" | "computer";
     decisionId: string | null;
     clientCommandId: string;
     turnIndex: number;
@@ -112,7 +114,7 @@ export type TerminalOutcomeRecord = {
   };
   cause:
     | { kind: "commander-settlement"; reason: string }
-    | { kind: "relevant-continuation-finality"; endpointCount: number; optionalEndpointCount: number }
+    | { kind: "relevant-continuation-finality" }
     | { kind: "incoming-turn-immobility"; incomingSide: "P1" | "P2" };
   commit: { eventSeq: number; gameplayRevision: number; clientCommandId: string };
   lineage: {
@@ -1404,6 +1406,8 @@ export const applyRevertToMove = (game: LiveGame, targetMoveId: string, requeste
   return restoreRecordedTarget(game, targetMoveId, requesterIdentityId, archivedTarget);
 };
 
+type TerminalAuthor = { actorIdentityId?: string; actorKind?: "human" | "computer" };
+
 type AcceptedGameplayResult = {
   move?: MoveEntry;
   destroyedPieces?: DestroyedPieceRecord[];
@@ -1445,12 +1449,13 @@ const freezeTerminalOutcome = (
   action: Action,
   result: AcceptedGameplayResult,
   cause: TerminalOutcomeRecord["cause"],
-  commit: { clientCommandId: string; eventSeq: number; gameplayRevision: number; actorSide: "P1" | "P2"; turnIndex: number },
+  commit: TerminalAuthor & { clientCommandId: string; eventSeq: number; gameplayRevision: number; actorSide: "P1" | "P2"; turnIndex: number },
 ): TerminalOutcomeRecord => {
   const actionEvidence = activeActionEvidence(game);
   const terminalOutcome: TerminalOutcomeRecord = {
     version: 1,
-    decisive: { action: clone(action), actorSide: commit.actorSide, decisionId: result.move?.moveId ?? null,
+    decisive: { action: clone(action), actorSide: commit.actorSide,
+      ...(commit.actorIdentityId && commit.actorKind ? { actorIdentityId: commit.actorIdentityId, actorKind: commit.actorKind } : {}), decisionId: result.move?.moveId ?? null,
       clientCommandId: commit.clientCommandId, turnIndex: commit.turnIndex },
     board: clone(game.board.state),
     removals: clone([...(result.destroyedPieces ?? [])]),
@@ -1472,7 +1477,7 @@ const freezeTerminalOutcome = (
 export const applyAuthorizedPendingAutomaticEnding = (
   game: LiveGame,
   action: Action,
-  commit: { clientCommandId: string; eventSeq: number; gameplayRevision: number; actorSide: "P1" | "P2"; turnIndex: number },
+  commit: TerminalAuthor & { clientCommandId: string; eventSeq: number; gameplayRevision: number; actorSide: "P1" | "P2"; turnIndex: number },
   expectedState: GameState | null,
 ): TerminalOutcomeRecord | null => {
   if (game.terminalOutcome || action.type !== "pass" || game.board.state.outcome.status !== "ongoing" || game.board.state.continuation) return null;
@@ -1500,7 +1505,7 @@ export const applyAuthorizedPendingAutomaticEnding = (
  * the same fenced transaction, without fabricating or appending a move. */
 export const applyAcceptedRestorationAutomaticEnding = (
   game: LiveGame,
-  operation: { clientCommandId: string; eventSeq: number; gameplayRevision: number },
+  operation: TerminalAuthor & { clientCommandId: string; eventSeq: number; gameplayRevision: number },
 ): TerminalOutcomeRecord | null => {
   const turnIndex = getActiveTurn(game)?.index ?? game.board.state.turnIndex;
   const pending = applyAuthorizedPendingAutomaticEnding(game, { type: "pass" }, {
@@ -1518,13 +1523,12 @@ export const applyAcceptedRestorationAutomaticEnding = (
   } else if (stable.continuation) {
     const proof = proveRelevantContinuation(stable, turnOwnerSide);
     if (proof.kind !== "proven-terminal") return null;
-    const settlement = probeTerminalSettlement(stable);
+    const settlement = proof.settlement;
     if (settlement.kind !== "settled" || !settlement.persistable
       || settlement.frame.occupancy.outcome.status !== proof.candidateOutcome.status) return null;
     game.board.state = clone(settlement.frame.occupancy);
     removals.push(...clone(settlement.removals));
-    cause = { kind: "relevant-continuation-finality", endpointCount: proof.endpointCount,
-      optionalEndpointCount: proof.optionalEndpointCount };
+    cause = { kind: "relevant-continuation-finality" };
   }
   if (!cause) return null;
   const endedAt = now(), activeTurn = getActiveTurn(game);
@@ -1545,12 +1549,9 @@ export const terminalEffectMatches = (record: TerminalOutcomeRecord, turns: Turn
       if (record.decisive.action.type !== "pass" || record.removals.length !== 0) return false;
       const stable = resolveToStability(clone(effect.before), { artifactMode: "full" });
       if (stable.turnIndex !== record.decisive.turnIndex || stable.sideToMove !== record.decisive.actorSide) return false;
-      const proof = probeIncomingTurnImmobility(stable, {
-        kind: "ordinary-incoming-live-turn", incomingSide: stable.sideToMove, turnIndex: stable.turnIndex,
-      });
-      if (proof.kind !== "incoming-loss" || proof.incomingSide !== record.decisive.actorSide) return false;
-      stable.outcome = { status: proof.winner === "P1" ? "p1_win" : "p2_win",
-        reason: `${proof.incomingSide.toLowerCase()}_incoming_turn_immobility` };
+      if (stable.continuation || record.cause.kind !== "incoming-turn-immobility"
+        || record.cause.incomingSide !== stable.sideToMove || !validateAction(stable, { type: "pass" }).ok) return false;
+      stable.outcome = clone(record.result);
       return deterministicStateHash(stable) === deterministicStateHash(record.board);
     }
     if (effect.kind === "restoration") {
@@ -1565,13 +1566,11 @@ export const terminalEffectMatches = (record: TerminalOutcomeRecord, turns: Turn
             === canonicalCommandJson(record.removals.map(({ removalPhase: _phase, causalMoveId: _causal, ...removal }) => removal));
       }
       if (!stable.continuation) return false;
-      const owner = getTurnOwnerSideForState(stable), proof = proveRelevantContinuation(stable, owner);
       const settlement = probeTerminalSettlement(stable);
-      if (record.cause.kind !== "relevant-continuation-finality" || proof.kind !== "proven-terminal"
+      if (record.cause.kind !== "relevant-continuation-finality"
         || settlement.kind !== "settled" || !settlement.persistable) return false;
       removals.push(...clone(settlement.removals));
-      return proof.endpointCount === record.cause.endpointCount
-        && proof.optionalEndpointCount === record.cause.optionalEndpointCount
+      return settlement.frame.occupancy.outcome.status === record.result.status
         && deterministicStateHash(settlement.frame.occupancy) === deterministicStateHash(record.board)
         && canonicalCommandJson(destructionRecords(removals, record.decisive.clientCommandId))
           === canonicalCommandJson(record.removals.map(({ removalPhase: _phase, causalMoveId: _causal, ...removal }) => removal));
@@ -1603,7 +1602,7 @@ export const applyAcceptedAutomaticEnding = (
   game: LiveGame,
   action: Action,
   result: AcceptedGameplayResult,
-  commit: { clientCommandId: string; eventSeq: number; gameplayRevision: number; actorSide: "P1" | "P2"; turnOwnerSide: "P1" | "P2"; turnIndex: number },
+  commit: TerminalAuthor & { clientCommandId: string; eventSeq: number; gameplayRevision: number; actorSide: "P1" | "P2"; turnOwnerSide: "P1" | "P2"; turnIndex: number },
 ): TerminalOutcomeRecord | null => {
   if (game.terminalOutcome) return clone(game.terminalOutcome);
   const activeTurn = getActiveTurn(game);
@@ -1618,13 +1617,12 @@ export const applyAcceptedAutomaticEnding = (
       : undefined;
     const proof = proveRelevantContinuation(game.board.state, commit.turnOwnerSide, { push });
     if (proof.kind === "proven-terminal") {
-      const settlement = probeTerminalSettlement(game.board.state, push);
+      const settlement = proof.settlement;
       if (settlement.kind !== "settled" || !settlement.persistable
         || settlement.frame.occupancy.outcome.status !== proof.candidateOutcome.status) return null;
       game.board.state = clone(settlement.frame.occupancy);
       additionalRemovals = clone(settlement.removals);
-      cause = { kind: "relevant-continuation-finality", endpointCount: proof.endpointCount,
-        optionalEndpointCount: proof.optionalEndpointCount };
+      cause = { kind: "relevant-continuation-finality" };
       if (activeTurn) {
         activeTurn.status = "complete";
         activeTurn.endedAt = game.updatedAt;

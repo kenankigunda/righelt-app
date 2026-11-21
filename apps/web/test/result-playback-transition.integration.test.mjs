@@ -4,12 +4,12 @@ import {getGameResult} from '../shell/game-result.js';
 import {createConfirmedResultOwner} from '../shell/confirmed-result.js';
 
 const game=status=>({
-  id:'g',player1:{identityId:'red'},player2:{identityId:'blue'},
+  id:'g',terminalOutcome:{decisive:{actorIdentityId:'red',actorKind:'human'}},player1:{identityId:'red'},player2:{identityId:'blue'},
   board:{state:{outcome:{status,reason:'p2_commander_unsupplied'}}},
 });
 
 test('confirmed terminal state preempts queued presentation and exposes the result on the same observation',()=>{
-  const transitions=createConfirmedResultOwner();
+  const transitions=createConfirmedResultOwner({getIdentityId:()=> 'red'});
   const playback={resets:0,reset(){this.resets++;}};
   assert.equal(transitions.observe(game('ongoing')).becameTerminal,false);
 

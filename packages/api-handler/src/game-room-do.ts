@@ -831,7 +831,7 @@ export class GameRoomDO {
           return json({ ok: false, error: reverted.error }, 409);
         }
         const operationId = this.sharedCommand?.clientCommandId ?? requestedRequestId ?? nextMoveId();
-        applyAcceptedRestorationAutomaticEnding(game, { clientCommandId: operationId,
+        applyAcceptedRestorationAutomaticEnding(game, { actorIdentityId: identityId, actorKind: "human", clientCommandId: operationId,
           eventSeq: this.eventSeq + 1, gameplayRevision: game.gameplayRevision + 1 });
         this.logDiagnostic("info", "live_server_revert_auto_approved", { identityId, targetMoveId }, true);
         await this.commit({
@@ -898,7 +898,7 @@ export class GameRoomDO {
         return json({ ok: false, error: reverted.error }, 409);
       }
       const operationId = this.sharedCommand?.clientCommandId ?? requestId;
-      applyAcceptedRestorationAutomaticEnding(game, { clientCommandId: operationId,
+      applyAcceptedRestorationAutomaticEnding(game, { actorIdentityId: identityId, actorKind: "human", clientCommandId: operationId,
         eventSeq: this.eventSeq + 1, gameplayRevision: game.gameplayRevision + 1 });
       addNotification(game, `Player ${identityId} accepted the undo request`);
       this.logDiagnostic("info", "live_server_revert_approved", { identityId, requestId }, true);
@@ -1500,7 +1500,7 @@ export class GameRoomDO {
       : command.kind === "move" ? resolveServerMoveAction(game) : asAction(payload.action);
     const requestedAction = requestedCandidate ? asCompatiblePersistedAction(requestedCandidate)?.action ?? null : null;
     const effectBefore = clone(game.board.state);
-    const commit = { clientCommandId: command.clientCommandId, eventSeq: this.eventSeq + 1,
+    const commit = { actorIdentityId: command.identityId, actorKind: payload.computer ? "computer" as const : "human" as const, clientCommandId: command.clientCommandId, eventSeq: this.eventSeq + 1,
       gameplayRevision: game.gameplayRevision + 1, actorSide: decisiveActorSide, turnOwnerSide, turnIndex: decisiveTurnIndex };
     let terminalOutcome = requestedAction ? applyAuthorizedPendingAutomaticEnding(
       game, requestedAction, commit, asGameState(command.expectedState),

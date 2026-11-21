@@ -85,3 +85,14 @@ test('native traversal adopts restored earlier completed History but a fresh ent
  assert.deepEqual(calls,[]);
  await owner.sync(earlier,2);assert.deepEqual(calls,[{gameId:'g',turnIndex:4}]);
 });
+
+test('empty decisive turn supplies the final caption without requesting nonexistent History',async()=>{
+ const completed=game('p1_win',{terminalOutcome:{decisive:{turnIndex:5}},turns:[{index:4,moveIndexes:[0],endedAt:'done'},{index:5,moveIndexes:[],endedAt:'finished'}]});
+ assert.equal(completedTurnIndex(completed),5);assert.equal(completedTurnTitle(completed,'me'),'You won on Turn 6');
+ const calls=[],transport={selectHistoryTurn:async value=>{calls.push(value);return {...completed,inHistoryMode:true,historyTurnIndex:value.turnIndex};}};
+ const owner=createCompletedReviewOwner({getTransport:()=>transport});await owner.sync(completed);await owner.sync(completed);
+ assert.deepEqual(calls,[{gameId:'g',turnIndex:4}]);
+ assert.equal(isCompletedWinningTurn({...completed,historyTurnIndex:4}),true);
+ assert.equal(owner.sync({...completed,id:'no-moves',moves:[],turns:[{index:5,moveIndexes:[],endedAt:'finished'}]}),null);
+ assert.equal(calls.length,1);
+});

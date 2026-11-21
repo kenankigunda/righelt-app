@@ -1,6 +1,5 @@
 import {TERMINAL_OUTCOME_STATUSES} from '../../shared-types/src/engine';
 import { deterministicStateHash } from '../../game-engine/src/hash';
-import { proveRelevantContinuation } from '../../game-engine/src/early-ending-proof';
 import { probeTerminalSettlement } from '../../game-engine/src/terminal-settlement';
 import { canonicalCommandJson } from '../../shared-types/src/sync-protocol';
 import { getTurnOwnerSideForState } from '../../shared-types/src/shell-live-turn.js';
@@ -533,6 +532,9 @@ const normalizeTerminalOutcome = (
   if (compatibleAction?.repaired) {
     recordMismatch(mismatches, "terminalOutcome.decisive.action", "canonical persisted Action", decisive.action, "canonicalized_legacy_action");
   }
+  const hasAuthor = decisive.actorIdentityId !== undefined || decisive.actorKind !== undefined;
+  if (hasAuthor && (typeof decisive.actorIdentityId !== "string" || !decisive.actorIdentityId
+    || !["human", "computer"].includes(String(decisive.actorKind)))) return invalid();
   const status = value.result.status;
   if (!terminalBoard || !action || !TERMINAL_OUTCOME_STATUSES.includes(status as never)
     || terminalBoard.outcome.status !== status || board.outcome.status !== status
@@ -553,9 +555,8 @@ const normalizeTerminalOutcome = (
     if (typeof value.cause.reason !== "string" || !value.cause.reason
       || value.cause.reason !== (value.result.reason ?? "commander_outcome")) return invalid();
   } else if (causeKind === "relevant-continuation-finality") {
-    if (!Number.isSafeInteger(value.cause.endpointCount) || Number(value.cause.endpointCount) < 1
-      || !Number.isSafeInteger(value.cause.optionalEndpointCount) || Number(value.cause.optionalEndpointCount) < 0
-      || decisive.decisionId === null) return invalid();
+    // Legacy traversal counts are diagnostics, not persisted game rules.
+    if (decisive.decisionId === null && (!isRecord(value.effect) || value.effect.kind !== "restoration")) return invalid();
   } else if (causeKind === "incoming-turn-immobility") {
     if ((value.cause.incomingSide !== "P1" && value.cause.incomingSide !== "P2")
       || value.result.reason !== `${String(value.cause.incomingSide).toLowerCase()}_incoming_turn_immobility`
@@ -608,21 +609,15 @@ const normalizeTerminalOutcome = (
       const push = action.type === "push"
         ? { decisionId: decisive.decisionId, action, frameHash: deterministicStateHash(legacySnapshot) }
         : undefined;
-      let proof: ReturnType<typeof proveRelevantContinuation> | null = null;
       let settlement: ReturnType<typeof probeTerminalSettlement> | null = null;
       try {
-        const owner = getTurnOwnerSideForState(legacySnapshot);
-        proof = value.cause.kind === "relevant-continuation-finality" && removals.length === 0
+        settlement = value.cause.kind === "relevant-continuation-finality" && removals.length === 0
           && legacySnapshot.outcome.status === "ongoing" && legacySnapshot.continuation
-          ? proveRelevantContinuation(legacySnapshot, owner, { push }) : null;
-        settlement = proof?.kind === "proven-terminal" ? probeTerminalSettlement(legacySnapshot, push) : null;
+          ? probeTerminalSettlement(legacySnapshot, push) : null;
       } catch {
         return invalid();
       }
-      if (!proof || proof.kind !== "proven-terminal"
-        || proof.endpointCount !== value.cause.endpointCount
-        || proof.optionalEndpointCount !== value.cause.optionalEndpointCount
-        || settlement?.kind !== "settled" || !settlement.persistable || settlement.removals.length !== 0
+      if (settlement?.kind !== "settled" || !settlement.persistable || settlement.removals.length !== 0
         || deterministicStateHash(settlement.frame.occupancy) !== deterministicStateHash(terminalBoard)) return invalid();
       decisiveMove.snapshot = structuredClone(terminalBoard);
       recordMismatch(mismatches, "terminalOutcome.decisive.snapshot", "terminal snapshot proven from legacy zero-removal finality",

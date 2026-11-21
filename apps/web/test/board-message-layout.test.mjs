@@ -40,8 +40,8 @@ test('cold and live headings share reserved turn captions and one accessible hea
  assert.doesNotMatch(live,/Board <span|board-heading-separator|>Board -/);
  assert.doesNotMatch(loading,/>Board<\/h2>|board-heading-separator/);
  for(const html of [live,loading]){
-  assert.equal((html.match(/aria-hidden="true" inert role="presentation"/g)??[]).length,10);
-  for(const font of ['primary','fallback'])for(let index=0;index<5;index++)assert(html.includes(`data-heading-sizing-font="${font}" data-heading-sizing-caption="${index}"`));
+  assert.equal((html.match(/aria-hidden="true" inert role="presentation"/g)??[]).length,8);
+  for(const font of ['primary','fallback'])for(let index=0;index<4;index++)assert(html.includes(`data-heading-sizing-font="${font}" data-heading-sizing-caption="${index}"`));
   for(const caption of ['Your turn to play','Opponent to play','Guest 1 to play','Guest 2 to play'])assert(html.includes(caption));
   assert.equal((html.match(/<span class="sr-only">Board: <\/span>/g)??[]).length,1,'only the accessible live heading carries Board context');
  }

@@ -1,34 +1,29 @@
-import {isCompletedGame} from './game-lifecycle.js';
-import {getGameResult} from './game-result.js';
+import {isCompletedGame,completedTurnIndex} from './game-lifecycle.js';
+import {completedGameCaption} from './perspective-labels.js';
 
-export const completedTurnIndex = game => {
-  if (!isCompletedGame(game)) return null;
-  const active = (game?.moves ?? []).filter(move => move?.undone !== true && Number.isSafeInteger(move?.turnIndex));
-  if (active.length) return active.at(-1).turnIndex;
-  const recorded = (game?.turns ?? []).filter(turn => Number.isSafeInteger(turn?.index) && (turn?.endedAt || turn?.moveIndexes?.length));
-  return recorded.length ? recorded.at(-1).index : null;
-};
-
-export const completedTurnCaption = (game, identityId, turnIndex = completedTurnIndex(game)) => {
-  if (!Number.isSafeInteger(turnIndex)) return null;
-  const result = getGameResult(game, identityId);
-  if (!result) return null;
-  const title = result.title.replace(/ won as (Red|Blue)$/u, ' won');
-  const suffix = ` on Turn ${turnIndex + 1}`;
-  return {text:title+suffix,name:title,suffix,neutralSuffix:true,side:result.winner?.toUpperCase()??null};
-};
+export {completedTurnIndex} from './game-lifecycle.js';
+export const completedTurnCaption = completedGameCaption;
 
 export const completedTurnTitle = (game, identityId, turnIndex = completedTurnIndex(game)) =>
   completedTurnCaption(game,identityId,turnIndex)?.text??null;
 
+// A terminal command need not append a move. Caption its canonical finish turn,
+// but only ask History to hydrate a turn that actually has a recorded decision.
+export const completedReviewTurnIndex = game => {
+  if(!isCompletedGame(game))return null;
+  const active=(game.moves??[]).filter(move=>move?.undone!==true&&Number.isSafeInteger(move?.turnIndex));
+  if(active.length)return active.at(-1).turnIndex;
+  const recorded=(game.turns??[]).filter(turn=>Number.isSafeInteger(turn?.index)&&turn.moveIndexes?.length);
+  return recorded.length?recorded.at(-1).index:null;
+};
 export const isCompletedWinningTurn = game =>
-  isCompletedGame(game) && Number.isSafeInteger(game?.historyTurnIndex) && game.historyTurnIndex === completedTurnIndex(game);
+  isCompletedGame(game) && Number.isSafeInteger(game?.historyTurnIndex) && (game.historyTurnIndex === completedReviewTurnIndex(game) || game.historyTurnIndex === completedTurnIndex(game));
 
 export function createCompletedReviewOwner({getTransport,onError=()=>{}}) {
   let owner=null;
   const clear=()=>{owner=null;};
   const sync=(game,entryGeneration=0,{preserveSelection=false}={})=>{
-    const transport=getTransport(),turnIndex=completedTurnIndex(game);
+    const transport=getTransport(),turnIndex=completedReviewTurnIndex(game);
     if(!transport||!game||game.historyLoading||!Number.isSafeInteger(turnIndex))return null;
     const key=`${entryGeneration}:${game.id}:${game.gameplayRevision}:${turnIndex}`;
     if(preserveSelection&&game.inHistoryMode){owner={transport,key,promise:Promise.resolve(game)};return owner.promise;}
