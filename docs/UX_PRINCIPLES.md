@@ -177,6 +177,14 @@ Examples illustrating the spirit, not authorization to remove established role, 
 - Motion across related surfaces should feel synchronized when they are part of the same interaction.
 - Respect `prefers-reduced-motion: reduce` by disabling non-essential animation and preserving comprehension without movement.
 
+### Game action loading feedback
+
+Judge loading by the first intended visible effect, not by the lifetime of the request. If a game-page action produces its local or optimistic effect by the next paint, show no loading treatment. If the effect is delayed, pulse the CTA that initiated it. When that delayed action can change the currently displayed board snapshot or its legal/interactable state, also run the loading treatment around the board border. Stop both when the intended effect becomes visible.
+
+Durable confirmation is a separate phase. A locally initiated board change that is already visible stays quiet for five seconds while confirmation is pending. At five seconds, start board-border loading without restoring the CTA pulse. At fifteen seconds, keep the board treatment and add one deduplicated polite status message. Clear both on confirmation, rollback, or definitive failure. Waiting for another player to approve a confirmed request is a durable human-waiting state, not loading.
+
+Loading state is operation-scoped and tokenized. Concurrent or repeated actions cannot clear one another, and route or account changes retire stale feedback. The CTA and board region expose `aria-busy`; animation cannot be the only signal. Reduced motion replaces the pulse and spinning border with static pending treatments. Loading decoration never changes board geometry, captures input, causes a surrounding rerender merely to start, or displaces focus.
+
 ## Righelt Visual Identity
 
 - Righelt's core brand colors are the player colors: `red`, `blue`, and `purple`.

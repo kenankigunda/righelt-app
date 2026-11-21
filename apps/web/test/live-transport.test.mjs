@@ -78,6 +78,15 @@ const createMemoryStorage = () => {
 const clone = (value) => structuredClone(value);
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+test('a non-stale authoritative update recalculates its optimistic projection once',()=>{
+ const game=buildLiveGame(),recalculations=[];
+ const store=createActualTransportStore({storage:createMemoryStorage(),fetcher:async()=>Response.json({}),onOptimisticRecalculation:gameId=>recalculations.push(gameId)});
+ try{
+  store.applyLiveGameUpdate({game,eventSeq:1});
+  assert.deepEqual(recalculations,[game.id]);
+ }finally{store.retire();}
+});
+
 const buildLiveGame = () => {
   const initial = resolveToStability(createInitialState(), { artifactMode: "full" });
   const firstAction = listLegalActions(initial).find((action) => action.type === "move") ?? listLegalActions(initial)[0];

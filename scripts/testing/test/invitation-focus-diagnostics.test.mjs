@@ -44,7 +44,10 @@ test('focus diagnostic retains both original native bodies and three opt-in case
 });
 async function invokePending(code,{getter=false,sink=false,fail=false,retire=false,key='copy-invite:opaque'}={}){
  let snapshots=0,generation=1;const renders=[],pendingButtonKeys=new Set();
- const context={pendingButtonKeys,account:{snapshot(){snapshots++;return {generation};}},render(value){renders.push(value);},window:{}};
+ const context={pendingButtonKeys,account:{snapshot(){snapshots++;return {generation};}},render(value){renders.push(value);},window:{},
+  isButtonPending:value=>pendingButtonKeys.has(value),setDirectButtonPending(){},gameActionFeedback:{
+   begin({key:value}){pendingButtonKeys.add(value);return {key:value};},finish(token){pendingButtonKeys.delete(token.key);},
+  }};
  if(getter)Object.defineProperty(context,'__righeltInviteFocusProbe',{get(){throw Error('PRIVATE getter');}});
  else context.__righeltInviteFocusProbe=()=>{if(sink)throw Error('PRIVATE sink');};
  const begin=code.indexOf('const withPendingButton ='),end=code.indexOf('const routeReadKey =',begin);

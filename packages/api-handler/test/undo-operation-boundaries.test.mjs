@@ -33,6 +33,14 @@ test('legacy undone records keep missing and null provenance without renumbering
  const game=fixture();game.moves[1]={...game.moves[1],undone:true,undoneAt:null};delete game.moves[1].undoneByIdentityId;delete game.moves[1].index;delete game.moves[1].displayMoveNumber;
  const old=clone(game.moves[1]);applyRevertToMove(game,'a','bob');assert.deepEqual(game.moves[1],old);
 });
+test('Undo normalization does not rescan moves once per turn',()=>{
+ class CountedMoves extends Array { static get [Symbol.species](){return Array;} filterCalls=0;filter(...args){this.filterCalls++;return super.filter(...args);} }
+ const game=fixture();
+ game.moves=new CountedMoves(...Array.from({length:200},(_,index)=>move(game,`move-${index}`,index)));
+ game.turns=Array.from({length:200},(_,index)=>({index,startedAt:'recorded',endedAt:'recorded',playerSeat:'Player 1',status:'complete',moveIndexes:[index],lastMoveAt:'recorded'}));
+ assert.equal(applyRevertToMove(game,'move-100','alice').ok,true);
+ assert.equal(game.moves.filterCalls,3,'Undo keeps the fixed active-move passes and never scans once per turn');
+});
 test('accepted restoration persists a distinct zero-member event even when time and target are unchanged',async()=>{
  const env={DB:createFakeD1()},game=fixture();game.archiveStartRevision=0;game.moves=[];game.lastRestoration={decisionId:'archived',at:'same',undoEventSeq:20};const before=clone(game);
  stampAcceptedRestoration(before,game,21,{targetDecisionId:'archived',requesterIdentityId:'alice'});

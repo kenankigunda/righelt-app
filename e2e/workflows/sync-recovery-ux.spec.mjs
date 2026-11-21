@@ -124,32 +124,22 @@ test("pending feedback reaches overdue once, then clears or explains definitive 
    const body=await (await fetch(`/api/shell/games/${gameId}?identityId=${identityId}`)).json();
    return body.game.legalActions.find(a=>a.from&&a.to);
  },gameId);
+ await page.evaluate(()=>{
+  window.lateConfirmationAnnouncements=[];
+  const node=document.getElementById("shell-sync-announcement");
+  new MutationObserver(()=>window.lateConfirmationAnnouncements.push(node.textContent)).observe(node,{subtree:true,childList:true,characterData:true});
+ });
  await submitPlayableAction(page,action);
- await expect(page.getByTestId("sync-recovery-banner")).toContainText("Recording your move");
- await expect(page.getByTestId("sync-recovery-banner").getByRole("button",{name:"Reload game",exact:true})).toHaveCount(0);
- await expect(page.getByTestId("sync-recovery-banner")).toContainText("Still checking your move. You can retry or view details.",{timeout:20000});
- await expect(page.getByTestId("sync-recovery-banner").getByRole("button",{name:"Reload game",exact:true})).toBeVisible();
+ const boardWrap=page.getByTestId("game-board-wrap");
+ await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
+ await expect(boardWrap).not.toHaveAttribute("data-board-pending","");
+ await expect(boardWrap).toHaveAttribute("data-board-pending","",{timeout:8000});
+ await expect(page.getByTestId("sync-recovery-banner")).toHaveCount(0);
+ await expect.poll(()=>page.evaluate(()=>window.lateConfirmationAnnouncements.some(text=>/Recording your move|still being confirmed/i.test(text)))).toBe(false);
+ await expect(page.getByTestId("sync-recovery-banner")).toContainText(/Your board change is still being confirmed|Still checking your move/,{timeout:12000});
+ await expect(boardWrap).toHaveAttribute("data-board-pending","");
+ await expect.poll(()=>page.evaluate(()=>window.lateConfirmationAnnouncements.filter(text=>/Your board change is still being confirmed/.test(text)).length)).toBe(1);
  expect(unknownResponses).toBeGreaterThan(0);
- // An already-overdue command must not announce an old background wait when
- // the person returns. Exercise the real shell visibility listener without
- // relying on the browser runner keeping an auxiliary tab in the background.
- await page.evaluate(() => {
-   Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
-   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
-   document.dispatchEvent(new Event('visibilitychange'));
- });
- await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
- await page.evaluate(() => {
-   delete document.hidden; delete document.visibilityState;
-   document.dispatchEvent(new Event('visibilitychange'));
- });
- await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
- await expect(page.locator('#shell-sync-announcement')).not.toContainText('Still checking');
- await page.waitForTimeout(2000);
- await expect(page.getByTestId('sync-recovery-banner')).toHaveCount(0);
- await expect(page.getByTestId('sync-recovery-banner')).toContainText('Recording your move', { timeout: 5000 });
- await expect(page.getByTestId('sync-recovery-banner').getByRole('button', { name: 'Reload game', exact: true })).toHaveCount(0);
- await expect(page.getByTestId('sync-recovery-banner')).toContainText('Still checking your move', { timeout: 15000 });
  const board=await page.getByTestId("game-board").innerHTML();
  mode="reject";
  await expect(page.getByTestId("sync-failure-banner")).toContainText("Board changed before your move was recorded. Check it and try again.",{timeout:10000});

@@ -151,6 +151,13 @@ For explicitly disposable local development fixtures, prefer a scoped reset over
 - In self-play, keep viewer-relative naming and identify the side with "as Red" or "as Blue" where needed. Example: "You won as Red in 12 moves after you retreated as Blue."
 - Color every structured user-facing player identity to its known role. Preserve a non-color and screen-reader attribution. In History and replay self-play narration, show the actor visibly as "You" without a parenthetical color and retain "You, Red" or "You, Blue" in the accessible name. Never infer identity or role by matching display-name text.
 
+## 5.4) Game Action Feedback
+
+- For every new or changed CTA on the game route, explicitly classify whether its intended visible effect is immediate, delayed, and capable of changing the currently displayed board. Follow the standing contract in `docs/UX_PRINCIPLES.md`.
+- An immediate or optimistic effect that is visible by the next paint does not show loading feedback. A delayed effect pulses only its triggering CTA; if it can change the current board, it also activates the board-border loading treatment.
+- Stop initial loading feedback at the first intended visible effect, not at durable confirmation. For a locally initiated board change that remains unconfirmed, stay quiet for five seconds, then show board loading; after fifteen seconds retain board loading and add one deduplicated status message.
+- Preserve `aria-busy`, focus, route/account ownership, reduced-motion static equivalents, and tokenized cleanup so an older operation cannot clear a newer one.
+
 ## 6) Communication Expectations
 
 - State assumptions explicitly when inputs are incomplete.

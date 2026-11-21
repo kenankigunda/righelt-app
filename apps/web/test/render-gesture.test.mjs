@@ -42,6 +42,21 @@ test("background renders keep a pressed control until activation, cancellation o
   gate.destroy();
 });
 
+test("click activation flushes deferred optimistic state before the next paint", () => {
+  const renders = [], beforePaintJobs = [];
+  const gate = createRenderGestureGate({
+    render: options => renders.push(options),
+    scheduleBeforePaint: fn => beforePaintJobs.push(fn),
+  });
+  gate.begin();
+  gate.defer({ includeBoard: true, animatePanels: false });
+  gate.end();
+  gate.flushBeforePaint();
+  assert.deepEqual(renders, []);
+  beforePaintJobs.shift()();
+  assert.deepEqual(renders, [{ includeBoard: true, animatePanels: false }]);
+});
+
 test('flush acknowledgement follows the coalesced committed render and retires on disposal',async()=>{
   const jobs=[],renders=[];
   const gate=createRenderGestureGate({render:options=>renders.push(options),schedule:callback=>{jobs.push(callback);return callback;},cancel:callback=>{const index=jobs.indexOf(callback);if(index>=0)jobs.splice(index,1);}});
@@ -91,7 +106,7 @@ const registeredGesture = async () => {
   const window = {addEventListener(type, callback) { const list = listeners.get(type) ?? []; list.push(callback); listeners.set(type, list); },removeEventListener(type,callback){listeners.set(type,(listeners.get(type)??[]).filter(value=>value!==callback));}};
   const document = {visibilityState:'visible', addEventListener:window.addEventListener,removeEventListener:window.removeEventListener};
   const appEl = {contains:target => target?.inside !== false};
-  const actualGate=createRenderGestureGate({render:options=>renders.push(options),schedule:fn=>{jobs.set(++serial,fn);return serial;},cancel:id=>jobs.delete(id)});
+  const actualGate=createRenderGestureGate({render:options=>renders.push(options),schedule:fn=>{jobs.set(++serial,fn);return serial;},cancel:id=>jobs.delete(id),scheduleBeforePaint:fn=>{jobs.set(++serial,fn);return serial;}});
   const owner=mountRenderGestureOwner({window,document,appEl,renderGesture:actualGate});
   const notice={};
   const target = ({inside=true,control=true,destination=false}={}) => ({inside,closest(selector){if(selector==='.destination-load-notice')return destination?notice:null;assert.equal(selector,'button, a, [data-action]');return control?this:null;}});

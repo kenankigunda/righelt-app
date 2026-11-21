@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createSyncStore } from "../shell/sync-store.js";
+import { buildTurnsAfterRevert, createSyncStore } from "../shell/sync-store.js";
 import {participantButton} from "../shell/public-profile.js";
 import { listLegalActions, resolveToStability } from "../generated/packages/game-engine/src/index.js";
 
@@ -100,6 +100,40 @@ const createRevertReadyGame = () => ({
       selectionSnapshot: { boardSize: 10, sideToMove: "P2", turnIndex: 1, pieces: [], continuation: null, outcome: { status: "ongoing" } },
     },
   ],
+});
+
+test("Undo turn reconstruction groups a production-like history without rescanning active moves per turn", () => {
+  class CountedMoves extends Array {
+    filterCalls = 0;
+    filter(...args) {
+      this.filterCalls += 1;
+      return super.filter(...args);
+    }
+  }
+  const game = createRevertReadyGame();
+  game.turns = Array.from({ length: 200 }, (_, index) => ({
+    index,
+    startedAt: `turn-${index}`,
+    moveIndexes: [index],
+    metadata: `turn-${index}`,
+  }));
+  const activeMoves = new CountedMoves(...Array.from({ length: 200 }, (_, index) => ({
+    index,
+    turnIndex: index,
+    at: `move-${index}`,
+  })));
+
+  const turns = buildTurnsAfterRevert(
+    game,
+    { turnIndex: 200, sideToMove: "P1" },
+    activeMoves,
+    "reverted-at",
+  );
+
+  assert.equal(activeMoves.filterCalls, 0);
+  assert.equal(turns.length, 201);
+  assert.equal(turns[199].metadata, "turn-199");
+  assert.deepEqual(turns[199].moveIndexes, [199]);
 });
 
 const createHistoryReadyGame = () => ({
@@ -761,6 +795,99 @@ test("sync store requests reverts optimistically with a stable client request id
   const committed = await handle.committed;
   assert.equal(requestPayload.requestId, handle.result.pendingRevertRequest.requestId);
   assert.equal(committed.pendingRevertRequest.requestId, handle.result.pendingRevertRequest.requestId);
+});
+
+test("sync store auto-applies Undo when both seats belong to the requester", async () => {
+  const { transport, games } = createTransportHarness();
+  const game = createRevertReadyGame();
+  game.player2 = { identityId: "id-test", connected: true };
+  game.selfPlayMode = true;
+  games.set(game.id, game);
+  let release;
+  const committed = new Promise((resolve) => { release = resolve; });
+  let requestPayload = null;
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      ...transport,
+      requestRevertToMove: async (payload) => {
+        requestPayload = payload;
+        await committed;
+        return store.getGameViewModel(game.id);
+      },
+    }),
+    createSyncClient: () => ({ connectGame() {}, disconnectGame() {}, disconnectAll() {}, getDesiredGameIds: () => [] }),
+  });
+
+  const handle = store.requestRevertToMove({ gameId: game.id, targetMoveId: "move-1" });
+  assert.equal(handle.status, "pending");
+  assert.equal(handle.result.pendingRevertRequest, null);
+  assert.equal(handle.result.moves[0].undone, true);
+  assert.equal(store.getGameViewModel(game.id).notifications[0], "Undo applied");
+  await Promise.resolve();
+  assert.match(requestPayload.requestId, /^revert-/);
+  release();
+  await handle.committed;
+});
+
+test("long-history self-play Undo preserves ordered turn metadata and display numbering", async () => {
+  const { transport, games } = createTransportHarness();
+  const game = createRevertReadyGame();
+  game.player2 = { identityId: "id-test", connected: true };
+  game.selfPlayMode = true;
+  game.moves = Array.from({ length: 200 }, (_, index) => ({
+    ...structuredClone(game.moves[0]),
+    index,
+    moveId: `move-${index}`,
+    displayMoveNumber: index + 1,
+    turnIndex: index,
+    at: `2026-04-03T00:${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}.000Z`,
+    selectionSnapshot: {
+      ...structuredClone(game.moves[0].selectionSnapshot),
+      turnIndex: index + 1,
+      sideToMove: index % 2 === 0 ? "P2" : "P1",
+    },
+  }));
+  game.turns = game.moves.map((move) => ({
+    index: move.turnIndex,
+    startedAt: move.at,
+    endedAt: move.at,
+    playerSeat: move.turnIndex % 2 === 0 ? "Player 1" : "Player 2",
+    status: "ended",
+    moveIndexes: [move.index],
+    lastMoveAt: move.at,
+    metadata: `turn-${move.turnIndex}`,
+  }));
+  game.currentSnapshot = structuredClone(game.moves.at(-1).selectionSnapshot);
+  game.board.state = structuredClone(game.currentSnapshot);
+  game.latestActiveMoveId = game.moves.at(-1).moveId;
+  games.set(game.id, game);
+  let release;
+  const committed = new Promise((resolve) => { release = resolve; });
+  const store = createSyncStore({
+    storage: createMemoryStorage(),
+    createTransportStore: () => ({
+      ...transport,
+      requestRevertToMove: async () => {
+        await committed;
+        return store.getGameViewModel(game.id);
+      },
+    }),
+    createSyncClient: () => ({ connectGame() {}, disconnectGame() {}, disconnectAll() {}, getDesiredGameIds: () => [] }),
+  });
+
+  const handle = store.requestRevertToMove({ gameId: game.id, targetMoveId: "move-150" });
+  const predicted = handle.result;
+  assert.equal(predicted.pendingRevertRequest, null);
+  assert.equal(predicted.moves.filter((move) => move.undone !== true).length, 150);
+  assert.equal(predicted.moves.filter((move) => move.undone === true).length, 50);
+  assert.deepEqual(predicted.moves.slice(0, 150).map((move) => move.displayMoveNumber), Array.from({ length: 150 }, (_, index) => index + 1));
+  assert.equal(predicted.turns[149].metadata, "turn-149");
+  assert.deepEqual(predicted.turns[149].moveIndexes, [149]);
+  assert.equal(predicted.currentTurn.index, 151);
+  assert.deepEqual(predicted.currentTurn.moveIndexes, []);
+  release();
+  await handle.committed;
 });
 
 test("sync store rolls back an optimistic revert approval when the server rejects it", async () => {
@@ -1445,6 +1572,26 @@ test('archived undo reaches the server without fabricating an optimistic restore
   assert.deepEqual(handle.result.board, game.board);
   await handle.committed;
   assert.equal(payload.targetMoveId, 'evicted-1');
+});
+
+test('archived Undo approval ignores a colliding retained move index', async () => {
+  const {transport,games}=createTransportHarness();
+  const game=createRevertReadyGame();
+  game.moves=Array.from({length:200},(_,index)=>({...structuredClone(game.moves[0]),moveId:`retained-${index}`,index}));
+  game.historyProjection="summary-v1";
+  game.pendingRevertRequest={requestId:'archived-approval',requesterIdentityId:'id-peer',targetMoveId:'evicted-target',targetMoveIndex:0,requestedAt:'2026-04-03T00:00:03.000Z',status:'pending'};
+  game.approvableRevertRequest=structuredClone(game.pendingRevertRequest);
+  games.set(game.id,game);
+  let release;const committed=new Promise(resolve=>{release=resolve;});
+  const store=createSyncStore({storage:createMemoryStorage(),createTransportStore:()=>({...transport,
+    approveRevertRequest:async()=>{await committed;return game;},
+  }),createSyncClient:()=>({connectGame(){},disconnectGame(){},disconnectAll(){},getDesiredGameIds:()=>[]})});
+  const before=structuredClone(store.getGameViewModel(game.id));
+  const handle=store.approveRevertRequest({gameId:game.id,requestId:'archived-approval'});
+  assert.deepEqual(handle.result.moves,before.moves);
+  assert.deepEqual(handle.result.board,before.board);
+  assert.equal(handle.result.pendingRevertRequest.requestId,'archived-approval');
+  release();await handle.committed;
 });
 
 test('optimistic account seats use only the captured authenticated owner public profile',async()=>{

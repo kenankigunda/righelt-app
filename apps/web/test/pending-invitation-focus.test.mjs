@@ -41,7 +41,7 @@ test('actual app panel patch cannot restore a pointer-retired pending copy',asyn
  const {readFile}=await import('node:fs/promises');const vm=await import('node:vm');
  const source=await readFile(new URL('../shell/app.js',import.meta.url),'utf8');
  const beginStart=source.indexOf('    const invitationPanel = actionEl.closest(');
- const beginEnd=source.indexOf('    await withPendingButton(getCopyInviteButtonKey(gameId),',beginStart);
+ const beginEnd=source.indexOf('    await withPendingButton(getCopyInviteButtonKey(gameId,role),',beginStart);
  const start=source.indexOf('      const focus=joinEl.contains(document.activeElement)');
  const end=source.indexOf('      if (animateJoin)',start);
  assert.ok(beginStart>0&&beginEnd>beginStart&&start>0&&end>start);

@@ -85,6 +85,7 @@ import {
 import { loadGameProjection, persistGameState, resolveInvite, type D1Statement, type LiveGameEnv } from "./shell-live-db";
 
 const listLegalActions: typeof enumerateLegalActions = (...args) => boundedEngineOperation(() => enumerateLegalActions(...args));
+const timingNow = () => globalThis.performance?.now?.() ?? Date.now();
 
 const HEARTBEAT_TIMEOUT_MS = 95_000;
 
@@ -794,6 +795,7 @@ export class GameRoomDO {
     }
 
     if (request.method === "POST" && path === "/revert-request") {
+      const revertTimingStartedAt = timingNow();
       const targetMoveId = asIdentity(body.targetMoveId);
       const requestedRequestId = asIdentity(body.requestId);
       if (!targetMoveId) {
@@ -825,6 +827,7 @@ export class GameRoomDO {
         return json({ ok: false, error: "undo_target_not_playable" }, 409);
       }
       if (autoApprove) {
+        const projectionStartedAt = timingNow();
         const reverted = applyRevertToMove(game, targetMoveId, identityId, targetMove);
         if (!reverted.ok) {
           this.logDiagnostic("warn", "live_server_revert_request_rejected", { identityId, targetMoveId, error: reverted.error });
@@ -834,13 +837,31 @@ export class GameRoomDO {
         applyAcceptedRestorationAutomaticEnding(game, { actorIdentityId: identityId, actorKind: "human", clientCommandId: operationId,
           eventSeq: this.eventSeq + 1, gameplayRevision: game.gameplayRevision + 1 });
         this.logDiagnostic("info", "live_server_revert_auto_approved", { identityId, targetMoveId }, true);
-        await this.commit({
+        const projectionMs = timingNow() - projectionStartedAt;
+        const commitTiming = await this.commit({
           type: "event_appended",
           reason: "moves_reverted",
           clientCommandId: operationId,
           game,
-        }, { targetDecisionId: targetMoveId, requesterIdentityId: identityId });
-        return json({ ok: true, autoApproved: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+        }, { targetDecisionId: targetMoveId, requesterIdentityId: identityId }, {
+          path: "request_auto_approve",
+          historyLength: game.moves.length,
+          sessionCount: this.sessions.size,
+        });
+        const responseProjectionStartedAt = timingNow();
+        const responseGame = withViewModel(game, identityId);
+        const responseProjectionMs = timingNow() - responseProjectionStartedAt;
+        const response = json({ ok: true, autoApproved: true, game: responseGame, eventSeq: this.eventSeq });
+        this.logDiagnostic("info", "live_server_revert_timing", {
+          path: "request_auto_approve",
+          historyLength: game.moves.length,
+          sessionCount: this.sessions.size,
+          projectionMs,
+          responseProjectionMs,
+          ...commitTiming,
+          handlerMs: timingNow() - revertTimingStartedAt,
+        });
+        return response;
       }
       game.pendingRevertRequest = {
         requestId: requestedRequestId ?? nextMoveId(),
@@ -867,6 +888,7 @@ export class GameRoomDO {
     }
 
     if (request.method === "POST" && path === "/revert-approve") {
+      const revertTimingStartedAt = timingNow();
       const requestId = asIdentity(body.requestId);
       if (!requestId) {
         this.logDiagnostic("warn", "live_server_revert_approve_rejected", { identityId, error: "invalid_request_id" });
@@ -892,6 +914,7 @@ export class GameRoomDO {
         return json({ ok: false, error: "approval_not_allowed" }, 403);
       }
       const archivedTarget = (await readDecision(this.env, game.id, pendingRevertRequest.targetMoveId))?.move;
+      const projectionStartedAt = timingNow();
       const reverted = applyRevertToMove(game, pendingRevertRequest.targetMoveId, pendingRevertRequest.requesterIdentityId, archivedTarget);
       if (!reverted.ok) {
         this.logDiagnostic("warn", "live_server_revert_approve_rejected", { identityId, requestId, error: reverted.error });
@@ -902,13 +925,31 @@ export class GameRoomDO {
         eventSeq: this.eventSeq + 1, gameplayRevision: game.gameplayRevision + 1 });
       addNotification(game, `Player ${identityId} accepted the undo request`);
       this.logDiagnostic("info", "live_server_revert_approved", { identityId, requestId }, true);
-      await this.commit({
+      const projectionMs = timingNow() - projectionStartedAt;
+      const commitTiming = await this.commit({
         type: "event_appended",
         reason: "moves_reverted",
         clientCommandId: operationId,
         game,
-      }, { targetDecisionId: pendingRevertRequest.targetMoveId, requesterIdentityId: pendingRevertRequest.requesterIdentityId });
-      return json({ ok: true, game: withViewModel(game, identityId), eventSeq: this.eventSeq });
+      }, { targetDecisionId: pendingRevertRequest.targetMoveId, requesterIdentityId: pendingRevertRequest.requesterIdentityId }, {
+        path: "approve",
+        historyLength: game.moves.length,
+        sessionCount: this.sessions.size,
+      });
+      const responseProjectionStartedAt = timingNow();
+      const responseGame = withViewModel(game, identityId);
+      const responseProjectionMs = timingNow() - responseProjectionStartedAt;
+      const response = json({ ok: true, game: responseGame, eventSeq: this.eventSeq });
+      this.logDiagnostic("info", "live_server_revert_timing", {
+        path: "approve",
+        historyLength: game.moves.length,
+        sessionCount: this.sessions.size,
+        projectionMs,
+        responseProjectionMs,
+        ...commitTiming,
+        handlerMs: timingNow() - revertTimingStartedAt,
+      });
+      return response;
     }
 
     if (request.method === "POST" && path === "/revert-reject") {
@@ -1356,6 +1397,7 @@ export class GameRoomDO {
       | { type: "join_request_created"; requesterIdentityId: string; requestedSeat: "Player 1" | "Player 2"; game: LiveGame }
       | { type: "join_request_resolved"; requesterIdentityId: string; accepted: boolean; seat: "Player 1" | "Player 2" | null; game: LiveGame },
     restoration?: AcceptedRestoration,
+    broadcastTiming?: { path: string; historyLength: number; sessionCount: number },
   ) {
     if (restoration && (input.type !== "event_appended" || input.reason !== "moves_reverted")) throw new Error("invalid_restoration_event");
     const event =
@@ -1384,9 +1426,12 @@ export class GameRoomDO {
               game: clone(input.game),
             } satisfies JoinRequestResolvedEvent);
 
+    const persistStartedAt = timingNow();
     await this.persistCandidate(input.game, event, undefined, false, [], undefined, restoration);
+    const persistMs = timingNow() - persistStartedAt;
     this.logDiagnostic("info", "live_server_commit_event", { type: event.type }, true);
-    this.scheduleBroadcast(event);
+    this.scheduleBroadcast(event, undefined, broadcastTiming);
+    return { persistMs };
   }
 
   private async handleSyncCommand(path: string, body: Record<string, unknown>, game: LiveGame) {
@@ -1685,11 +1730,24 @@ export class GameRoomDO {
     this.logDiagnostic("info", "live_server_commit_completed", { commandId: receipt?.clientCommandId ?? null, databaseMs: Date.now() - started, gameplayRevision: game.gameplayRevision });
   }
 
-  private scheduleBroadcast(event: ServerEvent, excludedSocket?: WebSocket) {
+  private scheduleBroadcast(
+    event: ServerEvent,
+    excludedSocket?: WebSocket,
+    timing?: { path: string; historyLength: number; sessionCount: number },
+  ) {
     const captured = clone(event);
     const env = this.env;
     const requestId = this.requestId;
-    this.deliveryTail = this.deliveryTail.then(() => this.broadcast(captured, excludedSocket, env, requestId)).catch(error => {
+    const broadcastScheduledAt = timingNow();
+    this.deliveryTail = this.deliveryTail.then(async () => {
+      const broadcastStartedAt = timingNow();
+      await this.broadcast(captured, excludedSocket, env, requestId);
+      if (timing) this.logDiagnostic("info", "live_server_revert_broadcast_timing", {
+        ...timing,
+        deliveryQueueMs: broadcastStartedAt - broadcastScheduledAt,
+        broadcastMs: timingNow() - broadcastStartedAt,
+      });
+    }).catch(error => {
       this.logDiagnostic("error", "live_server_delivery_failed", { error: String(error), deliveryEventSeq: "eventSeq" in captured ? captured.eventSeq : null });
     });
     this.state.waitUntil?.(this.deliveryTail);
