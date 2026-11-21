@@ -111,9 +111,9 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
                 allocation=policy.decide(sample)
                 if (runtime and runtime.get('episodeId') and not episode_healthy
                         and sample.device_memory_known and not allocation.stop and not allocation.paused):
-                    from .cloud_episode import LIMITS
+                    from .cloud_episode import LIMITS as CLOUD_LIMITS
                     from .exploratory_contract import finish_repair,digest
-                    if runtime['episodeId']!=LIMITS['id']:raise ValueError('unknown cloud repair episode')
+                    if runtime['episodeId']!=CLOUD_LIMITS['id']:raise ValueError('unknown cloud repair episode')
                     plan=json.loads((Path(run_dir)/'plan.json').read_bytes())
                     if digest(plan)!=runtime['exploratoryPlanSha256']:raise ValueError('cloud episode runtime plan changed')
                     finish_repair(run_dir,time.time());episode_healthy=True

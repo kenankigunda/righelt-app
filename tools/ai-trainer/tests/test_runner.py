@@ -82,19 +82,21 @@ class RunnerTest(unittest.TestCase):
             runner.started = time.monotonic(); runner.deadline = runner.started + 600
             runner.runtime = {'deadlineMonotonic': runner.deadline}
             runner.manifest_hash = 'test'
+            runner.manifest={'manifest':{'exploratoryWindow':{'schema':2}}}
             runner.model = PolicyValueNet(); runner.optimizer = make_optimizer(runner.model)
             runner.buffer = ReplayBuffer(); runner.state = default_state()
             runner.generate_round = Mock(side_effect=AssertionError('handoff must precede generation'))
             atomic_json(runner.directory/'runtime.json', runner.runtime)
             marker = {'schema': 1, 'id': 'initial-validation', 'reason': 'validation', 'manifestSha256': 'test'}
             atomic_json(runner.directory/'handoff-request.json', marker)
-            runner.run()
+            with patch('righelt_training.runner.time.time',return_value=1795232040.123):runner.run()
             checkpoint = Path(json.loads((runner.directory/'latest.json').read_text())['checkpoint'])
             runner.state = default_state(); runner.restore(checkpoint)
             self.assertEqual(runner.state['lastHandoffId'], marker['id'])
             self.assertIsNone(runner.handoff_requested())
             self.assertEqual(json.loads((runner.directory/'runtime.json').read_text()), runner.runtime)
             self.assertEqual(json.loads((runner.directory/'runner-result.json').read_text())['reason'], 'validation-handoff')
+            self.assertEqual(json.loads((runner.directory/'runner-result.json').read_text())['trainingStoppedAtMs'],1795232040123)
             events = [json.loads(line) for line in (runner.directory/'runner-events.jsonl').read_text().splitlines()]
             self.assertEqual(next(event for event in events if event['type']=='checkpoint-handoff')['deadlineMonotonic'], runner.deadline)
             marker['manifestSha256'] = 'another-run'
