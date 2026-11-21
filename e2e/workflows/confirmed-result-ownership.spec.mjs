@@ -105,7 +105,26 @@ for(const history of [false,true])test(`another user finishing preserves ${histo
   const manual=history?observer.getByTestId('confirmed-result-notice').getByRole('button',{name:'View result',exact:true}):observer.getByTestId('board-view-result');
   await expect(manual).toBeVisible();
   if(history){await expect(observer.getByTestId('confirmed-result-notice')).toContainText(`won on Turn ${finalMove.turnIndex+1}`);await expect(observer.locator(`[data-move-id="${selectedMoveId}"]`)).toHaveAttribute('aria-current','true');}
-  else await expect(observer.locator('#shell-board-turn-indicator')).toContainText(`won on Turn ${finalMove.turnIndex+1}`);
+  else {
+   await expect(observer.locator('#shell-board-turn-indicator')).toContainText(`won on Turn ${finalMove.turnIndex+1}`);
+   // Automatic completion enters the ordinary final-turn History selection.
+   const selectedTurn=observer.locator('.history-turn-heading[aria-current="true"]');
+   await expect(selectedTurn).toHaveText(`Turn ${finalMove.turnIndex+1}`);
+   const boardState=()=>observer.locator('[data-testid="game-board"]').evaluate(board=>({
+    heading:document.querySelector('#shell-board-turn-indicator')?.textContent,
+    narration:document.querySelector('#shell-board-preview-label')?.textContent,
+    pieces:[...board.querySelectorAll('.cell .piece-token[data-piece-id]:not(.move-ghost)')].map(piece=>({id:piece.dataset.pieceId,row:piece.closest('.cell').dataset.row,col:piece.closest('.cell').dataset.col})).sort((a,b)=>a.id.localeCompare(b.id)),
+   }));
+   await expect(observer.locator('.board-message-activity')).toHaveAttribute('data-loading-state','idle');
+   const automaticFinal=await boardState();
+   await switchGamePanel(observer,'history');
+   await observer.locator(`.history-turn-hit[data-turn-index="${finalMove.turnIndex-1}"]`).click();
+   await expect(selectedTurn).toHaveText(`Turn ${finalMove.turnIndex}`);
+   await observer.locator(`.history-turn-hit[data-turn-index="${finalMove.turnIndex}"]`).click();
+   await expect(selectedTurn).toHaveText(`Turn ${finalMove.turnIndex+1}`);
+   await switchGamePanel(observer,'board');
+   await expect.poll(boardState).toEqual(automaticFinal);
+  }
   expect(await observer.evaluate(()=>window.__genericCompletionHeadings)).toEqual([]);
   await observer.screenshot({path:info.outputPath(history?'remote-history-notification.png':'remote-completed-board.png')});
   await manual.click();await expect(observer.getByTestId('game-result')).toBeVisible();await expect(observer.getByTestId('game-result').getByRole('heading')).toBeFocused();
