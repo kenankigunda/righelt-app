@@ -59,12 +59,13 @@ class LinuxMemoryTest(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):reader.sample(423*GIB)
 
     def test_pressure_and_event_growth_still_block_and_unknown_or_changed_identity_fails(self):
-        for change in ('pressure','oom','malformed','missing','identity','counter-reset'):
+        for change in ('pressure','oom','malformed','contradictory','missing','identity','counter-reset'):
             with self.subTest(change=change),tempfile.TemporaryDirectory() as d:
                 reader,_,mount,leaf,_=self.fixture(Path(d));reader.sample(423*GIB)
                 if change=='pressure':(leaf/'memory.pressure').write_text(pressure(2))
                 if change=='oom':(leaf/'memory.events').write_text('low 0\nhigh 0\nmax 0\noom 1\noom_kill 1\n')
                 if change=='malformed':(leaf/'memory.pressure').write_text(pressure('nan'))
+                if change=='contradictory':(leaf/'memory.pressure').write_text(pressure().replace('full avg10=0.00','full avg10=0.50'))
                 if change=='missing':(leaf/'memory.current').unlink()
                 if change=='identity':(leaf/'cgroup.procs').write_text('99999999')
                 if change=='counter-reset':

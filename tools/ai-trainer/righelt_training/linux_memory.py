@@ -31,6 +31,8 @@ def psi(raw):
         if record['total']<0:raise ValueError('invalid pressure total')
         result[name]=record
     if set(result)!= {'some','full'}:raise ValueError('incomplete workload pressure')
+    if any(result['full'][key]>result['some'][key] for key in ('avg10','avg60','avg300','total')):
+        raise ValueError('contradictory workload pressure')
     return result
 
 
