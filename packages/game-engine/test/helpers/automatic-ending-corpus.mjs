@@ -1,9 +1,20 @@
 import wide from '../fixtures/automatic-ending-wide-rush.json' with { type: 'json' };
 import rescue from '../fixtures/automatic-ending-rescue.json' with { type: 'json' };
 import {makeState,commander,unit} from './state-builders.mjs';
-import {applyAction,createInitialState,listLegalActions,resolveToStability,deterministicStateHash} from '../../src/index.ts';
+import {applyAction,createInitialState,resolveToStability,deterministicStateHash} from '../../src/index.ts';
 
+import {proveRelevantContinuation} from '../../src/early-ending-proof.ts';
+import {probeIncomingTurnImmobility} from '../../src/incoming-turn-immobility.ts';
+export const evaluateAutomaticEnding=(entry,options=entry.options)=>entry.incoming
+ ? probeIncomingTurnImmobility(entry.state,{kind:'ordinary-incoming-live-turn',incomingSide:entry.state.sideToMove,turnIndex:entry.state.turnIndex},options)
+ : proveRelevantContinuation(entry.state,'P1',options);
 export const automaticEndingCorpus=()=>{
+ const packed=[];
+ for(let row=0;row<10;row++)for(let col=0;col<10;col++){
+  const owner=col>=5?'P1':'P2';
+  packed.push(row===0&&col===9?commander('C1','P1',row,col):row===9&&col===0?commander('C2','P2',row,col):unit(`${owner}-${row}-${col}`,owner,row,col));
+ }
+
  const wideState=resolveToStability(applyAction(structuredClone(wide.initialState),wide.decisiveAction).state,{artifactMode:'full'});
  const optional=makeState(structuredClone(rescue));optional.continuation.rushChainPieceIds=['B'];optional.continuation.rushedPieceIds=['A','C1'];
  const terminal=makeState(structuredClone(rescue));terminal.continuation.rushedPieceIds=terminal.pieces.filter(p=>p.owner==='P1'&&p.id!=='B').map(p=>p.id);
@@ -19,6 +30,8 @@ export const automaticEndingCorpus=()=>{
  const initial=makeState({pieces:[commander('C1','P1',3,6),commander('C2','P2',6,3),unit('L','P1',3,3),unit('A','P1',4,4),unit('B','P1',5,3),unit('E','P2',4,2)]});
  const rush={type:'rush',actorId:'A',from:{row:4,col:4},to:{row:4,col:3}};
  return [
+  {name:'incoming sole-Pass loss',incoming:true,state:resolveToStability(makeState({sideToMove:'P2',turnIndex:1,pieces:packed})),expected:'incoming-loss',outcome:'p1_win'},
+  {name:'ordinary mobile incoming turn',incoming:true,state:resolveToStability(createInitialState()),expected:'not-immobile'},
   {name:'wide winning rush',state:wideState,expected:'proven-terminal',outcome:'p1_win'},
   {name:'required attacker rescue',state:makeState(structuredClone(rescue)),expected:'continue'},
   {name:'optional multi-step attacker rescue',state:optional,expected:'continue'},
