@@ -396,7 +396,7 @@ const toStableKey = (value) => {
   return JSON.stringify(value);
 };
 
-const confirmedResultOwner = createConfirmedResultOwner();
+const confirmedResultOwner = createConfirmedResultOwner({getIdentityId:()=>transport.getIdentityId()});
 const resultPresentation = createResultPresentation({onEnter:kind=>gameSound.play(kind)});
 const resumePendingResult=()=>{if(currentRoute.name==='game'&&confirmedResultOwner.snapshot(currentRoute.gameId)?.mode==='pending')queueMicrotask(()=>render({animatePanels:false,includeBoard:false}));};
 const presentGameResult = gameId => {
@@ -2303,6 +2303,7 @@ const renderBoardPanel = (game) => `
     <svg id="shell-overlay-lines" class="overlay-lines" aria-hidden="true"></svg>
   </div>
   ${renderBoardLegend(game.currentSnapshot)}
+  <button class="secondary" data-action="view-result" data-game-id="${escapeHtml(game.id)}" data-testid="board-view-result" hidden>${icon("history")}View result</button>
 `;
 
 const shouldEnableStickyShellColumn = ({ matchesWideScreen, columnHeight, viewportHeight }) =>
@@ -2361,6 +2362,8 @@ const syncMountedGameShellPanelUi = (shellRoot = getMountedGameShellRoot()) => {
     boardLoadingMessageOwner.release();
     return;
   }
+  const boardResultAction=shellRoot.querySelector('[data-testid="board-view-result"]');
+  if(boardResultAction)boardResultAction.hidden=getShellLayoutMode()!=="narrow" || !getGameResult(transport.getAuthoritativeGame(boardResultAction.dataset.gameId),transport.getIdentityId());
   const activePanel = getGamePanel();
   const nextPanelIndex = getGamePanelIndex(activePanel);
   shellRoot.querySelectorAll('[data-mobile-panel]').forEach(panel => {

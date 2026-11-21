@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {readFileSync} from 'node:fs';
 import {applyAction,resolveToStability} from '../../apps/web/generated/packages/game-engine/src/index.js';
-import {importScenarioGame,submitPlayableAction} from '../support/app.mjs';
+import {importScenarioGame,submitPlayableAction,openDirectGameLink,joinAsViewer,switchGamePanel} from '../support/app.mjs';
 
 const catalog=JSON.parse(readFileSync(new URL('../../apps/web/scenarios/catalog.json',import.meta.url),'utf8'));
 const completed=catalog.scenarios.find(record=>record.title==='Capture supply point to win by unsupplying the commander');
@@ -87,4 +87,27 @@ test('a rejected optimistic win rolls the visible target piece back without resu
     await expect(source.locator(`.piece-token[data-piece-id="${finalMove.action.actorId}"]:not(.move-ghost)`)).toBeVisible();
     await expect(page.getByTestId('game-result')).toHaveCount(0);await expect(page.locator('.history-turn-heading[aria-current="true"],.history-move-hit[aria-current="true"]')).toHaveCount(0);
   }finally{gate.release();}
+});
+
+for(const history of [false,true])test(`another user finishing preserves ${history?'selected History':'the completed board'} with manual result access`,async({page,context,browser,baseURL},info)=>{
+ const observerContext=await browser.newContext({baseURL,viewport:{width:390,height:844}}),observer=await observerContext.newPage();
+ let gate;
+ try{
+  const imported=await importScenarioGame(page,scenario,baseURL);
+  await openDirectGameLink(observer,baseURL,`#/game/${imported.gameId}`);await joinAsViewer(observer);await switchGamePanel(observer,'board');
+  let selectedMoveId;
+  if(history){await switchGamePanel(observer,'history');const row=observer.getByTestId('history-move-item').first();selectedMoveId=await row.getAttribute('data-move-id');await row.locator(':scope > .history-move-hit').click();await expect(row).toHaveAttribute('aria-current','true');}
+  await observer.evaluate(()=>{window.__genericCompletionHeadings=[];new MutationObserver(()=>{if(document.querySelector('#shell-board-turn-indicator')?.textContent==='Game complete')window.__genericCompletionHeadings.push('Game complete');}).observe(document.querySelector('#app'),{subtree:true,childList:true,characterData:true});});
+  gate=await holdWinningAcknowledgement(context,imported.gameId);const submission=submitPlayableAction(page,finalMove.action);await gate.observed;
+  await expect(observer.getByTestId('game-result')).toHaveCount(0);gate.release();await submission;
+  await expect(page.getByTestId('game-result')).toBeVisible();
+  await expect(observer.getByTestId('game-result')).toHaveCount(0);
+  const manual=history?observer.getByTestId('confirmed-result-notice').getByRole('button',{name:'View result',exact:true}):observer.getByTestId('board-view-result');
+  await expect(manual).toBeVisible();
+  if(history){await expect(observer.getByTestId('confirmed-result-notice')).toContainText(`won on Turn ${finalMove.turnIndex+1}`);await expect(observer.locator(`[data-move-id="${selectedMoveId}"]`)).toHaveAttribute('aria-current','true');}
+  else await expect(observer.locator('#shell-board-turn-indicator')).toContainText(`won on Turn ${finalMove.turnIndex+1}`);
+  expect(await observer.evaluate(()=>window.__genericCompletionHeadings)).toEqual([]);
+  await observer.screenshot({path:info.outputPath(history?'remote-history-notification.png':'remote-completed-board.png')});
+  await manual.click();await expect(observer.getByTestId('game-result')).toBeVisible();await expect(observer.getByTestId('game-result').getByRole('heading')).toBeFocused();
+ }finally{gate?.release();await observerContext.close();}
 });

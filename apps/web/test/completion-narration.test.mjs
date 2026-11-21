@@ -14,7 +14,7 @@ const fixture=({status='p1_win',reason='p2_commander_destroyed',count=2,complete
  const removed=removals??[{pieceId:'c2',kind:'commander',position:{row:9,col:2},ownerSeat:'p2',supplied:false,commanded:false,reason:'commander_unsupplied'}];
  const record={version:1,decisive:{action:decisiveAction,actorSide,decisionId,clientCommandId:'v2:final',turnIndex:4},
   board:structuredClone(terminal),result:{status,reason},removals:removed,
-  cause:cause??{kind:'relevant-continuation-finality',endpointCount:2,optionalEndpointCount:1},commit:{eventSeq:9,gameplayRevision:7,clientCommandId:'v2:final'},
+  cause:cause??{kind:'relevant-continuation-finality'},commit:{eventSeq:9,gameplayRevision:7,clientCommandId:'v2:final'},
   lineage:{version:includeImported?1:null,complete:lineageComplete,importedMoveCount:includeImported?1:0,
    sources:includeImported?[{gameId:'source',gameplayRevision:3,moveCount:1}]:[]},activeActionCount:count,activeActionCountComplete:complete};
  const imported={moveId:'imported-one',index:0,displayMoveNumber:1,turnIndex:3,turnMoveIndex:0,actorSide:'P2',action:{type:'pass'},
@@ -42,7 +42,7 @@ test('decisive push narration consumes the canonical imported and local count an
 test('count and cause stay independently unknown instead of being reconstructed',()=>{
  const incomplete=fixture({complete:false});
  assert.equal(completedOutcomeNarration(incomplete,{identityId:'me'}).text,'You won. Their push to (9, 2) destroyed Guest’s commander.');
- const malformed=fixture({cause:{kind:'relevant-continuation-finality',endpointCount:0,optionalEndpointCount:0}});
+ const malformed=fixture({cause:{kind:'unrecognized'}});
  assert.equal(completedOutcomeNarration(malformed,{identityId:'me'}).text,'You won in 2 moves.');
  const wrongTurn=fixture();wrongTurn.terminalOutcome.decisive.turnIndex=3;
  assert.equal(completedOutcomeNarration(wrongTurn,{identityId:'me'}),null);
@@ -152,4 +152,10 @@ test('tampered terminal provenance falls back without recounting History',()=>{
  const presentation=selectedHistoryPresentation(game,{identityId:'me'});
  assert.equal(presentation.caption.text,'You won on Turn 5');
  assert.doesNotMatch(presentation.message.text,/in \d+ moves|destroyed Guest’s commander/);
+});
+
+test('retained traversal counts do not alter count-free canonical cause narration',()=>{
+ const fresh=fixture(),retained=structuredClone(fresh);
+ Object.assign(retained.terminalOutcome.cause,{endpointCount:999,optionalEndpointCount:0});
+ assert.deepEqual(completedOutcomeNarration(retained,{identityId:'me'}),completedOutcomeNarration(fresh,{identityId:'me'}));
 });

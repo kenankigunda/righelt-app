@@ -95,7 +95,7 @@ for(const width of [390,1440])test(`Home separates completed games and names con
  await page.screenshot({path:info.outputPath('home-completed-winner-lines.png'),fullPage:true});
  await revealCard(homeGames.loss.id);await card(homeGames.loss.id).focus();await page.keyboard.press('Enter');
  await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',homeGames.loss.id);
- await expect(page.locator('#shell-board-turn-indicator')).toHaveText('Game complete');
+ await expect(page.locator('#shell-board-turn-indicator')).toHaveText(/ won on Turn \d+$/);
  await expect(page.locator('#shell-board-preview-label [data-board-message-action="pass"]')).toHaveCount(0);
 });
 

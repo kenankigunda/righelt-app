@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import wideEnding from '../../game-engine/test/fixtures/automatic-ending-wide-rush.json' with { type: 'json' };
+import {createComputerControl,changeComputerControl} from '../../shared-types/src/computer-play.ts';
+import {deterministicStateHash} from '../../game-engine/src/hash.ts';
 import fixture from '../../game-engine/test/fixtures/destruction-turn-end.json' with { type: 'json' };
 import { GameRoomDO } from '../src/game-room-do.ts';
 import { activeActionEvidence, applyAcceptedAutomaticEnding, applyRevertToMove, applyScenarioToGame, applyServerAction, createInitialGame, resolveServerMoveAction } from '../src/shell-live-core.ts';
@@ -165,6 +168,8 @@ test('direct accepted Undo evaluates and persists the restored current-rules end
   assert.deepEqual(game.terminalOutcome.decisive.action, { type: 'pass' });
   assert.equal(game.terminalOutcome.decisive.decisionId, null);
   assert.equal(game.terminalOutcome.commit.clientCommandId, 'direct-undo');
+  assert.equal(game.terminalOutcome.decisive.actorIdentityId, 'owner');
+  assert.equal(game.terminalOutcome.decisive.actorKind, 'human');
   assert.equal(game.terminalOutcome.commit.gameplayRevision, game.gameplayRevision);
 });
 
@@ -179,6 +184,9 @@ test('consented accepted Undo applies current ending rules only on approval', as
   assert.equal(game.moves[0].undone, true);
   assert.equal(game.board.state.outcome.status, 'p1_win');
   assert.equal(game.terminalOutcome.commit.clientCommandId, 'consented-undo');
+  assert.equal(game.terminalOutcome.decisive.actorIdentityId, 'bob');
+  assert.equal(game.terminalOutcome.decisive.actorKind, 'human');
+  assert.equal((await loadGameProjection(h.env,game.id)).game.terminalOutcome.decisive.actorIdentityId,'bob');
   assert.equal(game.terminalOutcome.commit.gameplayRevision, game.gameplayRevision);
 });
 
@@ -516,10 +524,10 @@ test('retained zero-removal finality repairs only a deterministically re-proven 
   assert.deepEqual(loaded.game.moves[0].snapshot, record.board);
 
   const invalid = structuredClone(game);
-  invalid.terminalOutcome.cause.endpointCount += 1;
+  invalid.terminalOutcome.result.status = "draw";
   await persistGameState(env, invalid, 4);
   assert.equal((await loadGameProjection(env, game.id)).kind, 'invalid',
-    'a mismatched proof remains fail-closed instead of receiving the retained repair');
+    'an inconsistent saved result remains fail-closed');
 });
 
 test('retained zero-removal rush finality re-proves the production narration class', async () => {
@@ -748,4 +756,40 @@ test('retained completed games remain readable without a fabricated terminal rec
   assert.equal(loaded.game.board.state.outcome.status, 'p1_win');
   assert.equal(loaded.game.terminalOutcome, undefined);
   assert.equal(env.DB.getWrites().length, writes);
+});
+
+test('wide winning rush commits count-free completion and real human attribution through restart and duplicate',async()=>{
+ const h=await harness(game=>{
+  game.board.state=structuredClone(wideEnding.initialState);
+  game.turns=[{index:56,startedAt:game.createdAt,endedAt:null,playerSeat:'Player 1',status:'active',moveIndexes:[],lastMoveAt:null}];return game;
+ });
+ const sent=await h.command({payload:{action:wideEnding.decisiveAction,actorIdentityId:'forged',actorKind:'computer'}});
+ const response=await h.call('apply',sent);assert.equal(response.commandOutcomes[0].outcome,'accepted');
+ const record=h.DB.getGameState('terminal-game').terminalOutcome;
+ assert.deepEqual(record.result,wideEnding.expectedOutcome);
+ assert.deepEqual(record.cause,{kind:'relevant-continuation-finality'});
+ assert.equal(record.decisive.actorIdentityId,'owner');assert.equal(record.decisive.actorKind,'human');
+ assert.equal(record.activeActionCount,1);
+ h.restart();const duplicate=await h.call('apply',sent);assert.equal(duplicate.duplicate,true);
+ assert.deepEqual((await loadGameProjection(h.env,'terminal-game')).game.terminalOutcome,record);
+ const retained=h.DB.getGameState('terminal-game');Object.assign(retained.terminalOutcome.cause,{endpointCount:98765,optionalEndpointCount:43210});
+ await persistGameState(h.env,retained,duplicate.eventSeq+1);
+ const loaded=await loadGameProjection(h.env,'terminal-game');assert.equal(loaded.kind,'ok');
+ assert.equal(loaded.game.terminalOutcome.cause.endpointCount,98765,'historical diagnostics survive without replaying their traversal');
+ const corrupt=structuredClone(retained);corrupt.terminalOutcome.decisive.actorKind=undefined;
+ await persistGameState(h.env,corrupt,duplicate.eventSeq+2);assert.equal((await loadGameProjection(h.env,'terminal-game')).kind,'invalid');
+});
+
+test('validated computer End turn is attributed to computer even under its human owner identity',async()=>{
+ const h=await harness(game=>{installTerminalFixture(game);const control=createComputerControl('owner',{p1:null,p2:'babs'});game.computer=changeComputerControl(control,{ownerId:'owner',authContextId:'',deviceId:'test-device',generation:control.generation,action:'acquire',turnIndex:game.board.state.turnIndex,now:Date.now()});return game;});
+ const game=h.DB.getGameState('terminal-game');
+ const proof={deviceId:'test-device',generation:game.computer.generation,modelId:game.computer.modelId,profile:'babs',profileVersion:'experimental-v1',seed:107,attemptId:'attributed-computer-close'};
+ const action={type:'end_turn'};
+ const attempt={proof,gameplayRevision:game.gameplayRevision,fingerprint:deterministicStateHash(game.board.state),outcome:'ready',result:{action}};
+ const saved=await h.call('decision-attempt',{operation:'write',kind:'computer',attemptId:proof.attemptId,attempt});assert.equal(saved.status,200);
+ const sent=await h.command({payload:{action,computer:proof}});const accepted=await h.call('apply',sent);
+ assert.equal(accepted.commandOutcomes[0].outcome,'accepted');
+ const record=h.DB.getGameState('terminal-game').terminalOutcome;assert.equal(record.decisive.actorIdentityId,'owner');assert.equal(record.decisive.actorKind,'computer');
+ h.restart();assert.equal((await h.call('apply',sent)).duplicate,true);
+ assert.deepEqual((await loadGameProjection(h.env,'terminal-game')).game.terminalOutcome,record);
 });
