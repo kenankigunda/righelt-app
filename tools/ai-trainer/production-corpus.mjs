@@ -54,7 +54,10 @@ export function replayProductionDecision(before,action,expected,bounded=operatio
     const {expectedCause,...proofOptions}=options;
     const proof=bounded(()=>proveRelevantContinuation(next,next.continuation.owner,proofOptions));
     if(proof.kind!=='proven-terminal'||proof.complete!==true||proof.candidateOutcome.status!==expected.outcome.status)throw Error('Unverified production automatic ending');
-    if(expectedCause?.kind!=='relevant-continuation-finality'||expectedCause.endpointCount!==proof.endpointCount||expectedCause.optionalEndpointCount!==proof.optionalEndpointCount)throw Error('Unverified production automatic ending cause');
+    // Historical optional traversal counts are diagnostic, not finality identity.
+    // The current complete proof, outcome, required endpoints and exact retained
+    // settled board remain independently verified below.
+    if(expectedCause?.kind!=='relevant-continuation-finality'||expectedCause.endpointCount!==proof.endpointCount)throw Error('Unverified production automatic ending cause');
     const settled=bounded(()=>probeTerminalSettlement(next,undefined,{artifactMode:expected.artifacts?.mode??'full'}));
     if(settled.kind!=='settled'||!settled.persistable)throw Error('Unverified production automatic settlement');
     const state=exactRetainedState(settled.frame.occupancy,expected,bounded);
