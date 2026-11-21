@@ -10,6 +10,19 @@ import time
 
 class RecoveryLedger:
     def __init__(self,root):self.root=Path(root);self.root.mkdir(parents=True,exist_ok=True)
+    def seed_job_floor(self,stage,seed,minimum,proof):
+        """Publish a verified floor atomically before any job claim or spawn."""
+        with (self.root/'recovery-ledger.lock').open('a') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX)
+            path=self.root/'recovery-ledger.json'
+            data=json.loads(path.read_text()) if path.exists() else {'schema':1,'checkpoints':0,'jobs':{}}
+            key=f'{stage}:{seed}';prior=data.get('consumptionTransfers',{}).get(key)
+            if prior is not None and prior!=proof:raise ValueError('consumption floor already bound')
+            if prior is None and (data['jobs'].get(key,0) or self.launches()):
+                raise ValueError('consumption floor must precede job claims')
+            data['jobs'][key]=max(data['jobs'].get(key,0),minimum)
+            data.setdefault('consumptionTransfers',{})[key]=proof
+            atomic_json(path,data)
     def claim(self,kind,key,minimum=0):
         with (self.root/'recovery-ledger.lock').open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX)

@@ -1,4 +1,4 @@
-import {isCloudRepair} from './cloud-repair-policy.mjs';
+import {isCloudRepair,CLOUD_REPLACEMENT} from './cloud-repair-policy.mjs';
 import {programWindowBinding,amendProgramWindow} from './program-window.mjs';
 import { validateOperatorAttestation } from './operator-attestation.mjs';
 import { qualifyPilot } from './report.mjs';
@@ -262,7 +262,7 @@ export class Controller {
       for (const file of result.files) { artifact(file); assert(safePath(file.path) && c.objects[file.sha256]?.bytes === file.bytes, 'incomplete run file inventory'); }
       c.fileHistory ??= []; c.fileHistory.push({ phase: phase.id, generation, files: result.files }); c.files = result.files;
     }
-    assert(['complete', 'infrastructure', 'correctness'].includes(result?.kind), 'invalid result');
+    assert(['complete', 'infrastructure', 'correctness'].includes(result?.kind)||isCloudRepair(c.manifest)&&result?.kind==='resource-interrupted', 'invalid result');
     if (result.kind === 'complete') {
       if(c.manifest.exploratory)assert(c.sealedEndpoint?.generation===generation&&c.sealedEndpoint.phaseIndex===c.phase,'completed exploratory result requires its sealed endpoint');
       for (const name of phase.outputs) {
@@ -280,6 +280,10 @@ export class Controller {
       this.event(c, 'phase-complete', { phase: phase.id });
     } else {
       c.failure = result.kind;
+      if(result.kind==='resource-interrupted'){
+        assert(CLOUD_REPLACEMENT.resourceInterruptionReasons.includes(result.resourceReason),'typed resource stop reason required');
+        c.resourceInterruption={reason:result.resourceReason,generation,phaseIndex:c.phase};
+      }
       if (result.kind === 'infrastructure') {
         if(!c.manual?.publicWork){c.repairStartedAt ??= this.now(); c.repairStartCents ??= this.cost(c);}
         // Never restart an attempted evaluation game. Its runner must consume

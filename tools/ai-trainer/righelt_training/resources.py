@@ -18,6 +18,7 @@ class Sample:
     device_memory_known: bool = True
     swap_used_bytes: int | None = 0
     ramp_authorized: bool = False
+    memory_diagnostics: dict | None = None
 
 @dataclass(frozen=True)
 class Allocation:

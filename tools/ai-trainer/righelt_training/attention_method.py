@@ -179,6 +179,9 @@ def restore_attention(runner, checkpoint):
     runner.buffer.positions.clear();runner.buffer.ids.clear();runner.buffer.game_ids.clear()
     reconstruct_replay(runner.buffer,data,runner.attention_method,base=checkpoint.parent.parent)
     runner.state=state
+    if meta['sha256']==original:
+        from .consumption_transfer import apply
+        apply(runner,data,meta['sha256'])
     if state.get('generationStartedMonotonic') is not None:
         import time
         elapsed=state.get('generationElapsedSeconds')

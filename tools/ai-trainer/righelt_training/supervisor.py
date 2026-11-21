@@ -173,6 +173,11 @@ def wait_for_resources(budget,policy,telemetry,run_dir,runtime,*,clock=time.mono
         try:sample=telemetry.sample()
         except (RuntimeError,OSError):return 'telemetry-failed'
         assigned=policy.decide(sample)
+        if runtime.get('episodeId') and assigned.paused:
+            with (Path(run_dir)/'resource-events.jsonl').open('a') as stream:
+                stream.write(json.dumps({'event':'resource-compute-stopped','reason':assigned.reason,
+                    'sample':asdict(sample),'allocation':assigned.record(),'cleanupVerified':True,'resumeAllowed':False})+'\n')
+            return 'resource-pressure-stop'
         if runtime.get('exploratoryPlanSha256'):
             from .exploratory_contract import start_repair,check_repair
             if assigned.paused:start_repair(run_dir,time.time())
@@ -226,6 +231,11 @@ def run_phase(argv,env,log,budget,runtime,run_dir,artifact_root,activity_file,*,
             stop_group(process)
             cleanup_owned(directory)
         if reason!='resource-pressure-stop':return reason,process
+        if runtime.get('episodeId'):
+            with (directory/'resource-events.jsonl').open('a') as stream:
+                stream.write(json.dumps({'event':'resource-compute-stopped','pid':process.pid,
+                    'reason':reason,'cleanupVerified':True,'resumeAllowed':False})+'\n')
+            return 'resource-interrupted',process
         if runtime.get('exploratoryPlanSha256'):
             from .exploratory_contract import consume_resume
             consume_resume(directory,reason,time.time())
