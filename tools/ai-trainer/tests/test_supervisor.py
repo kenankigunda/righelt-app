@@ -16,6 +16,26 @@ class QuietTelemetry:
         return Sample(now,None,None,0,'normal',GIB,40*GIB,500*GIB,0)
 
 class SupervisorTest(unittest.TestCase):
+    def test_cloud_repair_closes_only_after_known_healthy_device_sample(self):
+        from unittest.mock import Mock,patch
+        from righelt_training.cloud_episode import start_repair,LIMITS
+        from righelt_training.exploratory_contract import digest
+        from test_cloud_episode import plan
+        record=plan();now=[0.];wall=record['allocationStartWall']
+        process=Mock(pid=123,returncode=0);process.poll.side_effect=lambda:None if now[0]<11 else 0
+        telemetry=Mock();telemetry.sample.side_effect=lambda:Sample(now[0],now[0],False,0,'normal',GIB,40*GIB,500*GIB,0,now[0]>=10)
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/'plan.json').write_text(json.dumps(record));start_repair(root,record,wall)
+            runtime={'episodeId':LIMITS['id'],'exploratoryPlanSha256':digest(record)}
+            with patch('righelt_training.supervisor.time.time',side_effect=lambda:wall+now[0]):
+                reason=supervise(process,Budget(0,600),AdaptivePolicy(),telemetry,root,
+                    clock=lambda:now[0],sleep=lambda seconds:now.__setitem__(0,now[0]+seconds),runtime=runtime)
+            self.assertEqual(reason,'completed')
+            events=[json.loads(line) for line in (root/'exploratory-recovery.jsonl').read_text().splitlines()]
+            self.assertEqual([e['event'] for e in events],['repair-started','repair-ended'])
+            self.assertEqual(events[0]['observedAt'],record['repairStartedAtWall'])
+            self.assertEqual(events[1]['observedAt'],wall+10)
+
     def simulate_resources(self, sample, end=40, operation=None):
         from unittest.mock import Mock,patch
         now=[0.];process=Mock(pid=123,returncode=0)

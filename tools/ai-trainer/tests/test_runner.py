@@ -17,6 +17,21 @@ from righelt_training.config import ROOT, CONFIG
 
 
 class RunnerTest(unittest.TestCase):
+    def test_cloud_endpoint_captures_integer_actual_stop_before_final_checkpoint_work(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runner=Runner.__new__(Runner);runner.directory=Path(directory);runner.state=default_state()
+            runner.manifest={'manifest':{'exploratoryWindow':{'schema':2}}}
+            runner.started=0;runner.deadline=0;wall=[1795232040.123];calls=[]
+            def checkpoint():
+                calls.append(True)
+                if len(calls)==2:wall[0]+=600
+            runner.checkpoint=checkpoint
+            with patch('righelt_training.runner.time.time',side_effect=lambda:wall[0]):runner.run()
+            result=json.loads((runner.directory/'runner-result.json').read_text())
+            self.assertEqual(result['trainingStoppedAtMs'],1795232040123)
+            self.assertEqual(result['reason'],'budget-or-resource-stop')
+            self.assertEqual(len(calls),2)
+
     def test_engine_fingerprint_ignores_counters_but_not_controller(self):
         state = simple_root(2)
         first = engine_command({'command': 'fingerprint', 'state': state}, timeout=10)['fingerprint']
@@ -82,21 +97,20 @@ class RunnerTest(unittest.TestCase):
             runner.started = time.monotonic(); runner.deadline = runner.started + 600
             runner.runtime = {'deadlineMonotonic': runner.deadline}
             runner.manifest_hash = 'test'
-            runner.manifest={'manifest':{'exploratoryWindow':{'schema':2}}}
+            runner.manifest={'manifest':{}}
             runner.model = PolicyValueNet(); runner.optimizer = make_optimizer(runner.model)
             runner.buffer = ReplayBuffer(); runner.state = default_state()
             runner.generate_round = Mock(side_effect=AssertionError('handoff must precede generation'))
             atomic_json(runner.directory/'runtime.json', runner.runtime)
             marker = {'schema': 1, 'id': 'initial-validation', 'reason': 'validation', 'manifestSha256': 'test'}
             atomic_json(runner.directory/'handoff-request.json', marker)
-            with patch('righelt_training.runner.time.time',return_value=1795232040.123):runner.run()
+            runner.run()
             checkpoint = Path(json.loads((runner.directory/'latest.json').read_text())['checkpoint'])
             runner.state = default_state(); runner.restore(checkpoint)
             self.assertEqual(runner.state['lastHandoffId'], marker['id'])
             self.assertIsNone(runner.handoff_requested())
             self.assertEqual(json.loads((runner.directory/'runtime.json').read_text()), runner.runtime)
             self.assertEqual(json.loads((runner.directory/'runner-result.json').read_text())['reason'], 'validation-handoff')
-            self.assertEqual(json.loads((runner.directory/'runner-result.json').read_text())['trainingStoppedAtMs'],1795232040123)
             events = [json.loads(line) for line in (runner.directory/'runner-events.jsonl').read_text().splitlines()]
             self.assertEqual(next(event for event in events if event['type']=='checkpoint-handoff')['deadlineMonotonic'], runner.deadline)
             marker['manifestSha256'] = 'another-run'

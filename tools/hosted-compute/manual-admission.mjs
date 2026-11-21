@@ -41,8 +41,10 @@ export async function manualAuthority(core,db,c,intent){
   assert(c.manifest.mode==='supervised-qualification'&&c.manifest.purpose!=='scientific-comparison'&&c.manifest.phases.length===1,'manual public qualification only');
   assert(prior.attempts.length===1&&old?.uncertain===true&&['stopping','cleanup-uncertain'].includes(prior.status),'original uncertain owner required');
   assert(canonical(intent.priorAttempt)===canonical({generation:prior.generation,name:old.name,prearmSha256:old.prearmSha256,startedAt:old.startedAt}),'original attempt binding differs');
-  const repairStartedAt=operatorAttemptBinding(prior).repairStartedAt;
-  assert(Number.isSafeInteger(repairStartedAt)&&repairStartedAt>=old.startedAt&&intent.repairStartedAt===repairStartedAt,'original repair clock differs');
+  const originalRepairStartedAt=operatorAttemptBinding(prior).repairStartedAt;
+  assert(Number.isSafeInteger(originalRepairStartedAt)&&originalRepairStartedAt>=old.startedAt,'original repair clock differs');
+  const repairStartedAt=isCloudRepair(c.manifest)?CLOUD_REPAIR.repairStartedAt:originalRepairStartedAt;
+  assert(intent.repairStartedAt===repairStartedAt,isCloudRepair(c.manifest)?'new repair clock differs':'original repair clock differs');
   assert(now>=intent.createdAt&&now<intent.expiresAt&&(intent.publicWorkAuthority||now<intent.repairDeadline),'manual admission window expired');
   const host=c.manifest.phases[0].host;assert(host.quoteObservedAt<=now&&host.quoteExpires>now,'manual host quote expired');
   assert(intent.fundingSha256===await hash(c.manifest.cash),'manual funding identity differs');

@@ -4,9 +4,10 @@ import {actualFixture} from './actual-spend-fixture.mjs';
 import {fixture} from './helpers.mjs';
 import {CLOUD_REPAIR as P,validateCloudRepairWindow} from '../cloud-repair-policy.mjs';
 import {cloudRepairAuthority,consumeCloudRepairCreate} from '../cloud-repair-episode.mjs';
-import {spendBinding} from '../actual-spend.mjs';
+import {spendBinding,actualEnvelope} from '../actual-spend.mjs';
 import {validateManualIntent} from '../manual-authority.mjs';
-import {canonical,encode,sha256} from '../policy.mjs';
+import {canonical,encode,sha256,reserveCents} from '../policy.mjs';
+import {EXPLORATORY_PURPOSE} from '../exploratory-policy.mjs';
 const hash=value=>sha256(encode(canonical(value)));
 
 async function setup(){
@@ -33,6 +34,49 @@ async function setup(){
  intent.exploratoryWindow=await f.receipt(r,'c');
  return {...f,db,c,r,intent,oldWindow,oldManual};
 }
+
+async function manualRepairFixture(){
+ const f=await setup(),{c,intent,r}=f,m=c.manifest,host=m.phases[0].host;
+ // Compose the admission boundary with synthetic, already-staged input records.
+ // This does not claim cryptographic original-checkpoint staging or CUDA proof.
+ m.purpose=EXPLORATORY_PURPOSE;m.deadline=r.artifactDeadline;m.maxCents=2000;m.cash.computeUsageCapCents=2000;
+ host.quoteObservedAt=f.now();host.quoteExpires=f.now()+900000;
+ const prearm=await f.arm(m,'3'.repeat(32));c.manifestSha256=await hash(m);await f.core.save(f.db);
+ const binding=await f.core.actualSpendBinding();
+ Object.assign(f.observation,{id:'a'.repeat(32),ledgerSha256:binding.ledgerSha256,priorBasisSha256:binding.priorBasisSha256,observedAt:f.now(),validUntil:f.now()+900000});
+ f.observation.authority.repairCeilingCents=10000;
+ const basis=await f.receipt(f.observation,'a');await f.core.reconcileActualSpend('pilot',basis);
+ const registry={...f.registry,references:[f.manifest.externalControl,m.externalControl]};
+ const registryRef={...f.intent.registry,path:`control/prearms/${'9'.repeat(32)}.json`,sha256:await hash(registry)};
+ f.control.records.set(`${registryRef.path}@${registryRef.commit}`,registry);
+ const ready={...f.ready,registry:registryRef,observedAt:f.now(),run:{...f.ready.run,results:registry.references.map(reference=>({prearmSha256:reference.sha256,state:'waiting',failures:0,cleanupObservedAbsent:false,durableReceiptConfirmed:false}))}};
+ Object.assign(intent,{manifestSha256:c.manifestSha256,name:prearm.launches[0].name,registry:registryRef,
+  repairStartedAt:P.repairStartedAt,actualSpendBasisSha256:basis.sha256,fundingSha256:await hash(m.cash),cleanupReady:await f.receipt(ready,'b')});
+ r.ledgerSha256=(await f.core.actualSpendBinding()).ledgerSha256;intent.exploratoryWindow=await f.receipt(r,'c');
+ const funding=structuredClone(f.funding);funding.basisSha256=basis.sha256;
+ Object.assign(funding.newIntent,{computeAllocationCents:m.maxCents,protectedShutdownReserveCents:reserveCents(m.maxCents),
+  latestAdmission:new Date(intent.startup.deadline).toISOString(),latestWorkCutoff:new Date(m.deadline).toISOString(),
+  responseUntil:new Date(intent.liabilityUntil).toISOString(),startupDeadline:intent.startup.deadline});
+ const amount=actualEnvelope(f.core,await f.core.load(),c,intent,r).requiredCents;
+ Object.assign(funding.aggregate,{runpodEncumberedCents:amount,repairEncumberedCents:amount,repairCeilingCents:10000});
+ intent.fundingReservation=await f.receipt(funding,'d');
+ return f;
+}
+
+test('composed manual prepare and attach accept the new repair clock while retaining original attempt history',async()=>{
+ const f=await manualRepairFixture(),before=await f.core.load(),creates=f.providers.creates;
+ const prepared=await f.core.manualPrepare(f.c.manifest.id,f.intent),after=await f.core.load();
+ assert(prepared.workerToken);assert.equal(after.exploratoryEpisodes[P.id].creates.length,1);
+ assert.deepEqual(after.exploratoryWindow,f.oldWindow);assert.deepEqual(after.manualProgram,f.oldManual);
+ assert.deepEqual(after.campaigns.pilot,before.campaigns.pilot);assert.equal(f.providers.creates,creates);
+ f.providers.resources.set('repair-pod',{id:'repair-pod',name:f.intent.name,host:f.c.manifest.phases[0].host});
+ await f.core.manualAttach(f.c.manifest.id,{intentSha256:prepared.intentSha256,podId:'repair-pod',acceptedAt:f.now(),accountId:f.intent.accountId});
+ assert.equal((await f.core.load()).campaigns[f.c.manifest.id].programAnchor.deadline,f.r.artifactDeadline);
+ for(const clock of [f.intent.priorAttempt.startedAt,P.repairStartedAt+1]){
+  const g=await manualRepairFixture(),untouched=await g.core.load();g.intent.repairStartedAt=clock;
+  await assert.rejects(g.core.manualPrepare(g.c.manifest.id,g.intent),/repair clock/);assert.deepEqual(await g.core.load(),untouched);
+ }
+});
 
 test('new repair uses a separate append-only three-create ledger and preserves historical authority',async()=>{
  const f=await setup();validateManualIntent(f.intent);validateCloudRepairWindow(f.c.manifest.exploratory);
