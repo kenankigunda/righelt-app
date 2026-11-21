@@ -82,7 +82,7 @@ def request_validation_handoff(run_dir,runtime,now):
 
 def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sleep=time.sleep,sample_seconds=None,runtime=None):
     sample_seconds=sample_seconds or LIMITS['sampleSeconds']
-    next_sample=clock();paused_since=None
+    next_sample=clock();paused_since=None;episode_healthy=False
     startup_deadline=next_sample+LIMITS['startupHeartbeatSeconds'];device_seen=False
     events=Path(run_dir)/'resource-events.jsonl'
     try:
@@ -109,6 +109,14 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
                     stop_group(process)
                     return 'telemetry-failed'
                 allocation=policy.decide(sample)
+                if (runtime and runtime.get('episodeId') and not episode_healthy
+                        and sample.device_memory_known and not allocation.stop and not allocation.paused):
+                    from .cloud_episode import LIMITS as CLOUD_LIMITS
+                    from .exploratory_contract import finish_repair,digest
+                    if runtime['episodeId']!=CLOUD_LIMITS['id']:raise ValueError('unknown cloud repair episode')
+                    plan=json.loads((Path(run_dir)/'plan.json').read_bytes())
+                    if digest(plan)!=runtime['exploratoryPlanSha256']:raise ValueError('cloud episode runtime plan changed')
+                    finish_repair(run_dir,time.time());episode_healthy=True
                 device_seen=device_seen or sample.device_memory_known
                 atomic_json(Path(run_dir)/'allocation.json',{**allocation.record(),'observedAt':sample.now})
                 with events.open('a') as f:
@@ -204,7 +212,7 @@ def run_phase(argv,env,log,budget,runtime,run_dir,artifact_root,activity_file,*,
             from .exploratory_window import context,read
             from .execution_recipe import verify_runtime
             context(directory,read(directory/'plan.json'),verify_runtime())
-        if runtime.get('exploratoryPlanSha256'):
+        if runtime.get('exploratoryPlanSha256') and not runtime.get('episodeId'):
             from .exploratory_contract import finish_repair
             finish_repair(directory,time.time())
         atomic_json(directory/'allocation.json',{'workers':0,'memory_gib':LIMITS['minMemoryGiB'],

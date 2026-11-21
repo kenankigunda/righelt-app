@@ -37,6 +37,7 @@ class AdmissionTest(unittest.TestCase):
 
     def runner(self,directory):
         runner=Runner.__new__(Runner);runner.directory=Path(directory);runner.state=default_state()
+        runner.manifest={'manifest':{}}
         runner.seed=2;runner.stage='initial';runner.model_version='weights';runner.curriculum=Curriculum(2)
         runner.deadline=time.monotonic()+3600;runner.checkpoint=Mock()
         runner.runtime={'startedMonotonic':runner.deadline-3600,'deadlineMonotonic':runner.deadline,'reserveSeconds':600}

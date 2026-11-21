@@ -14,10 +14,14 @@ def digest(value):
 
 
 def validate(plan):
-    if (plan.get('schema')!=1 or plan.get('kind')!=KIND or plan.get('lane') not in ('A','B')
+    if plan.get('schema')==2:
+        from .cloud_episode import validate as validate_episode
+        validate_episode(plan)
+    legacy=plan.get('schema')==1
+    if (plan.get('schema') not in (1,2) or plan.get('kind')!=KIND or plan.get('lane') not in ('A','B')
             or type(plan.get('seed')) is not int or not 0<=plan['seed']<2**32
-            or plan.get('stage')!='initial' or plan.get('trainingStopWall')!=TRAINING_STOP
-            or plan.get('artifactDeadlineWall')!=ARTIFACT_DEADLINE
+            or plan.get('stage')!='initial' or legacy and (plan.get('trainingStopWall')!=TRAINING_STOP
+            or plan.get('artifactDeadlineWall')!=ARTIFACT_DEADLINE)
             or not isinstance(plan.get('authorizationReference'),str) or len(plan['authorizationReference'])<8):
         raise ValueError('explicit dated exploratory authority required')
     native=plan['nativeManifest']
@@ -128,6 +132,9 @@ def continuation(directory,manifest):
 
 
 def consume_resume(directory,reason,now):
+    plan_path=Path(directory)/'plan.json'
+    if plan_path.exists() and json.loads(plan_path.read_bytes()).get('schema')==2:
+        raise ValueError('cloud repair episode permits no same-allocation resumes')
     """Caller holds supervisor.lock; consume before every internal/outer respawn."""
     from .allocation import append,rows
     if reason not in ('resource-pressure-stop','transport-interruption'):
@@ -158,7 +165,14 @@ def repair_state(directory,now):
 
 def check_repair(directory,now):
     elapsed,_=repair_state(directory,now)
-    if elapsed>=7200:raise ValueError('exploratory repair window exhausted')
+    path=Path(directory)/'plan.json'
+    plan=json.loads(path.read_bytes()) if path.exists() else {}
+    if plan.get('schema')==2:
+        from .cloud_episode import validate as validate_episode
+        validate_episode(plan)
+        limit=plan['repairDeadlineWall']-plan['repairStartedAtWall']
+        if elapsed>=limit:raise ValueError('cloud repair window exhausted')
+    elif elapsed>=7200:raise ValueError('exploratory repair window exhausted')
 
 
 def start_repair(directory,now):

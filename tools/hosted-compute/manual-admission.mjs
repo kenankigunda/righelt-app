@@ -1,3 +1,4 @@
+import {exploratoryWindowFor,isCloudRepair,CLOUD_REPAIR} from './cloud-repair-policy.mjs';
 import {publicWorkAuthority} from './public-work.mjs';
 import {validatePublicTimingTransition} from './public-timing-transition.mjs';
 import {POLICY,assert,canonical,encode,sha256,reserveCents,TERMINAL} from './policy.mjs';
@@ -40,8 +41,10 @@ export async function manualAuthority(core,db,c,intent){
   assert(c.manifest.mode==='supervised-qualification'&&c.manifest.purpose!=='scientific-comparison'&&c.manifest.phases.length===1,'manual public qualification only');
   assert(prior.attempts.length===1&&old?.uncertain===true&&['stopping','cleanup-uncertain'].includes(prior.status),'original uncertain owner required');
   assert(canonical(intent.priorAttempt)===canonical({generation:prior.generation,name:old.name,prearmSha256:old.prearmSha256,startedAt:old.startedAt}),'original attempt binding differs');
-  const repairStartedAt=operatorAttemptBinding(prior).repairStartedAt;
-  assert(Number.isSafeInteger(repairStartedAt)&&repairStartedAt>=old.startedAt&&intent.repairStartedAt===repairStartedAt,'original repair clock differs');
+  const originalRepairStartedAt=operatorAttemptBinding(prior).repairStartedAt;
+  assert(Number.isSafeInteger(originalRepairStartedAt)&&originalRepairStartedAt>=old.startedAt,'original repair clock differs');
+  const repairStartedAt=isCloudRepair(c.manifest)?CLOUD_REPAIR.repairStartedAt:originalRepairStartedAt;
+  assert(intent.repairStartedAt===repairStartedAt,isCloudRepair(c.manifest)?'new repair clock differs':'original repair clock differs');
   assert(now>=intent.createdAt&&now<intent.expiresAt&&(intent.publicWorkAuthority||now<intent.repairDeadline),'manual admission window expired');
   const host=c.manifest.phases[0].host;assert(host.quoteObservedAt<=now&&host.quoteExpires>now,'manual host quote expired');
   assert(intent.fundingSha256===await hash(c.manifest.cash),'manual funding identity differs');
@@ -97,6 +100,7 @@ export async function manualAuthority(core,db,c,intent){
     }
   }
   const funding=await readOperatorReceipt(control.store,intent.fundingReservation),oldFunding=funding.oldAttempt,next=funding.newIntent,total=funding.aggregate;
+  if(isCloudRepair(c.manifest))assert(next?.allInHourlyCeilingCents<=CLOUD_REPAIR.allInHourlyCeilingCents,'cloud repair all-in hourly ceiling exceeded');
   if(intent.startup)assert(next?.startupDeadline===intent.startup.deadline,'startup funding binding differs');
   // Every earlier prepared manual allocation remains committed after cleanup,
   // cancellation or completion. The original unknown owner stays the prior.
@@ -181,7 +185,7 @@ export async function attachManual(core,id,body){
   assert(c.status==='manual-pending'&&body.acceptedAt>=a.startedAt&&body.acceptedAt<=core.now(),'manual accepted clock differs');
   const {prior,authority,publicWork}=await manualAuthority(core,db,c,c.manual.intent);
   assert(canonical(publicWork)===canonical(c.manual.publicWork??null),'public work authority changed after preparation');
-  requireHeadroom(core,db,prior,c,authority.cutoff);
+  requireHeadroom(core,db,prior,c,authority.cutoff,exploratoryWindowFor(db,c)?.authority);
   const observed=await core.providers.inspect('runpod',body.podId);
   assert(observed?.id===body.podId,'observed Pod identity differs');
   if(observed.createdAt!==undefined)assert(Number.isFinite(Date.parse(observed.createdAt))&&body.acceptedAt<=Date.parse(observed.createdAt),'manual accepted clock is later than provider creation');
@@ -190,11 +194,14 @@ export async function attachManual(core,id,body){
   assert(core.now()<c.manual.intent.expiresAt&&core.now()<authority.cutoff&&core.now()<(publicWork?.admissionDeadline??c.manual.intent.repairDeadline),'manual attach expired during qualification');
   c.manual.attached={podId:body.podId,acceptedAt:body.acceptedAt};
   if(c.manual.intent.exploratoryWindow){
-    assert(db.exploratoryWindow&&body.acceptedAt>=db.exploratoryWindow.authority.createdAt,'new actual start cannot move backward');
+    const window=exploratoryWindowFor(db,c);
+    assert(window&&body.acceptedAt>=window.authority.createdAt,'new actual start cannot move backward');
   }else if(db.manualProgram)assert(body.acceptedAt>=db.manualProgram.acceptedAt,'overall actual start cannot move backward');
   else db.manualProgram={acceptedAt:body.acceptedAt,deadline:body.acceptedAt+c.manual.intent.runtimeWindowMs,intentSha256:body.intentSha256,campaignId:id};
+  const window=exploratoryWindowFor(db,c);
+  if(isCloudRepair(c.manifest))assert(c.manifest.exploratory.trainingStop<=body.acceptedAt+CLOUD_REPAIR.maximumAllocationMs,'allocation exceeds twelve hours');
   c.programAnchor=structuredClone(c.manual.intent.exploratoryWindow?{kind:'bounded-exploratory-training',
-    acceptedAt:body.acceptedAt,deadline:db.exploratoryWindow.authority.artifactDeadline,reference:db.exploratoryWindow.reference}:db.manualProgram);
+    acceptedAt:body.acceptedAt,deadline:window.authority.artifactDeadline,reference:window.reference}:db.manualProgram);
   c.manual.campaignDeadline=Math.min(c.programAnchor.deadline,c.manifest.deadline,publicWork?.executionDeadline??body.acceptedAt+MANUAL_STARTUP_MS);
   assert(core.now()<c.manual.campaignDeadline,'manual actual run window expired');
   if(c.manual.intent.startup){c.manual.startupDeadline=Math.min(c.manual.intent.startup.deadline,body.acceptedAt+c.manual.intent.startup.maximumMs,c.manual.campaignDeadline,authority.cutoff,publicWork?.admissionDeadline??c.manual.intent.repairDeadline);assert(core.now()<c.manual.startupDeadline,'manual startup already expired');}
