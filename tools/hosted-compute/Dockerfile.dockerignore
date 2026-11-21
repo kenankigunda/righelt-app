@@ -54,5 +54,6 @@
 !tools/hosted-compute/search-diagnosis.mjs
 !tools/hosted-compute/development-suite.mjs
 !tools/hosted-compute/development-suite-assessment.mjs
+!tools/hosted-compute/cloud-launch-20261121.json
 !tools/hosted-compute/Dockerfile
 !tools/hosted-compute/Dockerfile.dockerignore

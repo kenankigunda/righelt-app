@@ -22,7 +22,8 @@ async function fixture(t) {
     'package.json':'{"name":"fixture","private":true}', 'pnpm-lock.yaml':'lockfileVersion: 9\n', 'pnpm-workspace.yaml':'packages: []\n',
     'tsconfig.json':'{}','tsconfig.base.json':'{}','tools/ai-trainer/requirements.lock':'torch==2.14.1\n',
     'tools/hosted-compute/image-identity.mjs':'export const fixture=true;\n','tools/hosted-compute/worker.mjs':"export {runtime} from './runtime.mjs';\n",
-    'tools/hosted-compute/runtime.mjs':"export const runtime=true;export {default as arithmeticPolicy} from '../ai-trainer/righelt_training/arithmetic-policy-v1.json' with {type:'json'};\n",
+    'tools/hosted-compute/runtime.mjs':"export const runtime=true;export {default as arithmeticPolicy} from '../ai-trainer/righelt_training/arithmetic-policy-v1.json' with {type:'json'};export {default as launchPolicy} from './cloud-launch-20261121.json' with {type:'json'};\n",
+    'tools/hosted-compute/cloud-launch-20261121.json':'{"id":"cloud-launch-20261121"}',
     'tools/ai-trainer/righelt_training/arithmetic-policy-v1.json':'{"id":"hosted-ieee-fp32-v1"}',
     'tools/hosted-compute/policy.json':'{"schema":1}', 'tools/hosted-compute/fixture-contract.json':'{"schema":1}',
     'packages/game-engine/src/index.ts':'export const engine = 1;\n','packages/shared-types/src/control.js':'export const control = true;\n',
@@ -85,6 +86,7 @@ test('native Docker copy preserves the audited inventory and worker runtime impo
   assert.equal(identity.sourceInventory['tools/hosted-compute/runtime.mjs'],createHash('sha256').update(f.files['tools/hosted-compute/runtime.mjs']).digest('hex'));
   assert.equal((await import(pathToFileURL(path.join(complete,'tools/hosted-compute/worker.mjs')))).runtime,true);
   assert.equal((await import(pathToFileURL(path.join(complete,'tools/hosted-compute/runtime.mjs')))).arithmeticPolicy.id,'hosted-ieee-fp32-v1');
+  assert.equal((await import(pathToFileURL(path.join(complete,'tools/hosted-compute/runtime.mjs')))).launchPolicy.id,'cloud-launch-20261121');
 });
 test('export refuses dirty source, mutable base tags, symlinks and checkout-local destinations',async t=>{
   const f=await fixture(t);

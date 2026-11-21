@@ -7,6 +7,8 @@ LIMITS=json.loads((Path(__file__).resolve().parents[3]/'tools/hosted-compute/clo
 
 
 def validate(plan):
+    from .cloud_launch import admission_window
+    admitted_after,admission_end=admission_window(plan,LIMITS)
     if (plan.get('schema')!=2 or plan.get('episodeId')!=LIMITS['id']
             or plan.get('executionScope')!='cloud-repair-original1086'
             or plan.get('maximumSameAllocationResumes')!=0
@@ -16,7 +18,7 @@ def validate(plan):
             or plan.get('maximumTrainingSeconds')!=LIMITS['maximumAllocationMs']/1000
             or type(plan.get('allocationStartWall')) not in (int,float)
             or not math.isfinite(plan['allocationStartWall'])
-            or not plan['repairStartedAtWall']<=plan['allocationStartWall']<plan['repairDeadlineWall']
+            or not admitted_after<=plan['allocationStartWall']<admission_end
             or plan.get('checkpoint',{}).get('sha256')!=LIMITS['checkpointSha256']):
         raise ValueError('explicit original1086 cloud repair authority required')
     training,artifact=plan.get('trainingStopWall'),plan.get('artifactDeadlineWall')
@@ -40,6 +42,21 @@ def artifact_deadline(plan,runner_result):
 def start_repair(directory,plan,now):
     """The new absolute repair clock starts at human authorization, not Pod boot."""
     validate(plan)
+    from .cloud_launch import admission_window,is_prospective
+    if is_prospective(plan):
+        start,end=admission_window(plan,LIMITS)
+        if not start<=now<end:raise ValueError('prospective launch startup window expired')
+        from .checkpoint import atomic_json
+        from .exploratory_contract import digest,repair_state
+        if repair_state(directory,now)[1] is not None:
+            raise ValueError('prospective launch cannot reopen an engineering repair interval')
+        path=Path(directory)/'launch-authority.json'
+        value={'schema':1,'launchAuthorityId':plan['launchAuthorityId'],'planSha256':digest(plan),
+               'authorizedAt':start,'admissionDeadline':end,'additionalRepairSeconds':0}
+        if path.exists():
+            if json.loads(path.read_bytes())!=value:raise ValueError('prospective launch identity changed')
+        else:atomic_json(path,value)
+        return
     if not plan['repairStartedAtWall']<=now<plan['repairDeadlineWall']:
         raise ValueError('cloud repair startup window expired')
     from .allocation import append,rows

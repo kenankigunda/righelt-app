@@ -164,12 +164,18 @@ def repair_state(directory,now):
 
 
 def check_repair(directory,now):
-    elapsed,_=repair_state(directory,now)
+    elapsed,opened=repair_state(directory,now)
     path=Path(directory)/'plan.json'
     plan=json.loads(path.read_bytes()) if path.exists() else {}
     if plan.get('schema')==2:
         from .cloud_episode import validate as validate_episode
         validate_episode(plan)
+        from .cloud_launch import is_prospective
+        if is_prospective(plan):
+            if opened is not None:raise ValueError('prospective launch grants no additional repair time')
+            if elapsed>plan['repairDeadlineWall']-plan['repairStartedAtWall']:
+                raise ValueError('historical repair allowance exceeded')
+            return
         limit=plan['repairDeadlineWall']-plan['repairStartedAtWall']
         if elapsed>=limit:raise ValueError('cloud repair window exhausted')
     elif elapsed>=7200:raise ValueError('exploratory repair window exhausted')
@@ -177,6 +183,11 @@ def check_repair(directory,now):
 
 def start_repair(directory,now):
     from .allocation import append
+    plan_path=Path(directory)/'plan.json'
+    if plan_path.exists():
+        from .cloud_launch import is_prospective
+        if is_prospective(json.loads(plan_path.read_bytes())):
+            raise ValueError('prospective launch grants no additional repair time')
     _,opened=repair_state(directory,now)
     if opened is None:append(Path(directory)/'exploratory-recovery.jsonl',{'event':'repair-started','observedAt':now})
     check_repair(directory,now)
