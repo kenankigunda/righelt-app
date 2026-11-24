@@ -48,7 +48,7 @@ def settings(mode, training_recipe=None, attention_method=None, policy_refresh=N
             'fixtureContract': json.loads((ROOT/'tools/hosted-compute/fixture-contract.json').read_text()) if mode == 'closed-loop-fixture' else None,
             'teaching': attention_method['pilotRecipe'] if attention else 'none',
             'automaticSwitches': 'fixed-local-teaching-v2' if attention else 'curriculum.observe-source-bound',
-            'sourceFiles': {name: hashlib.sha256((ROOT/'tools/ai-trainer/righelt_training'/name).read_bytes()).hexdigest() for name in SOURCES}}
+            'sourceFiles': {name: hashlib.sha256((Path(__file__).resolve().parent/name).read_bytes()).hexdigest() for name in SOURCES}}
 
 
 def record(checkpoint, data_sha256, *, mode, training_recipe=None, attention_method=None, policy_refresh=None):

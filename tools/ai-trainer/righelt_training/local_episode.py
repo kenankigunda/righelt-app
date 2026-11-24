@@ -9,6 +9,10 @@ def wall(value):
     return datetime.fromisoformat(value).timestamp()
 
 
+class LocalResumeAllowanceExhausted(ValueError):
+    reason = 'resource-pressure-stop'
+
+
 def validate(plan):
     from .portable import read_bound
     authority=json.loads(read_bound(plan['localAuthority']))
@@ -34,6 +38,10 @@ def consume_resume(directory,reason,now):
     from .exploratory_contract import start_repair,check_repair
     directory=Path(directory);plan=json.loads((directory/'plan.json').read_text());authority=validate(plan)
     events=[r for r in rows(directory/'exploratory-recovery.jsonl') if r['event']=='resume-consumed']
+    if (reason=='resource-pressure-stop' and math.isfinite(now) and now<plan['trainingStopWall']
+            and len(events)>=authority['caps']['automaticResumes']):
+        check_repair(directory,now)
+        raise LocalResumeAllowanceExhausted('local automatic resume allowance exhausted')
     if (reason not in ('resource-pressure-stop','transport-interruption') or not math.isfinite(now)
             or now>=plan['trainingStopWall'] or len(events)>=authority['caps']['automaticResumes']):
         raise ValueError('local resume reason, deadline or allowance invalid')

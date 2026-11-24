@@ -43,9 +43,17 @@ def file_digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def read_game(path):
+def read_game(path, *, compact_encodings=False):
     with gzip.open(path, 'rt') as stream:
-        return json.load(stream)
+        game = json.load(stream)
+    if compact_encodings:
+        from array import array
+        for decision in game['decisions']:
+            if 'encoded' in decision:
+                decision['encoded'] = array('f', decision['encoded'])
+        if 'finalEncoding' in game:
+            game['finalEncoding'] = array('f', game['finalEncoding'])
+    return game
 
 
 def trajectory_digest(game):

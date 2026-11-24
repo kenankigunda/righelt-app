@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from righelt_training.local_episode import validate,consume_resume,resource_stop
+from righelt_training.local_episode import validate,consume_resume,resource_stop,LocalResumeAllowanceExhausted
 from righelt_training.certificate_teacher import accepted,validate_packet
 
 
@@ -53,6 +53,29 @@ class LocalAuthorityTests(unittest.TestCase):
         sample.disk_free_bytes=50*1024**3;self.assertEqual(resource_stop(self.root,sample),'local-disk-reserve')
         sample.disk_free_bytes=52*1024**3;sample.artifact_bytes=95*1024**3
         self.assertEqual(resource_stop(self.root,sample),'local-artifact-cap')
+
+
+    def test_only_valid_resource_exhaustion_retains_its_stop_reason(self):
+        now=self.plan['trainingStopWall']-20000
+        consume_resume(self.root,'resource-pressure-stop',now)
+        consume_resume(self.root,'resource-pressure-stop',now+1)
+        ledger=self.root/'exploratory-recovery.jsonl';original=ledger.read_bytes()
+        with self.assertRaises(LocalResumeAllowanceExhausted) as caught:
+            consume_resume(self.root,'resource-pressure-stop',now+2)
+        self.assertEqual(caught.exception.reason,'resource-pressure-stop')
+        for reason,at in [('unknown',now+2),('transport-interruption',now+2),
+                          ('resource-pressure-stop',float('nan')),
+                          ('resource-pressure-stop',self.plan['trainingStopWall'])]:
+            with self.assertRaises(ValueError) as invalid:consume_resume(self.root,reason,at)
+            self.assertNotIsInstance(invalid.exception,LocalResumeAllowanceExhausted)
+            self.assertEqual(ledger.read_bytes(),original)
+        with self.assertRaisesRegex(ValueError,'repair allowance exhausted'):
+            consume_resume(self.root,'resource-pressure-stop',now+10800)
+        self.assertEqual(ledger.read_bytes(),original)
+        ledger.write_text('{malformed\n')
+        with self.assertRaises(ValueError) as malformed:
+            consume_resume(self.root,'resource-pressure-stop',now+2)
+        self.assertNotIsInstance(malformed.exception,LocalResumeAllowanceExhausted)
 
 
 class CompactRecoveryTests(unittest.TestCase):

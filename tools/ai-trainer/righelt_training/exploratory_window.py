@@ -60,7 +60,9 @@ def context(directory,plan,recipe):
     if os.environ.get('RIGHELT_HOSTED')!='1':os.environ['RIGHELT_EXECUTION_CONTEXT']=str(target)
 
 
-def verify(directory,plan):
+def verify(directory,plan,*,output_directory=None):
+    output_directory=Path(output_directory) if output_directory is not None else directory
+    output_directory.mkdir(parents=True,exist_ok=True)
     training_stop=plan['trainingStopWall']
     artifact_deadline=plan['artifactDeadlineWall']
     import math
@@ -101,7 +103,7 @@ def verify(directory,plan):
         expected_sha256=manifest['manifest']['evaluationGuards']['sha256']))
     buffer=ReplayBuffer(protected_encoding_hashes=guards['encodingHashes'],protected_family_ids=guards['familyIds'])
     reconstruct_replay(buffer,data,method,base=directory)
-    games={name:read_game(resolve_reference(name,base=directory)) for name in data['recovery']['state']['archives']}
+    games={name:read_game(resolve_reference(name,base=directory),compact_encodings=True) for name in data['recovery']['state']['archives']}
     contract=continuation_for(directory,manifest['manifest']);baseline=load_baseline(directory,contract)
     proof=audit_evidence(directory,data['recovery']['state'],baseline,games)
     original=resolve_reference(plan['checkpoint']['path'],expected_sha256=plan['checkpoint']['sha256'])
@@ -112,8 +114,8 @@ def verify(directory,plan):
     positions=list(buffer.positions)[:32]
     if not positions:raise ValueError('recovered replay is empty')
     states=np.asarray([p['encoded'] for p in positions],dtype=np.float32).reshape(-1,CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize'])
-    output=directory/'model.onnx';export_onnx(model,output)
-    parity=numeric_parity(model,output,states,reference_device=str(selected_device()),report_path=directory/'numeric-parity.json')
+    output=output_directory/'model.onnx';export_onnx(model,output)
+    parity=numeric_parity(model,output,states,reference_device=str(selected_device()),report_path=output_directory/'numeric-parity.json')
     if not parity['numericPassed']:raise ValueError('numeric parity failed')
     report={'schema':1,'kind':'exploratory-candidate','qualified':True,'lane':plan['lane'],
         'planSha256':digest(plan),'sourceRevision':plan['sourceRevision'],'checkpoint':latest,
@@ -126,7 +128,7 @@ def verify(directory,plan):
         'strengthEstablished':False,'defaultPromotion':False,'observedAt':time.time()}
     if recovery is not None:report['recoveredEndpoint']=recovery
     if time.time()>=artifact_deadline:raise TimeoutError('artifact deadline expired')
-    atomic_json(directory/'candidate-report.json',report)
+    atomic_json(output_directory/'candidate-report.json',report)
     return report
 
 

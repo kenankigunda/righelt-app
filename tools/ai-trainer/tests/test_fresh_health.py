@@ -131,6 +131,40 @@ class FreshHealthTest(unittest.TestCase):
         with patch.object(health, 'trained_export_proof', return_value=True):
             return health.audit(runner.directory, time.monotonic()+60, verifier=lambda game, deadline: None)
 
+    def test_compact_archive_encodings_preserve_audit_and_rejections(self):
+        import sys
+        from array import array
+        from righelt_training.replay import encoding_hash
+        _, runner, _ = self.fixture()
+        fresh_game=game(1);fresh_game['finalEncoding']=[0.5]*4600
+        self.accept(runner,fresh_game);self.train(runner)
+        baseline=fresh_health.load_baseline(runner.directory,
+            fresh_health.continuation_for(runner.directory,runner.manifest['manifest']))
+        paths={name:runner.directory/name for name in runner.state['archives']}
+        plain={name:fresh_health.read_game(path) for name,path in paths.items()}
+        compact={name:fresh_health.read_game(path,compact_encodings=True) for name,path in paths.items()}
+        for name in paths:
+            a=plain[name]['decisions'][0]['encoded'];b=compact[name]['decisions'][0]['encoded']
+            self.assertIsInstance(a,list)
+            self.assertEqual(encoding_hash(a),encoding_hash(b))
+            self.assertEqual(array('f',a).tobytes(),b.tobytes())
+            self.assertLess(sys.getsizeof(b),sys.getsizeof(a))
+        self.assertEqual(list(compact[runner.state['archives'][-1]]['finalEncoding']),[0.5]*4600)
+        expected=fresh_health.audit_evidence(runner.directory,runner.state,baseline,plain)
+        self.assertEqual(expected,fresh_health.audit_evidence(runner.directory,runner.state,baseline,compact))
+        state=copy.deepcopy(runner.state)
+        position=state[fresh_health.STATE_KEY]['batches'][0]['policyExamples'][0]['positionId']
+        for games in (plain,compact):
+            decision=next(d for g in games.values() for d in g['decisions'] if d['id']==position)
+            decision['policyMask']=False
+            with self.assertRaisesRegex(ValueError,'masked or missing'):
+                fresh_health.audit_evidence(runner.directory,state,baseline,games)
+            decision['policyMask']=True
+        state[fresh_health.STATE_KEY]['games'][fresh_game['id']]['sha256']='0'*64
+        for games in (plain,compact):
+            with self.assertRaisesRegex(ValueError,'archive receipt mismatch'):
+                fresh_health.audit_evidence(runner.directory,state,baseline,games)
+
     def test_cross_stage_restoration_preserves_optimizer_rng_cursor_and_replay(self):
         source, runner, checkpoint = self.fixture()
         restored = inspect_checkpoint(checkpoint, manifest_sha256=source.manifest_hash, require_recovery=True)
