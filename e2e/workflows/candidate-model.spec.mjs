@@ -148,6 +148,7 @@ test(`a finished incumbent game can start an explicitly selected ${choice.label}
   await page.goto(`/#/game/${game.id}`);
   await waitForComputerDecision(page,game.id,'babs',{guest:true,modelId:incumbent.id});
   await expect.poll(async()=>(await projected(page,game.id)).board.state.outcome.status).toBe('p1_win');
+  await page.getByTestId('confirmed-result-notice').getByRole('button',{name:'View result',exact:true}).click();
   await page.getByTestId('game-result').getByRole('button',{name:'Play again',exact:true}).click();
   const rematch=page.getByRole('dialog',{name:'Play again',exact:true});
   await expect(rematch.getByRole('radio',{name:'Incumbent',exact:true})).toBeChecked();
