@@ -25,7 +25,8 @@ def verify_corpus(data):
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--corpus',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
-    p.add_argument('--device',choices=['cpu','mps','cuda']);p.add_argument('--reference-output',type=Path);p.add_argument('--require-mps',action='store_true');p.add_argument('--checkpoint',type=Path);p.add_argument('--seed',type=int,default=107);args=p.parse_args()
+    p.add_argument('--device',choices=['cpu','mps','cuda']);p.add_argument('--reference-output',type=Path);p.add_argument('--require-mps',action='store_true');p.add_argument('--checkpoint',type=Path);p.add_argument('--seed',type=int,default=107)
+    p.add_argument('--inference-implementation',choices=['native-v1','pairwise-fp32-v1'],default='native-v1');args=p.parse_args()
     torch.set_num_threads(1);torch.manual_seed(args.seed)
     if args.require_mps and not torch.backends.mps.is_available():raise RuntimeError('MPS unavailable')
     from .device import selected_device
@@ -38,12 +39,15 @@ def main():
         load_checkpoint(args.checkpoint,model,manifest_sha256=meta['manifestSha256'])
         trained=meta['updates']>0
     if model is None:model=PolicyValueNet()
+    if args.inference_implementation!='native-v1':
+        if not hasattr(model,'for_inference'):raise ValueError('inference implementation requires attention checkpoint')
+        model=model.for_inference(args.inference_implementation)
     args.output.mkdir(parents=True,exist_ok=True);asset=args.output/'model.onnx'
     metadata=export_onnx(model,asset)
     import numpy as np
     report=numeric_parity(model,asset,np.asarray([r['encoded'] for r in rows],dtype=np.float32).reshape(-1,CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize']),reference_device=reference_device)
     report.update(configSha256=CONFIG_SHA256,corpusSha256=hashlib.sha256(args.corpus.read_bytes()).hexdigest(),
-                  heldoutStates=len(rows),export=metadata,trainedCheckpoint=trained,
+                  heldoutStates=len(rows),export=metadata,trainedCheckpoint=trained,inferenceImplementation=args.inference_implementation,
                   legalMasksPassed=False,tacticalParityPassed=False,
                   remaining=['TypeScript legal-mask verification','tactical parity','browser WASM parity'])
     if args.reference_output:

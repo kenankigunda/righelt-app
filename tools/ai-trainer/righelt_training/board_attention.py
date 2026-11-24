@@ -1,10 +1,40 @@
 """Compact square attention with the unchanged public policy/value outputs."""
 import math
+import copy
 import torch
 from torch import nn
 from .architecture import DEFINITIONS, validate_architecture
 from .config import CONFIG
 from .sequence_targets import TARGET_COUNT
+
+PAIRWISE_INFERENCE = 'pairwise-fp32-v1'
+
+
+def pairwise_mean(values, dim, *, keepdim=False):
+    """A fixed adjacent-pair tree, retaining every term and FP32 operation."""
+    count = values.shape[dim]
+    reduced = values.movedim(dim, -1)
+    width = count
+    while width > 1:
+        pairs = width // 2
+        terms = reduced[..., :2 * pairs].reshape(*reduced.shape[:-1], pairs, 2)
+        combined = terms[..., 0] + terms[..., 1]
+        reduced = torch.cat((combined, reduced[..., -1:]), dim=-1) if width % 2 else combined
+        width = pairs + width % 2
+    result = (reduced / float(count)).movedim(-1, dim)
+    return result if keepdim else result.squeeze(dim)
+
+
+class PairwiseLayerNorm(nn.LayerNorm):
+    def forward(self, inputs):
+        if len(self.normalized_shape) != 1:
+            raise ValueError('pairwise inference requires one normalization axis')
+        centered = inputs - pairwise_mean(inputs, -1, keepdim=True)
+        variance = pairwise_mean(centered * centered, -1, keepdim=True)
+        normalized = centered / torch.sqrt(variance + self.eps)
+        if self.weight is not None: normalized = normalized * self.weight
+        if self.bias is not None: normalized = normalized + self.bias
+        return normalized
 
 
 class BoardAttentionBlock(nn.Module):
@@ -40,6 +70,7 @@ class BoardAttentionNet(nn.Module):
     def __init__(self, binding):
         super().__init__()
         self.model_architecture = validate_architecture(binding)
+        self.inference_implementation = 'native-v1'
         definition = DEFINITIONS[self.model_architecture['id']]
         if definition['kind'] != 'board-attention':
             raise ValueError('Board attention architecture required')
@@ -64,7 +95,7 @@ class BoardAttentionNet(nn.Module):
         return x
 
     def outputs(self,x):
-        mean = x.mean(dim=1)
+        mean = pairwise_mean(x, 1) if self.inference_implementation == PAIRWISE_INFERENCE else x.mean(dim=1)
         policy = torch.cat((self.policy(x).flatten(1), self.pass_head(mean)), dim=1)
         pooled = torch.cat((mean, x.amax(dim=1)), dim=1)
         value = torch.tanh(self.value(pooled)).clamp(-1., 1.).squeeze(-1)
@@ -73,6 +104,26 @@ class BoardAttentionNet(nn.Module):
     def forward(self,inputs):
         policy,value,_=self.outputs(self.features(inputs))
         return policy,value
+
+    def for_inference(self, implementation):
+        if implementation not in ('native-v1', PAIRWISE_INFERENCE):
+            raise ValueError('unsupported attention inference implementation')
+        if self.inference_implementation != 'native-v1':
+            raise ValueError('inference implementation must start from the native model')
+        if any(p.dtype != torch.float32 for p in self.parameters()):
+            raise ValueError('FP32 inference parameters required')
+        result = copy.deepcopy(self)
+        if implementation == PAIRWISE_INFERENCE:
+            for name, layer in list(result.named_modules()):
+                if isinstance(layer, nn.LayerNorm):
+                    replacement = PairwiseLayerNorm(layer.normalized_shape, eps=layer.eps,
+                        elementwise_affine=layer.elementwise_affine, bias=layer.bias is not None)
+                    replacement.to(device=layer.weight.device, dtype=layer.weight.dtype)
+                    replacement.load_state_dict(layer.state_dict())
+                    parent, _, key = name.rpartition('.')
+                    setattr(result.get_submodule(parent) if parent else result, key, replacement)
+        result.inference_implementation = implementation
+        return result.eval().requires_grad_(False)
 
     def forward_with_future(self,inputs):
         policy,value,pooled=self.outputs(self.features(inputs))

@@ -26,6 +26,11 @@ def export_onnx(model, path):
             'configSha256':CONFIG_SHA256,'opset':17,'dtype':'float32'}
     architecture=model_architecture(model)
     if architecture['id']!=BASELINE:metadata['modelArchitecture']=architecture
+    implementation=getattr(model,'inference_implementation','native-v1')
+    if implementation!='native-v1':
+        import inspect
+        metadata.update(inferenceImplementation=implementation,
+            implementationSourceSha256=hashlib.sha256(Path(inspect.getfile(type(model))).read_bytes()).hexdigest())
     return metadata
 
 
