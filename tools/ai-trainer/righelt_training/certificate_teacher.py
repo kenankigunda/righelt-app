@@ -8,9 +8,6 @@ import subprocess
 import time
 from .config import ROOT
 
-PROFILE={'simulations':128,'temperature':0,'maxValueGap':0.01}
-
-
 def bridge(job,seconds=30):
     result=subprocess.run(['node','--import','tsx',str(ROOT/'tools/ai-trainer/certificate-teacher.mjs')],
         cwd=ROOT,input=json.dumps(job,allow_nan=False),capture_output=True,text=True,timeout=seconds,check=True)
@@ -19,6 +16,9 @@ def bridge(job,seconds=30):
 
 def diagnostic(runner,packet,guards,deadline):
     from .search_parity import search_reference,completed_search
+    profile_binding=bridge({'mode':'profiles'})
+    published=profile_binding['profiles']['horus']
+    profile={key:published[key] for key in ('simulations','temperature','maxValueGap')}
     runner.model.eval();reports=[]
     for case in packet['cases']:
         state=case['rootState'];actions=[];status='UNKNOWN'
@@ -29,7 +29,7 @@ def diagnostic(runner,packet,guards,deadline):
                 facts=bridge({'mode':'facts','state':state,'guards':guards},seconds)
                 if not facts['legal']:break
                 with runner.operation('certificate-public-search',seconds):
-                    answer=search_reference(state,runner.model,runner.device,2026112407+index,PROFILE,seconds)
+                    answer=search_reference(state,runner.model,runner.device,2026112407+index,profile,seconds)
                 if not completed_search(answer):break
                 action=answer.get('action')
                 if action is None:break
@@ -44,7 +44,8 @@ def diagnostic(runner,packet,guards,deadline):
         else:failure=None
         reports.append({'caseId':case['id'],'knownDeficient':case['knownDeficient'],'actions':actions,
             'disposition':status,'failure':failure,'scope':case['scope']})
-    return {'schema':1,'profile':PROFILE,'seed':2026112407,'cases':reports,'strengthEstablished':False}
+    return {'schema':1,'profile':profile,'publishedProfileBinding':profile_binding,
+        'seed':2026112407,'cases':reports,'strengthEstablished':False}
 
 
 def accepted(before,after):

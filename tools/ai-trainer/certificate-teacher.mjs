@@ -7,6 +7,7 @@ import {encodedDigest,encodedFamily,commanderFamily} from './evaluation-protecti
 import {verifyTurnDefense} from './tactical-evidence.mjs';
 import {verifyTurnCertificate} from './turn-certificate.mjs';
 import {canonical} from '../hosted-compute/policy.mjs';
+import {publicEvaluationProfiles} from './public-evaluation-profiles.mjs';
 const sha=v=>createHash('sha256').update(typeof v==='string'?v:canonical(v)).digest('hex');
 const assert=(v,m)=>{if(!v)throw Error(m);};
 const job=JSON.parse(readFileSync(0,'utf8'));
@@ -22,7 +23,8 @@ function step(state,action){
  assert(facts(state).actions.some(a=>canonical(a)===canonical(action)),'illegal selected action');
  return transition(state,action);
 }
-if(job.mode==='facts')process.stdout.write(JSON.stringify(facts(job.state)));
+if(job.mode==='profiles')process.stdout.write(JSON.stringify(publicEvaluationProfiles()));
+else if(job.mode==='facts')process.stdout.write(JSON.stringify(facts(job.state)));
 else if(job.mode==='step')process.stdout.write(JSON.stringify({state:step(job.state,job.action)}));
 else if(job.mode==='prepare'){
  const rows=[],cases=[],proofs=[];
