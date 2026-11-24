@@ -1,4 +1,5 @@
 import {expect} from '@playwright/test';
+import {readPlayableBoardAdmission} from './board-admission.mjs';
 
 const settled = locator => locator.evaluate(async element => {
   element.getBoundingClientRect();
@@ -44,13 +45,8 @@ export async function selectGamePanel(page,key) {
 // its command authority. Read this page's admission markers, not a separate
 // server projection that cannot describe the local recovery gate.
 export async function waitForPlayableBoard(page) {
-  await expect.poll(() => page.evaluate(() => {
-    const app = document.querySelector('#app');
-    const board = document.querySelector('[data-testid="game-board-wrap"]');
-    return app?.getAttribute('data-shell-transition-phase') === 'idle'
-      && board?.getAttribute('data-reconnecting') === 'false'
-      && board?.getAttribute('aria-busy') === 'false';
-  }), {message: 'Board entry and local recovery must settle before selecting a piece'}).toBe(true);
+  await expect.poll(() => page.evaluate(readPlayableBoardAdmission),
+    {message: 'Board entry and local recovery must settle before selecting a piece'}).toBe(true);
 }
 
 export async function revealAccountControl(page,control=page.getByRole('button',{name:'Account',exact:true})) {
