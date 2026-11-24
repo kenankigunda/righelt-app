@@ -48,7 +48,8 @@ def tensor_batch(positions, device):
 
 def train_round(model, optimizer, positions, *, device, seed, deadline, should_pause=lambda: False,
                 on_batch=lambda metrics: None, clock=time.monotonic, start_batch=0, operation=lambda name,seconds:nullcontext(),
-                evidence_game_ids=None):
+                evidence_game_ids=None, certificate_policy_weight=1):
+    if certificate_policy_weight not in (1,2):raise ValueError('unsupported certificate policy weight')
     from .execution_recipe import verify_runtime
     execution=verify_runtime(model=model, optimizer=optimizer)
     if execution and execution['settings'].get('policyRefresh'):
@@ -88,6 +89,12 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
                     future_loss=((future[future_mask]-future_target[future_mask])**2).mean()
             else:logits, values = model(inputs)
             loss, policy_loss, value_loss = training_loss(logits, values, legal, target, value, mask, policy_mask)
+            if certificate_policy_weight==2:
+                selected=torch.tensor([bool(p.get('certificateEvidence')) for p in batch],device=device)&policy_mask
+                if selected.any():
+                    log_prob=torch.log_softmax(logits.masked_fill(~legal,torch.finfo(logits.dtype).min),dim=1)
+                    # Double only the admitted demonstration rows, retaining the native denominator.
+                    loss=loss-(target[selected]*log_prob[selected]).sum()/policy_mask.sum()
             if future_loss is not None:loss=loss+FUTURE_LOSS_WEIGHT*future_loss
             if not torch.isfinite(loss):
                 raise ValueError('nonfinite loss')
@@ -107,6 +114,7 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
                        'gradientNorm': norm.item(), 'parameterDelta': delta, 'positions': len(batch),
                        'seconds': clock() - before, 'batchIndex': start // batch_size,
                        'policyPositions': int(policy_mask.sum()), 'valuePositions': int(mask.sum())}
+            if certificate_policy_weight!=1:metrics['certificatePolicyWeight']=certificate_policy_weight
             if execution and execution['settings'].get('policyRefresh'):
                 metrics['policyRefreshBindingSha256']=execution['settings']['policyRefresh']['sha256']
                 metrics['policyRefreshSampledIds']=[p['_policyRefreshId'] for p in batch if p.get('_policyRefreshId') and p.get('policyMask',True)]

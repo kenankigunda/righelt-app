@@ -1,4 +1,6 @@
 import hashlib
+import base64
+import gzip
 import json
 import os
 from pathlib import Path
@@ -30,6 +32,20 @@ def atomic_json(path, data):
     finally:os.close(fd)
 
 
+def read_recovery_sidecar(path):
+    """Read legacy or losslessly compressed recovery state, checking its bytes."""
+    record=json.loads(resolve_reference(path).read_text())
+    if record.get('schema')==3:
+        if 'state' in record:raise ValueError('ambiguous compressed recovery sidecar')
+        raw=gzip.decompress(base64.b64decode(record.pop('stateGzipBase64'),validate=True))
+        if hashlib.sha256(raw).hexdigest()!=record.pop('stateSha256'):
+            raise ValueError('compressed recovery sidecar checksum mismatch')
+        record['state']=json.loads(raw)
+    elif 'stateGzipBase64' in record or 'stateSha256' in record:
+        raise ValueError('compressed sidecar has invalid schema')
+    return record
+
+
 def save_checkpoint(path, model, optimizer, *, round_index, updates, replay_ids, manifest_sha256, recovery_state=None, training_recipe=None, exploration_adoption=None):
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
     recipe = recipe_binding() if training_recipe is None else validate_recipe(training_recipe)
@@ -55,6 +71,13 @@ def save_checkpoint(path, model, optimizer, *, round_index, updates, replay_ids,
         data['recoverySha256']=hashlib.sha256(json.dumps(data['recovery'],sort_keys=True,allow_nan=False).encode()).hexdigest()
     if torch.backends.mps.is_available(): data['mpsRng']=torch.mps.get_rng_state()
     if torch.cuda.is_available(): data['cudaRng']=torch.cuda.get_rng_state_all()
+    compact=os.environ.get('RIGHELT_COMPACT_RECOVERY')=='1' and recovery_state is not None
+    recovery=data.get('recovery')
+    if compact:
+        raw=json.dumps(recovery,sort_keys=True,allow_nan=False).encode()
+        data['recoveryGzip']=gzip.compress(raw,compresslevel=1,mtime=0)
+        data['recoveryCodec']='json-gzip-v1'
+        del data['recovery']
     tmp=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
     try:
         with tmp.open('xb') as f:torch.save(data,f);f.flush();os.fsync(f.fileno())
@@ -67,8 +90,12 @@ def save_checkpoint(path, model, optimizer, *, round_index, updates, replay_ids,
     atomic_json(path.with_suffix('.json'),{'sha256':digest,'configSha256':CONFIG_SHA256,
                                          'manifestSha256':manifest_sha256,'round':round_index,'updates':updates,'trainingRecipe':recipe,**binding})
     if recovery_state is not None:
-        atomic_json(path.with_suffix('.runner.json'),{'schema':2,'checkpointSha256':digest,
-                    'recoverySha256':data['recoverySha256'],'state':data['recovery']['state']})
+        companion={'schema':2,'checkpointSha256':digest,'recoverySha256':data['recoverySha256'],'state':recovery['state']}
+        if compact:
+            raw=json.dumps(companion.pop('state'),sort_keys=True,allow_nan=False).encode()
+            companion.update(schema=3,stateSha256=hashlib.sha256(raw).hexdigest(),
+                stateGzipBase64=base64.b64encode(gzip.compress(raw,compresslevel=1,mtime=0)).decode())
+        atomic_json(path.with_suffix('.runner.json'),companion)
     return digest
 
 
@@ -76,6 +103,11 @@ def inspect_checkpoint(path, *, manifest_sha256, require_recovery=False, trainin
     path=resolve_reference(path);meta=json.loads(resolve_reference(path.with_suffix('.json')).read_text())
     if hashlib.sha256(path.read_bytes()).hexdigest()!=meta['sha256']: raise ValueError('checkpoint checksum mismatch')
     data=torch.load(path,map_location='cpu',weights_only=True)
+    if 'recoveryGzip' in data:
+        if 'recovery' in data or data.get('recoveryCodec')!='json-gzip-v1':raise ValueError('ambiguous compressed checkpoint recovery')
+        data['recovery']=json.loads(gzip.decompress(data.pop('recoveryGzip')))
+        data.pop('recoveryCodec')
+    elif 'recoveryCodec' in data:raise ValueError('compressed checkpoint payload missing')
     if (record_architecture(data) != record_architecture(meta)
             or ('modelArchitecture' in data) != ('modelArchitecture' in meta)):
         raise ValueError('Checkpoint architecture metadata mismatch')
@@ -97,7 +129,7 @@ def inspect_checkpoint(path, *, manifest_sha256, require_recovery=False, trainin
     recovery=data.get('recovery')
     if require_recovery and recovery is None:raise ValueError('checkpoint lacks bound recovery bundle')
     if recovery is not None:
-        companion=json.loads(resolve_reference(path.with_suffix('.runner.json')).read_text())
+        companion=read_recovery_sidecar(path.with_suffix('.runner.json'))
         digest=hashlib.sha256(json.dumps(recovery,sort_keys=True,allow_nan=False).encode()).hexdigest()
         if (digest!=data['recoverySha256'] or digest!=companion.get('recoverySha256')
             or companion.get('checkpointSha256')!=meta['sha256'] or companion.get('state')!=recovery['state']):

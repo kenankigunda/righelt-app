@@ -78,15 +78,22 @@ def verify(directory,plan):
     from .device import selected_device
     manifest=read(directory/'manifest.json')
     latest=read(directory/'latest.json');checkpoint=resolve_reference(latest['checkpoint'],expected_sha256=latest['sha256'])
-    result=read(directory/'runner-result.json')
+    recovery=read(directory/'recovery-endpoint.json') if plan['schema']==3 and (directory/'recovery-endpoint.json').exists() else None
+    if recovery is not None:
+        if (recovery.get('kind')!='local-last-durable-endpoint' or recovery.get('checkpointSha256')!=latest['sha256']
+                or recovery.get('completedWorkInvented') is not False):raise ValueError('invalid recovered endpoint binding')
+        result=recovery
+    else:result=read(directory/'runner-result.json')
     if plan['schema']==2:
         from .cloud_episode import artifact_deadline as endpoint_deadline
         artifact_deadline=endpoint_deadline(plan,result)
     if time.time()>=artifact_deadline:raise TimeoutError('artifact deadline expired')
-    if result.get('reason') not in ('budget-or-resource-stop','insufficient-generation-runway','validation-handoff'):
+    allowed=('budget-or-resource-stop','insufficient-generation-runway','validation-handoff')
+    if result.get('reason') not in allowed+(('local-recovered-checkpoint',) if plan['schema']==3 else ()):
         raise ValueError('unplanned endpoint cannot qualify')
     model=model_from_record(manifest['manifest']).to(selected_device());optimizer=make_optimizer(model)
     data=load_checkpoint(checkpoint,model,optimizer,manifest_sha256=manifest['sha256'],require_recovery=True)
+    if recovery is not None:result={**result,'state':data['recovery']['state']}
     if data['updates']!=latest['updates'] or data['recovery']['state']!=result['state']:
         raise ValueError('endpoint cursor differs from sealed checkpoint')
     method=configure(plan)['settings']['attentionMethod']
@@ -117,6 +124,7 @@ def verify(directory,plan):
         'availableFutureFactLabels':sum(sum(p.get('futureFacts',{}).get('mask',[])) for p in buffer.positions),
         'recoveryPassed':True,'numericParityPassed':True,'browserAcceptance':'pending',
         'strengthEstablished':False,'defaultPromotion':False,'observedAt':time.time()}
+    if recovery is not None:report['recoveredEndpoint']=recovery
     if time.time()>=artifact_deadline:raise TimeoutError('artifact deadline expired')
     atomic_json(directory/'candidate-report.json',report)
     return report

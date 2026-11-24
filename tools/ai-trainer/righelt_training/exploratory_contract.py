@@ -14,11 +14,14 @@ def digest(value):
 
 
 def validate(plan):
+    if plan.get('schema')==3:
+        from .local_episode import validate as validate_local
+        validate_local(plan)
     if plan.get('schema')==2:
         from .cloud_episode import validate as validate_episode
         validate_episode(plan)
     legacy=plan.get('schema')==1
-    if (plan.get('schema') not in (1,2) or plan.get('kind')!=KIND or plan.get('lane') not in ('A','B')
+    if (plan.get('schema') not in (1,2,3) or plan.get('kind')!=KIND or plan.get('lane') not in ('A','B')
             or type(plan.get('seed')) is not int or not 0<=plan['seed']<2**32
             or plan.get('stage')!='initial' or legacy and (plan.get('trainingStopWall')!=TRAINING_STOP
             or plan.get('artifactDeadlineWall')!=ARTIFACT_DEADLINE)
@@ -133,6 +136,9 @@ def continuation(directory,manifest):
 
 def consume_resume(directory,reason,now):
     plan_path=Path(directory)/'plan.json'
+    if plan_path.exists() and json.loads(plan_path.read_bytes()).get('schema')==3:
+        from .local_episode import consume_resume as consume_local
+        return consume_local(directory,reason,now)
     if plan_path.exists() and json.loads(plan_path.read_bytes()).get('schema')==2:
         raise ValueError('cloud repair episode permits no same-allocation resumes')
     """Caller holds supervisor.lock; consume before every internal/outer respawn."""
@@ -167,7 +173,11 @@ def check_repair(directory,now):
     elapsed,opened=repair_state(directory,now)
     path=Path(directory)/'plan.json'
     plan=json.loads(path.read_bytes()) if path.exists() else {}
-    if plan.get('schema')==2:
+    if plan.get('schema')==3:
+        from .local_episode import validate as validate_local
+        authority=validate_local(plan)
+        if elapsed>=authority['caps']['repairSeconds']:raise ValueError('local repair allowance exhausted')
+    elif plan.get('schema')==2:
         from .cloud_episode import validate as validate_episode
         validate_episode(plan)
         from .cloud_launch import is_prospective

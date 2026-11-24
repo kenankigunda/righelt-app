@@ -73,7 +73,8 @@ def request_validation_handoff(run_dir,runtime,now):
         consumed=None
         if latest.exists():
             checkpoint=Path(json.loads(latest.read_text())['checkpoint'])
-            consumed=json.loads(checkpoint.with_suffix('.runner.json').read_text())['state'].get('lastHandoffId')
+            from .checkpoint import read_recovery_sidecar
+            consumed=read_recovery_sidecar(checkpoint.with_suffix('.runner.json'))['state'].get('lastHandoffId')
         if pending.get('id')!=consumed:return False
     atomic_json(path,{'schema':1,'id':request_id,'reason':'validation',
                      'manifestSha256':runtime['manifestSha256']})
@@ -109,6 +110,10 @@ def supervise(process,budget,policy,telemetry,run_dir,*,clock=time.monotonic,sle
                     stop_group(process)
                     return 'telemetry-failed'
                 allocation=policy.decide(sample)
+                from .local_episode import resource_stop
+                local_stop=resource_stop(run_dir,sample)
+                if local_stop:
+                    stop_group(process);return local_stop
                 if (runtime and runtime.get('episodeId') and not episode_healthy
                         and sample.device_memory_known and not allocation.stop and not allocation.paused):
                     from .cloud_episode import LIMITS as CLOUD_LIMITS
@@ -173,6 +178,9 @@ def wait_for_resources(budget,policy,telemetry,run_dir,runtime,*,clock=time.mono
         try:sample=telemetry.sample()
         except (RuntimeError,OSError):return 'telemetry-failed'
         assigned=policy.decide(sample)
+        from .local_episode import resource_stop
+        local_stop=resource_stop(run_dir,sample)
+        if local_stop:return local_stop
         if runtime.get('episodeId') and assigned.paused:
             with (Path(run_dir)/'resource-events.jsonl').open('a') as stream:
                 stream.write(json.dumps({'event':'resource-compute-stopped','reason':assigned.reason,
@@ -236,7 +244,7 @@ def run_phase(argv,env,log,budget,runtime,run_dir,artifact_root,activity_file,*,
                 stream.write(json.dumps({'event':'resource-compute-stopped','pid':process.pid,
                     'reason':reason,'cleanupVerified':True,'resumeAllowed':False})+'\n')
             return 'resource-interrupted',process
-        if runtime.get('exploratoryPlanSha256'):
+        if runtime.get('exploratoryPlanSha256') and runtime['command']=='training':
             from .exploratory_contract import consume_resume
             consume_resume(directory,reason,time.time())
         with (directory/'resource-events.jsonl').open('a') as stream:

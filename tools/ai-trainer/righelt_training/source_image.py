@@ -29,7 +29,7 @@ def safe_source(root, name):
 @lru_cache(maxsize=1)
 def source_image():
     path = ROOT / '.compute-source.json'
-    if os.environ.get('RIGHELT_HOSTED') != '1' or not path.exists():
+    if (os.environ.get('RIGHELT_HOSTED') != '1' and os.environ.get('RIGHELT_LOCAL_SOURCE_IMAGE') != '1') or not path.exists():
         return None
     record = json.loads(path.read_text())
     if record.get('schema') != 2:

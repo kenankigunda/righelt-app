@@ -92,7 +92,8 @@ def audit(directory, deadline, *, verifier=verify_game, clock=time.monotonic):
         meta=json.loads(path.with_suffix('.json').read_text())
         if meta['manifestSha256'] not in allowed:raise ValueError('checkpoint source lineage not authorized')
         inspect_checkpoint(path,manifest_sha256=meta['manifestSha256'],require_recovery=True)
-        companion=json.loads(path.with_suffix('.runner.json').read_text())
+        from .checkpoint import read_recovery_sidecar
+        companion=read_recovery_sidecar(path.with_suffix('.runner.json'))
         if companion['checkpointSha256']!=latest['sha256'] or hashlib.sha256(path.read_bytes()).hexdigest()!=latest['sha256']:
             raise ValueError('latest checkpoint identity mismatch')
         state=companion['state'];seen=set()

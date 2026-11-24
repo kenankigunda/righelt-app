@@ -275,7 +275,8 @@ class Runner:
         data = load_checkpoint(checkpoint, self.model, self.optimizer, manifest_sha256=parent_manifest, require_recovery=True,
             validate_state=lambda data: exploration_adoption.checkpoint_recipe(checkpoint, data, recipe=self.training_recipe,
                 binding=self.exploration_adoption, continuation=continuation))
-        companion = read_json(checkpoint.with_suffix('.runner.json'))
+        from .checkpoint import read_recovery_sidecar
+        companion = read_recovery_sidecar(checkpoint.with_suffix('.runner.json'))
         if companion['checkpointSha256'] != hashlib.sha256(checkpoint.read_bytes()).hexdigest():
             raise ValueError('runner checkpoint mismatch')
         self.state = data['recovery']['state']

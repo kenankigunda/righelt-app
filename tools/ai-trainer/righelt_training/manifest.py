@@ -123,7 +123,9 @@ HOSTED_PROOF_PATHS=tuple('tools/ai-trainer/righelt_training/'+name+'.py' for nam
     'tools/hosted-compute/s05-observations.mjs','tools/hosted-compute/search-diagnosis.mjs',
     'tools/hosted-compute/development-suite.mjs','tools/hosted-compute/development-suite-assessment.mjs')
 
-PROOF_PATHS=('tools/ai-trainer/learning-evidence-contract.json','tools/ai-trainer/tactical-evidence.mjs','tools/hosted-compute/data-contract.mjs','tools/hosted-compute/policy.json','tools/hosted-compute/fixture-contract.json','packages/game-engine/src','packages/computer-player/src','packages/shared-types/src',
+PROOF_PATHS=('tools/ai-trainer/righelt_training/local_episode.py','tools/ai-trainer/righelt_training/local_series.py',
+    'tools/ai-trainer/righelt_training/certificate_teacher.py','tools/ai-trainer/certificate-teacher.mjs',
+    'tools/ai-trainer/learning-evidence-contract.json','tools/ai-trainer/tactical-evidence.mjs','tools/hosted-compute/data-contract.mjs','tools/hosted-compute/policy.json','tools/hosted-compute/fixture-contract.json','packages/game-engine/src','packages/computer-player/src','packages/shared-types/src',
     'tools/ai-trainer/production-corpus.mjs','tools/ai-trainer/snapshot-production.py',
     'tools/ai-trainer/righelt_training/production.py','tools/ai-trainer/righelt_training/curriculum.py',
     'tools/ai-trainer/righelt_training/replay.py',
