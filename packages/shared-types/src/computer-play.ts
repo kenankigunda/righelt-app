@@ -25,9 +25,21 @@ export const CANDIDATE_A_COMPUTER_MODEL = Object.freeze({
   checkpoint: 'e4a41c636dfa3a98f0973a5023e0fe5883dfd8d592b0df27be034cd547543af5',
   url: '/computer/models/candidate-a-20261120-2323.onnx', experimental: true,
 });
+export const CANDIDATE_B_COMPUTER_MODEL = Object.freeze({
+  id: 'candidate-b-20261124-1230', sha256: '961e218328cea1b3d347e130e1f99f0e97152935a69190b6a38b26b99f07dd00', bytes: 322842,
+  checkpoint: 'c2cdc2ee1c32f066bec627f5a53ec8faea77cdff7bda922a9546321f9abfdb8c',
+  url: '/computer/models/candidate-b-20261124-1230.onnx', experimental: true,
+});
+export const CANDIDATE_C_COMPUTER_MODEL = Object.freeze({
+  id: 'candidate-c-20261124-2626', sha256: 'c79c65b79f2205e0841104f543a0dcab7c758c33bce2fb6157830d198d94029e', bytes: 322842,
+  checkpoint: '4d3bb8747e4470b853d3a1be3553a7ce9e9c927e2187a99973adbaa0ea45a645',
+  url: '/computer/models/candidate-c-20261124-2626.onnx', experimental: true,
+});
 export const COMPUTER_MODEL_CHOICES = Object.freeze([
   Object.freeze({id: CURRENT_COMPUTER_MODEL.id, label: 'Incumbent'}),
   Object.freeze({id: CANDIDATE_A_COMPUTER_MODEL.id, label: 'Candidate A'}),
+  Object.freeze({id: CANDIDATE_B_COMPUTER_MODEL.id, label: 'Candidate B'}),
+  Object.freeze({id: CANDIDATE_C_COMPUTER_MODEL.id, label: 'Candidate C'}),
 ]);
 export type ComputerModel = Readonly<{ id: string; sha256: string; bytes: number; checkpoint: string; url: string; experimental: boolean }>;
 // This historical HTTP default stays fixed when CURRENT changes in a later release.
@@ -37,6 +49,8 @@ export const COMPUTER_MODELS: Readonly<Record<string, ComputerModel>> = Object.f
   [LEGACY_COMPUTER_MODEL_ID]: LEGACY_COMPUTER_MODEL,
   [CURRENT_COMPUTER_MODEL.id]: CURRENT_COMPUTER_MODEL,
   [CANDIDATE_A_COMPUTER_MODEL.id]: CANDIDATE_A_COMPUTER_MODEL,
+  [CANDIDATE_B_COMPUTER_MODEL.id]: CANDIDATE_B_COMPUTER_MODEL,
+  [CANDIDATE_C_COMPUTER_MODEL.id]: CANDIDATE_C_COMPUTER_MODEL,
 });
 export const computerModelUpgradeAvailable = (id: string) => id === LEGACY_COMPUTER_MODEL_ID;
 export const getComputerModel = (id: string) => Object.hasOwn(COMPUTER_MODELS, id) ? COMPUTER_MODELS[id] : null;

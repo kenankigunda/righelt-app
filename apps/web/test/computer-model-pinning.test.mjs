@@ -1,20 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createLiveTransportStore} from '../shell/live-transport.js';
-import {CURRENT_COMPUTER_MODEL,CANDIDATE_A_COMPUTER_MODEL,createComputerControl,changeComputerControl,parseComputerControl} from '../generated/packages/shared-types/src/computer-play.js';
+import {CURRENT_COMPUTER_MODEL,COMPUTER_MODEL_CHOICES,createComputerControl,changeComputerControl,parseComputerControl} from '../generated/packages/shared-types/src/computer-play.js';
 import {renderComputerProgress} from '../shell/computer-view.js';
 import {IDENTITY_KEY} from '../shell/persistence.js';
-for(const operation of ['createGame','launchHistoryBranch'])for(const requested of [undefined,'initial-1554',CANDIDATE_A_COMPUTER_MODEL.id])test(`${operation} serializes the selected model without replacing a retained choice: ${requested??'current'}`,async t=>{
+for(const operation of ['createGame','launchHistoryBranch'])for(const requested of [undefined,'initial-1554',...COMPUTER_MODEL_CHOICES.map(choice=>choice.id)])test(`${operation} serializes the selected model without replacing a retained choice: ${requested??'current'}`,async t=>{
  let sent;const storage={getItem:key=>key===IDENTITY_KEY?'owner':null,setItem(){},removeItem(){}};
  const store=createLiveTransportStore({storage,commandJournal:{list:async()=>[]},fetcher:async(url,options)=>{sent={url,body:JSON.parse(options.body)};return Response.json({error:'test-stop'},{status:400});}});t.after(()=>store.retire());
  await assert.rejects(store[operation]({computer:{p1:'babs',p2:null},computerModelId:requested,sourceGameId:'source',sourceDecisionId:'decision'}),/test-stop/);
  assert.equal(sent.body.computerModelId,requested??CURRENT_COMPUTER_MODEL.id);assert.deepEqual(sent.body.computer,{p1:'babs',p2:null});
 });
 
-test('Candidate A remains pinned without an incumbent-as-upgrade notice',()=>{
- const control=createComputerControl('owner',{p1:null,p2:'horus'},CANDIDATE_A_COMPUTER_MODEL.id);
+for(const choice of COMPUTER_MODEL_CHOICES.filter(choice=>choice.id!==CURRENT_COMPUTER_MODEL.id))test(`${choice.label} remains pinned without an incumbent-as-upgrade notice`,()=>{
+ const control=createComputerControl('owner',{p1:null,p2:'horus'},choice.id);
  const restored=parseComputerControl(JSON.parse(JSON.stringify(control)));
- assert.equal(restored.modelId,'candidate-a-20261120-2323');
+ assert.equal(restored.modelId,choice.id);
  assert.doesNotMatch(renderComputerProgress({id:'candidate',canControlComputer:true,computerTurn:null,computer:restored},{phase:'idle'}),/update is available|Update opponent/);
  assert.equal(CURRENT_COMPUTER_MODEL.id,'trained-20261029-1086');
 });
