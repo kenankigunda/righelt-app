@@ -60,7 +60,16 @@ def context(directory,plan,recipe):
     if os.environ.get('RIGHELT_HOSTED')!='1':os.environ['RIGHELT_EXECUTION_CONTEXT']=str(target)
 
 
-def verify(directory,plan,*,output_directory=None):
+def numeric_verification(*args,retain_failure=False,**kwargs):
+    """Retain failed numerical evidence without converting it into a pass."""
+    from .export import numeric_parity,NumericParityError
+    try:return numeric_parity(*args,**kwargs)
+    except NumericParityError as error:
+        if not retain_failure:raise
+        return error.report
+
+
+def verify(directory,plan,*,output_directory=None,retain_numeric_failure=False):
     output_directory=Path(output_directory) if output_directory is not None else directory
     output_directory.mkdir(parents=True,exist_ok=True)
     training_stop=plan['trainingStopWall']
@@ -74,7 +83,7 @@ def verify(directory,plan,*,output_directory=None):
     from .trainer import make_optimizer
     from .attention_method import reconstruct_replay
     from .replay import ReplayBuffer
-    from .export import export_onnx,numeric_parity
+    from .export import export_onnx
     from .fresh_health import load_baseline,audit_evidence,continuation_for,read_game
     from .config import CONFIG
     from .device import selected_device
@@ -115,18 +124,19 @@ def verify(directory,plan,*,output_directory=None):
     if not positions:raise ValueError('recovered replay is empty')
     states=np.asarray([p['encoded'] for p in positions],dtype=np.float32).reshape(-1,CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize'])
     output=output_directory/'model.onnx';export_onnx(model,output)
-    parity=numeric_parity(model,output,states,reference_device=str(selected_device()),report_path=output_directory/'numeric-parity.json')
-    if not parity['numericPassed']:raise ValueError('numeric parity failed')
-    report={'schema':1,'kind':'exploratory-candidate','qualified':True,'lane':plan['lane'],
+    parity=numeric_verification(model,output,states,reference_device=str(selected_device()),report_path=output_directory/'numeric-parity.json',retain_failure=retain_numeric_failure)
+    if not parity['numericPassed'] and not retain_numeric_failure:raise ValueError('numeric parity failed')
+    report={'schema':1,'kind':'exploratory-candidate','qualified':parity['numericPassed'],'lane':plan['lane'],
         'planSha256':digest(plan),'sourceRevision':plan['sourceRevision'],'checkpoint':latest,
         'modelSha256':hashlib.sha256(output.read_bytes()).hexdigest(),'modelBytes':output.stat().st_size,
         'trainingStopWall':training_stop,'artifactDeadlineWall':artifact_deadline,
         **({'trainingStoppedAtMs':result['trainingStoppedAtMs']} if plan['schema']==2 else {}),
         'updates':data['updates']-initial['updates'],'parameterDelta':delta,'learning':proof,
         'availableFutureFactLabels':sum(sum(p.get('futureFacts',{}).get('mask',[])) for p in buffer.positions),
-        'recoveryPassed':True,'numericParityPassed':True,'browserAcceptance':'pending',
+        'recoveryPassed':True,'numericParityPassed':parity['numericPassed'],'browserAcceptance':'pending',
         'strengthEstablished':False,'defaultPromotion':False,'observedAt':time.time()}
     if recovery is not None:report['recoveredEndpoint']=recovery
+    if not parity['numericPassed']:report['qualificationFailure']='numeric-only; original failure retained'
     if time.time()>=artifact_deadline:raise TimeoutError('artifact deadline expired')
     atomic_json(output_directory/'candidate-report.json',report)
     return report

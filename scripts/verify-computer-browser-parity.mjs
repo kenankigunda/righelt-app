@@ -6,11 +6,22 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { chromium, firefox, webkit } from '@playwright/test';
 import {computerParityModelFromArgs} from './computer-parity-model.mjs';
+import {numericMarginForModel,assessNumericCell} from './computer-parity-numeric.mjs';
 const option = name => process.argv[process.argv.indexOf(name) + 1];
 for (const name of ['--corpus', '--reference', '--out']) if (!process.argv.includes(name)) throw Error(`Missing ${name}`);
 const model=computerParityModelFromArgs(process.argv.slice(2));
 const root = path.resolve(import.meta.dirname, '../apps/web');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+let valueMargin=null,numericAcceptanceSha256=null;
+if(process.argv.includes('--numeric-acceptance')||process.argv.includes('--numeric-acceptance-sha')){
+ for(const name of ['--numeric-acceptance','--numeric-acceptance-sha']){
+  if(!process.argv.includes(name)||!option(name)||option(name).startsWith('--')||process.argv.indexOf(name)!==process.argv.lastIndexOf(name))throw Error(`Invalid ${name}`);
+ }
+ const bytes=await readFile(option('--numeric-acceptance'));
+ if(digest(bytes)!==option('--numeric-acceptance-sha'))throw Error('Numeric acceptance checksum mismatch');
+ const receipt=JSON.parse(bytes);if(receipt.policyAtol!==1e-5||receipt.policyRtol!==1e-4)throw Error('Policy tolerance cannot change');
+ valueMargin=numericMarginForModel(receipt,model);numericAcceptanceSha256=digest(bytes);
+}
 const corpusBytes = await readFile(option('--corpus')), corpus = JSON.parse(corpusBytes);
 const referenceBytes = await readFile(option('--reference')), reference = JSON.parse(referenceBytes);
 const modelBytes = await readFile(path.join(root, model.url));
@@ -29,7 +40,8 @@ const server = createServer(async (request, response) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const report = { schema: 1, modelId: model.id, modelSha256: digest(modelBytes), corpusSha256: digest(corpusBytes),
   referenceSha256: digest(referenceBytes), referenceDevice: reference.referenceDevice, atol: 1e-5, rtol: 1e-4, states: corpus.states.length,
-  workerManifestSha256: digest(await readFile(path.join(root, 'computer/runtime/manifest.json'))), browsers: [], passed: false, strengthClaim: false };
+  workerManifestSha256: digest(await readFile(path.join(root, 'computer/runtime/manifest.json'))), browsers: [], passed: false, strengthClaim: false,
+  strictNumericPassed:true,ownerAcceptedValueCells:0,valueAbsoluteMargin:valueMargin,numericAcceptanceSha256 };
 try {
   for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     if (process.argv.includes('--browser') && option('--browser') !== name) continue;
@@ -56,8 +68,11 @@ try {
           for (const [key, values, targets] of [['policyMaxAbsoluteError', row.policyLogits, expected.policyLogits], ['valueMaxAbsoluteError', [row.value], [expected.value]]]) {
             if (values.length !== targets.length) throw Error(`Output shape mismatch: ${row.id}`);
             for (let n = 0; n < values.length; n++) {
-              const error = Math.abs(values[n] - targets[n]); result[key] = Math.max(result[key], error);
-              if (!Number.isFinite(values[n]) || error > report.atol + report.rtol * Math.abs(targets[n])) throw Error(`Numeric mismatch: ${name} ${row.id} ${key} ${n}`);
+              const assessed=assessNumericCell(key==='valueMaxAbsoluteError'?'value':'policy',values[n],targets[n],report,valueMargin);
+              result[key] = Math.max(result[key], assessed.error);
+              if(!assessed.strictPassed)report.strictNumericPassed=false;
+              if(assessed.acceptedByOwner)report.ownerAcceptedValueCells++;
+              if(!assessed.accepted)throw Error(`Numeric mismatch: ${name} ${row.id} ${key} ${n}`);
             }
           }
           result.checked++;
