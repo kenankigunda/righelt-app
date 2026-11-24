@@ -12,10 +12,8 @@ PAIRWISE_INFERENCE = 'pairwise-fp32-v1'
 
 def pairwise_mean(values, dim, *, keepdim=False):
     """A fixed adjacent-pair tree, retaining every term and FP32 operation."""
-    axis = dim % values.ndim
-    last = values.ndim - 1
-    count = values.shape[axis]
-    reduced = values.movedim(axis, last)
+    count = values.shape[dim]
+    reduced = values.movedim(dim, -1)
     width = count
     while width > 1:
         pairs = width // 2
@@ -23,8 +21,8 @@ def pairwise_mean(values, dim, *, keepdim=False):
         combined = terms[..., 0] + terms[..., 1]
         reduced = torch.cat((combined, reduced[..., -1:]), dim=-1) if width % 2 else combined
         width = pairs + width % 2
-    result = (reduced / float(count)).movedim(last, axis)
-    return result if keepdim else result.squeeze(axis)
+    result = (reduced / float(count)).movedim(-1, dim)
+    return result if keepdim else result.squeeze(dim)
 
 
 class PairwiseLayerNorm(nn.LayerNorm):
