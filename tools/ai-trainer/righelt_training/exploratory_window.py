@@ -136,7 +136,7 @@ def verify(directory,plan,*,output_directory=None,retain_numeric_failure=False):
         'recoveryPassed':True,'numericParityPassed':parity['numericPassed'],'browserAcceptance':'pending',
         'strengthEstablished':False,'defaultPromotion':False,'observedAt':time.time()}
     if recovery is not None:report['recoveredEndpoint']=recovery
-    if not parity['numericPassed']:report['qualificationFailure']='numeric-only; original failure retained'
+    if not parity['numericPassed']:report['qualificationFailure']='numeric-parity; original diagnostics retained'
     if time.time()>=artifact_deadline:raise TimeoutError('artifact deadline expired')
     atomic_json(output_directory/'candidate-report.json',report)
     return report
