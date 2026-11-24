@@ -60,7 +60,18 @@ def context(directory,plan,recipe):
     if os.environ.get('RIGHELT_HOSTED')!='1':os.environ['RIGHELT_EXECUTION_CONTEXT']=str(target)
 
 
-def verify(directory,plan):
+def numeric_verification(*args,retain_failure=False,**kwargs):
+    """Retain failed numerical evidence without converting it into a pass."""
+    from .export import numeric_parity,NumericParityError
+    try:return numeric_parity(*args,**kwargs)
+    except NumericParityError as error:
+        if not retain_failure:raise
+        return error.report
+
+
+def verify(directory,plan,*,output_directory=None,retain_numeric_failure=False):
+    output_directory=Path(output_directory) if output_directory is not None else directory
+    output_directory.mkdir(parents=True,exist_ok=True)
     training_stop=plan['trainingStopWall']
     artifact_deadline=plan['artifactDeadlineWall']
     import math
@@ -72,21 +83,28 @@ def verify(directory,plan):
     from .trainer import make_optimizer
     from .attention_method import reconstruct_replay
     from .replay import ReplayBuffer
-    from .export import export_onnx,numeric_parity
+    from .export import export_onnx
     from .fresh_health import load_baseline,audit_evidence,continuation_for,read_game
     from .config import CONFIG
     from .device import selected_device
     manifest=read(directory/'manifest.json')
     latest=read(directory/'latest.json');checkpoint=resolve_reference(latest['checkpoint'],expected_sha256=latest['sha256'])
-    result=read(directory/'runner-result.json')
+    recovery=read(directory/'recovery-endpoint.json') if plan['schema']==3 and (directory/'recovery-endpoint.json').exists() else None
+    if recovery is not None:
+        if (recovery.get('kind')!='local-last-durable-endpoint' or recovery.get('checkpointSha256')!=latest['sha256']
+                or recovery.get('completedWorkInvented') is not False):raise ValueError('invalid recovered endpoint binding')
+        result=recovery
+    else:result=read(directory/'runner-result.json')
     if plan['schema']==2:
         from .cloud_episode import artifact_deadline as endpoint_deadline
         artifact_deadline=endpoint_deadline(plan,result)
     if time.time()>=artifact_deadline:raise TimeoutError('artifact deadline expired')
-    if result.get('reason') not in ('budget-or-resource-stop','insufficient-generation-runway','validation-handoff'):
+    allowed=('budget-or-resource-stop','insufficient-generation-runway','validation-handoff')
+    if result.get('reason') not in allowed+(('local-recovered-checkpoint',) if plan['schema']==3 else ()):
         raise ValueError('unplanned endpoint cannot qualify')
     model=model_from_record(manifest['manifest']).to(selected_device());optimizer=make_optimizer(model)
     data=load_checkpoint(checkpoint,model,optimizer,manifest_sha256=manifest['sha256'],require_recovery=True)
+    if recovery is not None:result={**result,'state':data['recovery']['state']}
     if data['updates']!=latest['updates'] or data['recovery']['state']!=result['state']:
         raise ValueError('endpoint cursor differs from sealed checkpoint')
     method=configure(plan)['settings']['attentionMethod']
@@ -94,7 +112,7 @@ def verify(directory,plan):
         expected_sha256=manifest['manifest']['evaluationGuards']['sha256']))
     buffer=ReplayBuffer(protected_encoding_hashes=guards['encodingHashes'],protected_family_ids=guards['familyIds'])
     reconstruct_replay(buffer,data,method,base=directory)
-    games={name:read_game(resolve_reference(name,base=directory)) for name in data['recovery']['state']['archives']}
+    games={name:read_game(resolve_reference(name,base=directory),compact_encodings=True) for name in data['recovery']['state']['archives']}
     contract=continuation_for(directory,manifest['manifest']);baseline=load_baseline(directory,contract)
     proof=audit_evidence(directory,data['recovery']['state'],baseline,games)
     original=resolve_reference(plan['checkpoint']['path'],expected_sha256=plan['checkpoint']['sha256'])
@@ -105,20 +123,22 @@ def verify(directory,plan):
     positions=list(buffer.positions)[:32]
     if not positions:raise ValueError('recovered replay is empty')
     states=np.asarray([p['encoded'] for p in positions],dtype=np.float32).reshape(-1,CONFIG['inputPlanes'],CONFIG['boardSize'],CONFIG['boardSize'])
-    output=directory/'model.onnx';export_onnx(model,output)
-    parity=numeric_parity(model,output,states,reference_device=str(selected_device()),report_path=directory/'numeric-parity.json')
-    if not parity['numericPassed']:raise ValueError('numeric parity failed')
-    report={'schema':1,'kind':'exploratory-candidate','qualified':True,'lane':plan['lane'],
+    output=output_directory/'model.onnx';export_onnx(model,output)
+    parity=numeric_verification(model,output,states,reference_device=str(selected_device()),report_path=output_directory/'numeric-parity.json',retain_failure=retain_numeric_failure)
+    if not parity['numericPassed'] and not retain_numeric_failure:raise ValueError('numeric parity failed')
+    report={'schema':1,'kind':'exploratory-candidate','qualified':parity['numericPassed'],'lane':plan['lane'],
         'planSha256':digest(plan),'sourceRevision':plan['sourceRevision'],'checkpoint':latest,
         'modelSha256':hashlib.sha256(output.read_bytes()).hexdigest(),'modelBytes':output.stat().st_size,
         'trainingStopWall':training_stop,'artifactDeadlineWall':artifact_deadline,
         **({'trainingStoppedAtMs':result['trainingStoppedAtMs']} if plan['schema']==2 else {}),
         'updates':data['updates']-initial['updates'],'parameterDelta':delta,'learning':proof,
         'availableFutureFactLabels':sum(sum(p.get('futureFacts',{}).get('mask',[])) for p in buffer.positions),
-        'recoveryPassed':True,'numericParityPassed':True,'browserAcceptance':'pending',
+        'recoveryPassed':True,'numericParityPassed':parity['numericPassed'],'browserAcceptance':'pending',
         'strengthEstablished':False,'defaultPromotion':False,'observedAt':time.time()}
+    if recovery is not None:report['recoveredEndpoint']=recovery
+    if not parity['numericPassed']:report['qualificationFailure']='numeric-parity; original diagnostics retained'
     if time.time()>=artifact_deadline:raise TimeoutError('artifact deadline expired')
-    atomic_json(directory/'candidate-report.json',report)
+    atomic_json(output_directory/'candidate-report.json',report)
     return report
 
 

@@ -2713,15 +2713,35 @@ var CANDIDATE_A_COMPUTER_MODEL = Object.freeze({
   url: "/computer/models/candidate-a-20261120-2323.onnx",
   experimental: true
 });
+var CANDIDATE_B_COMPUTER_MODEL = Object.freeze({
+  id: "candidate-b-20261124-1230",
+  sha256: "961e218328cea1b3d347e130e1f99f0e97152935a69190b6a38b26b99f07dd00",
+  bytes: 322842,
+  checkpoint: "c2cdc2ee1c32f066bec627f5a53ec8faea77cdff7bda922a9546321f9abfdb8c",
+  url: "/computer/models/candidate-b-20261124-1230.onnx",
+  experimental: true
+});
+var CANDIDATE_C_COMPUTER_MODEL = Object.freeze({
+  id: "candidate-c-20261124-2626",
+  sha256: "c79c65b79f2205e0841104f543a0dcab7c758c33bce2fb6157830d198d94029e",
+  bytes: 322842,
+  checkpoint: "4d3bb8747e4470b853d3a1be3553a7ce9e9c927e2187a99973adbaa0ea45a645",
+  url: "/computer/models/candidate-c-20261124-2626.onnx",
+  experimental: true
+});
 var COMPUTER_MODEL_CHOICES = Object.freeze([
   Object.freeze({ id: CURRENT_COMPUTER_MODEL.id, label: "Incumbent" }),
-  Object.freeze({ id: CANDIDATE_A_COMPUTER_MODEL.id, label: "Candidate A" })
+  Object.freeze({ id: CANDIDATE_A_COMPUTER_MODEL.id, label: "Candidate A" }),
+  Object.freeze({ id: CANDIDATE_B_COMPUTER_MODEL.id, label: "Candidate B" }),
+  Object.freeze({ id: CANDIDATE_C_COMPUTER_MODEL.id, label: "Candidate C" })
 ]);
 var LEGACY_COMPUTER_MODEL_ID = "initial-1554";
 var COMPUTER_MODELS = Object.freeze({
   [LEGACY_COMPUTER_MODEL_ID]: LEGACY_COMPUTER_MODEL,
   [CURRENT_COMPUTER_MODEL.id]: CURRENT_COMPUTER_MODEL,
-  [CANDIDATE_A_COMPUTER_MODEL.id]: CANDIDATE_A_COMPUTER_MODEL
+  [CANDIDATE_A_COMPUTER_MODEL.id]: CANDIDATE_A_COMPUTER_MODEL,
+  [CANDIDATE_B_COMPUTER_MODEL.id]: CANDIDATE_B_COMPUTER_MODEL,
+  [CANDIDATE_C_COMPUTER_MODEL.id]: CANDIDATE_C_COMPUTER_MODEL
 });
 function computerProfileFor(control, side, turnIndex) {
   return !control || control.manual || control.takeoverTurn === turnIndex ? null : control.seats[side === "P1" ? "p1" : "p2"];

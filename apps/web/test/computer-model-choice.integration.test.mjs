@@ -1,9 +1,19 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {CURRENT_COMPUTER_MODEL,CANDIDATE_A_COMPUTER_MODEL} from '../generated/packages/shared-types/src/computer-play.js';
+import {CURRENT_COMPUTER_MODEL,CANDIDATE_A_COMPUTER_MODEL,COMPUTER_MODEL_CHOICES} from '../generated/packages/shared-types/src/computer-play.js';
 import {createOpponentStoryDialog} from '../shell/opponent-stories.js';
 import {createRematchDialog} from '../shell/game-result.js';
 import {renderComputerPlayerCard} from '../shell/computer-player-card.js';
+import {computerModelChoiceLabel,renderComputerModelChoice,selectableComputerModel} from '../shell/computer-model-choice.js';
 const incumbent=CURRENT_COMPUTER_MODEL.id,candidate=CANDIDATE_A_COMPUTER_MODEL.id;
+test('model choices label only selectable candidates and keep the incumbent checked by default',()=>{
+ assert.equal(computerModelChoiceLabel(candidate),'Candidate A · Experimental');
+ for(const id of [incumbent,'initial-1554','unknown',undefined]) assert.equal(computerModelChoiceLabel(id),null);
+ assert.equal(selectableComputerModel('unknown'),false);
+ const html=renderComputerModelChoice();
+ assert.match(html,new RegExp(`value="${incumbent}" checked`));
+ assert.doesNotMatch(html,new RegExp(`value="${candidate}" checked`));
+ assert.match(html,/Candidate versions are experimental\./);
+});
 function fixture(){
  const handlers={},nodes={'[data-story-play]':{dataset:{},setAttribute(){}},'[data-story-readiness]':{dataset:{}},'[data-story-retry]':{},'[data-rematch-start]':{dataset:{},setAttribute(){}},'[role=status]':{dataset:{}},'[data-rematch-retry]':{},'[data-computer-model-choice]':{},'[name=rematch-opponent]:checked':{value:'babs'},'[name=rematch-side]:checked':{value:'p2'}};
  const element={open:false,dataset:{},querySelector:selector=>nodes[selector]??null,querySelectorAll:()=>[],addEventListener:(event,fn)=>handlers[event]=fn};
@@ -29,8 +39,8 @@ for(const title of ['Play again','Create a new game here'])test(`${title} forwar
  await f.click('[data-rematch-start]');assert.deepEqual(starts,[{opponent:'babs',side:'p2',modelId:candidate}]);assert.deepEqual(changes.at(-1),{opponent:'babs',id:candidate});
  dialog.open({opponent:'babs',rematchSide:'p2'});assert.equal(dialog.modelId(),incumbent);
 });
-test('the pinned candidate is visible without renaming the computer player or labelling it stronger',()=>{
- const html=renderComputerPlayerCard({computerProfile:'tau'},{gameId:'candidate',side:'P2',modelId:candidate});
- assert.match(html,/Candidate A · Experimental/);assert.match(html,/>Tau</);assert.doesNotMatch(html,/stronger|improved|promoted/i);
+for(const choice of COMPUTER_MODEL_CHOICES.filter(choice=>choice.id!==incumbent))test(`${choice.label} is visible without renaming the computer player or labelling it stronger`,()=>{
+ const html=renderComputerPlayerCard({computerProfile:'tau'},{gameId:'candidate',side:'P2',modelId:choice.id});
+ assert.ok(html.includes(`${choice.label} · Experimental`));assert.match(html,/>Tau</);assert.doesNotMatch(html,/stronger|improved|promoted/i);
  assert.doesNotMatch(renderComputerPlayerCard({computerProfile:'tau'},{gameId:'incumbent',side:'P2',modelId:incumbent}),/Candidate A/);
 });

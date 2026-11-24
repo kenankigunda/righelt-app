@@ -18,7 +18,8 @@ SOURCES = ('trainer.py', 'model.py', 'curriculum.py', 'runner.py', 'replay.py', 
            'checkpoint.py', 'production.py', 'training_recipe.py', 'canary.py', 'hosted_canary.py', 'execution_recipe.py',
            'portable.py', 'attention_method.py', 'pilot_recipe.py', 'sequence_targets.py', 'board_attention.py',
            'hosted_science.py','cloud_episode.py','cloud_launch.py','linux_memory.py','consumption_transfer.py','exploratory_contract.py','exploratory_window.py','fresh_health.py','supervisor.py','policy_pool.py','export_runtime.py','hosted_receipts.py','source_image.py',
-           'prospective_durability.py','evaluation_start.py','development_assessment.py','comparison_report.py','evaluation.py','arena.py','search_parity.py')
+           'prospective_durability.py','evaluation_start.py','development_assessment.py','comparison_report.py','evaluation.py','arena.py','search_parity.py',
+           'local_episode.py','local_series.py','certificate_teacher.py')
 
 
 def digest(value):
@@ -47,7 +48,7 @@ def settings(mode, training_recipe=None, attention_method=None, policy_refresh=N
             'fixtureContract': json.loads((ROOT/'tools/hosted-compute/fixture-contract.json').read_text()) if mode == 'closed-loop-fixture' else None,
             'teaching': attention_method['pilotRecipe'] if attention else 'none',
             'automaticSwitches': 'fixed-local-teaching-v2' if attention else 'curriculum.observe-source-bound',
-            'sourceFiles': {name: hashlib.sha256((ROOT/'tools/ai-trainer/righelt_training'/name).read_bytes()).hexdigest() for name in SOURCES}}
+            'sourceFiles': {name: hashlib.sha256((Path(__file__).resolve().parent/name).read_bytes()).hexdigest() for name in SOURCES}}
 
 
 def record(checkpoint, data_sha256, *, mode, training_recipe=None, attention_method=None, policy_refresh=None):

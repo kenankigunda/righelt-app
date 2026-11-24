@@ -1,19 +1,31 @@
 // Read-only correctness proof for the exact production worker and model asset.
-// Run under resources:run with --corpus FILE --reference FILE --out FILE.
+// Run under resources:run with --corpus FILE --reference FILE --out FILE [--model-id ID].
 import { createServer } from 'node:http';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { chromium, firefox, webkit } from '@playwright/test';
-import { CURRENT_COMPUTER_MODEL } from '../apps/web/generated/packages/shared-types/src/computer-play.js';
+import {computerParityModelFromArgs} from './computer-parity-model.mjs';
+import {numericMarginForModel,assessNumericCell} from './computer-parity-numeric.mjs';
 const option = name => process.argv[process.argv.indexOf(name) + 1];
 for (const name of ['--corpus', '--reference', '--out']) if (!process.argv.includes(name)) throw Error(`Missing ${name}`);
+const model=computerParityModelFromArgs(process.argv.slice(2));
 const root = path.resolve(import.meta.dirname, '../apps/web');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+let valueMargin=null,numericAcceptanceSha256=null;
+if(process.argv.includes('--numeric-acceptance')||process.argv.includes('--numeric-acceptance-sha')){
+ for(const name of ['--numeric-acceptance','--numeric-acceptance-sha']){
+  if(!process.argv.includes(name)||!option(name)||option(name).startsWith('--')||process.argv.indexOf(name)!==process.argv.lastIndexOf(name))throw Error(`Invalid ${name}`);
+ }
+ const bytes=await readFile(option('--numeric-acceptance'));
+ if(digest(bytes)!==option('--numeric-acceptance-sha'))throw Error('Numeric acceptance checksum mismatch');
+ const receipt=JSON.parse(bytes);if(receipt.policyAtol!==1e-5||receipt.policyRtol!==1e-4)throw Error('Policy tolerance cannot change');
+ valueMargin=numericMarginForModel(receipt,model);numericAcceptanceSha256=digest(bytes);
+}
 const corpusBytes = await readFile(option('--corpus')), corpus = JSON.parse(corpusBytes);
 const referenceBytes = await readFile(option('--reference')), reference = JSON.parse(referenceBytes);
-const modelBytes = await readFile(path.join(root, CURRENT_COMPUTER_MODEL.url));
-if (digest(modelBytes) !== CURRENT_COMPUTER_MODEL.sha256 || reference.modelSha256 !== CURRENT_COMPUTER_MODEL.sha256 ||
+const modelBytes = await readFile(path.join(root, model.url));
+if (digest(modelBytes) !== model.sha256 || reference.modelSha256 !== model.sha256 ||
     reference.corpusSha256 !== digest(corpusBytes) || reference.states.length !== corpus.states.length || corpus.states.length < 1000) throw Error('Parity input provenance mismatch');
 const server = createServer(async (request, response) => {
   try {
@@ -26,9 +38,10 @@ const server = createServer(async (request, response) => {
   } catch { response.writeHead(404); response.end(); }
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-const report = { schema: 1, modelId: CURRENT_COMPUTER_MODEL.id, modelSha256: digest(modelBytes), corpusSha256: digest(corpusBytes),
+const report = { schema: 1, modelId: model.id, modelSha256: digest(modelBytes), corpusSha256: digest(corpusBytes),
   referenceSha256: digest(referenceBytes), referenceDevice: reference.referenceDevice, atol: 1e-5, rtol: 1e-4, states: corpus.states.length,
-  workerManifestSha256: digest(await readFile(path.join(root, 'computer/runtime/manifest.json'))), browsers: [], passed: false, strengthClaim: false };
+  workerManifestSha256: digest(await readFile(path.join(root, 'computer/runtime/manifest.json'))), browsers: [], passed: false, strengthClaim: false,
+  strictNumericPassed:true,ownerAcceptedValueCells:0,valueAbsoluteMargin:valueMargin,numericAcceptanceSha256 };
 try {
   for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     if (process.argv.includes('--browser') && option('--browser') !== name) continue;
@@ -39,7 +52,7 @@ try {
       await page.evaluate(async id => {
         const { ComputerRuntime } = await import('/shell/computer-runtime.js');
         window.parityRuntime = new ComputerRuntime(); await window.parityRuntime.prepare(id);
-      }, CURRENT_COMPUTER_MODEL.id);
+      }, model.id);
       const result = { name, version: browser.version(), checked: 0, policyMaxAbsoluteError: 0, valueMaxAbsoluteError: 0, legalMasksEqual: true };
       for (let offset = 0; offset < corpus.states.length; offset += 32) {
         const rows = corpus.states.slice(offset, offset + 32);
@@ -47,7 +60,7 @@ try {
           const { deterministicStateHash } = await import('/generated/packages/game-engine/src/hash.js');
           return (await window.parityRuntime.request({ type: 'evaluateBatch', states: rows.map(row => ({ id: row.id, state: row.state, fingerprint: deterministicStateHash(row.state) })),
             metadata: { gameId: 'numeric-parity', gameplayRevision: 0, fingerprint: 'batch', modelVersion: sha, profileVersion: 'parity', seed: 107 } })).results;
-        }, { rows: rows.map(({ id, state }) => ({ id, state })), sha: CURRENT_COMPUTER_MODEL.sha256 });
+        }, { rows: rows.map(({ id, state }) => ({ id, state })), sha: model.sha256 });
         if (actual.length !== rows.length) throw Error(`Incomplete evaluation batch: ${name} ${offset}`);
         for (let i = 0; i < actual.length; i++) {
           const expected = reference.states[offset + i], row = actual[i];
@@ -55,8 +68,11 @@ try {
           for (const [key, values, targets] of [['policyMaxAbsoluteError', row.policyLogits, expected.policyLogits], ['valueMaxAbsoluteError', [row.value], [expected.value]]]) {
             if (values.length !== targets.length) throw Error(`Output shape mismatch: ${row.id}`);
             for (let n = 0; n < values.length; n++) {
-              const error = Math.abs(values[n] - targets[n]); result[key] = Math.max(result[key], error);
-              if (!Number.isFinite(values[n]) || error > report.atol + report.rtol * Math.abs(targets[n])) throw Error(`Numeric mismatch: ${name} ${row.id} ${key} ${n}`);
+              const assessed=assessNumericCell(key==='valueMaxAbsoluteError'?'value':'policy',values[n],targets[n],report,valueMargin);
+              result[key] = Math.max(result[key], assessed.error);
+              if(!assessed.strictPassed)report.strictNumericPassed=false;
+              if(assessed.acceptedByOwner)report.ownerAcceptedValueCells++;
+              if(!assessed.accepted)throw Error(`Numeric mismatch: ${name} ${row.id} ${key} ${n}`);
             }
           }
           result.checked++;

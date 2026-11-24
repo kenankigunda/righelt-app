@@ -43,7 +43,8 @@ class RecoveryLedger:
                         if not manifest_path.exists():continue
                         manifest=json.loads(manifest_path.read_text())['manifest']
                         if f"{manifest['stage']}:{manifest['seed']}"==key:
-                            floor=max(floor,json.loads(companion.read_text())['state']['nextJob'])
+                            from .checkpoint import read_recovery_sidecar
+                            floor=max(floor,read_recovery_sidecar(companion)['state']['nextJob'])
                     data['jobs'][key]=floor
                 value=max(data['jobs'][key],minimum);data['jobs'][key]=value+1
             value=hosted_receipts.counter(f'{self.root.resolve()}:{kind}:{key}', value)
