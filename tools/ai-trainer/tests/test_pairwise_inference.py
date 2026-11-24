@@ -1,6 +1,9 @@
 """Candidate-only FP32 reductions retain the trained mathematical model."""
 import math
 import unittest
+import tempfile
+from pathlib import Path
+import numpy as np
 import torch
 from righelt_training.board_attention import BoardAttentionNet,PairwiseLayerNorm,pairwise_mean,PAIRWISE_INFERENCE
 from righelt_training.architecture import architecture_binding
@@ -20,6 +23,20 @@ class PairwiseInferenceTest(unittest.TestCase):
         x=torch.arange(100,dtype=torch.float32).reshape(1,100,1)
         torch.testing.assert_close(pairwise_mean(x,1),torch.tensor([[49.5]]))
         self.assertEqual(pairwise_mean(torch.tensor([[1e8,1.,-1e8,1.]]),1).item(),0.)
+    def test_export_loads_and_runs_more_than_the_traced_batch(self):
+        import onnxruntime as ort
+        from righelt_training.export import export_onnx
+        model=BoardAttentionNet(architecture_binding('board-attention-48x2-v1')).for_inference(PAIRWISE_INFERENCE)
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/'model.onnx';metadata=export_onnx(model,path)
+            self.assertEqual(metadata['inferenceImplementation'],PAIRWISE_INFERENCE)
+            options=ort.SessionOptions();options.intra_op_num_threads=options.inter_op_num_threads=1
+            session=ort.InferenceSession(str(path),sess_options=options,providers=['CPUExecutionProvider'])
+            for count in (1,2,32):
+                inputs=torch.randn(count,46,10,10)
+                with torch.no_grad():expected=model(inputs)
+                actual=session.run(None,{'state':inputs.numpy()})
+                for a,b in zip(actual,expected):np.testing.assert_allclose(a,b.numpy(),atol=1e-5,rtol=1e-4)
     def test_inference_copy_preserves_weights_architecture_and_native_model(self):
         model=BoardAttentionNet(architecture_binding('board-attention-48x2-v1'))
         before=weights_sha256(model.state_dict());x=torch.randn(2,46,10,10)
