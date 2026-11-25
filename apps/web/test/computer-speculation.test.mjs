@@ -12,3 +12,13 @@ test('candidate can be consumed only by exact acknowledged authority',async()=>{
 test('discard before queued compute prevents obsolete worker startup',async()=>{
  let computes=0;const speculation=createComputerSpeculation({compute:async()=>{computes++;}}),candidate=speculation.start(input);speculation.discard();await candidate.promise;assert.equal(computes,0);
 });
+test('a precomputed move belongs to the saved search version that requested it', async () => {
+  const speculation = createComputerSpeculation({ compute: async () => ({ result: { status: 'ready' } }) });
+  const candidate = speculation.start({ ...input, proof: { searchVersion: 'stock-v1' } });
+  const reloaded = game();
+  reloaded.computer.searchVersion = 'different-search';
+  assert.equal(speculation.take(reloaded, 'owner'), null);
+  reloaded.computer.searchVersion = 'stock-v1';
+  assert.equal(speculation.take(reloaded, 'owner'), candidate);
+  await candidate.promise;
+});

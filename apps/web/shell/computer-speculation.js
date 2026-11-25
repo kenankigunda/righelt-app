@@ -1,4 +1,4 @@
-import {computerProfileFor} from '../generated/packages/shared-types/src/computer-play.js';
+import {computerProfileFor, STOCK_COMPUTER_SEARCH} from '../generated/packages/shared-types/src/computer-play.js';
 import {deterministicStateHash} from '../generated/packages/game-engine/src/hash.js';
 
 /** A candidate is local calculation only: no evidence writes or gameplay admission. */
@@ -6,7 +6,9 @@ export function createComputerSpeculation({compute,onChange=()=>{},clock=()=>Dat
  let candidate=null;
  const matches=(game,scope)=>Boolean(candidate&&candidate.scope===scope&&game?.id===candidate.gameId
   &&game.gameplayRevision===candidate.revision&&game.computer?.generation===candidate.generation
-  &&game.computer?.modelId===candidate.modelId&&(!candidate.proof?.profile||computerProfileFor(game.computer,game.board?.state?.sideToMove,game.board?.state?.turnIndex)===candidate.proof.profile)&&!game.computer?.paused&&!game.computer?.manual
+  &&game.computer?.modelId===candidate.modelId
+  &&(game.computer.searchVersion??STOCK_COMPUTER_SEARCH)===(candidate.proof?.searchVersion??STOCK_COMPUTER_SEARCH)
+  &&(!candidate.proof?.profile||computerProfileFor(game.computer,game.board?.state?.sideToMove,game.board?.state?.turnIndex)===candidate.proof.profile)&&!game.computer?.paused&&!game.computer?.manual
   &&game.board?.state?.outcome?.status==='ongoing'&&deterministicStateHash(game.board.state)===candidate.hash);
  return {
   start(input){

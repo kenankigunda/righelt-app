@@ -59,6 +59,7 @@ self.onmessage = async ({ data }) => {
     };
     const result = await selectMove({ state: data.state, seed: metadata.seed, simulations: data.profile?.simulations,
       temperature: data.profile?.temperature, maxValueGap: data.profile?.maxValueGap,
+      verifyForcingReplies: data.profile?.verifyForcingReplies === true,
       maxNodes: experimentConfig.search.maxNodes,
       observeEngine: event => { if (event.type === 'expansion' || event.type === 'candidate-result') { work++; progress('checking'); } },
       onProgress: value => { work++; progress(value.phase, { completed: value.simulations, total: value.total, nodes: value.nodes }); } }, evaluate);

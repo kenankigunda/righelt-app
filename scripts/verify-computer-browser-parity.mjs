@@ -12,6 +12,7 @@ for (const name of ['--corpus', '--reference', '--out']) if (!process.argv.inclu
 const model=computerParityModelFromArgs(process.argv.slice(2));
 const root = path.resolve(import.meta.dirname, '../apps/web');
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+const collectDifferences = process.argv.includes('--record-all-numeric');
 let valueMargin=null,numericAcceptanceSha256=null;
 if(process.argv.includes('--numeric-acceptance')||process.argv.includes('--numeric-acceptance-sha')){
  for(const name of ['--numeric-acceptance','--numeric-acceptance-sha']){
@@ -53,7 +54,8 @@ try {
         const { ComputerRuntime } = await import('/shell/computer-runtime.js');
         window.parityRuntime = new ComputerRuntime(); await window.parityRuntime.prepare(id);
       }, model.id);
-      const result = { name, version: browser.version(), checked: 0, policyMaxAbsoluteError: 0, valueMaxAbsoluteError: 0, legalMasksEqual: true };
+      const result = { name, version: browser.version(), checked: 0, policyMaxAbsoluteError: 0, valueMaxAbsoluteError: 0, legalMasksEqual: true,
+        strictFailures: {policy:0,value:0}, unacceptableCells:0, largestStrictFailure:{} };
       for (let offset = 0; offset < corpus.states.length; offset += 32) {
         const rows = corpus.states.slice(offset, offset + 32);
         const actual = await page.evaluate(async ({ rows, sha }) => {
@@ -70,9 +72,19 @@ try {
             for (let n = 0; n < values.length; n++) {
               const assessed=assessNumericCell(key==='valueMaxAbsoluteError'?'value':'policy',values[n],targets[n],report,valueMargin);
               result[key] = Math.max(result[key], assessed.error);
-              if(!assessed.strictPassed)report.strictNumericPassed=false;
+              if(!assessed.strictPassed){
+                report.strictNumericPassed=false;
+                const channel=key==='valueMaxAbsoluteError'?'value':'policy';
+                result.strictFailures[channel]++;
+                const prior=result.largestStrictFailure[channel];
+                if(!prior||assessed.error>prior.absoluteError)result.largestStrictFailure[channel]={
+                  state:row.id,index:n,actual:values[n],expected:targets[n],absoluteError:assessed.error};
+              }
               if(assessed.acceptedByOwner)report.ownerAcceptedValueCells++;
-              if(!assessed.accepted)throw Error(`Numeric mismatch: ${name} ${row.id} ${key} ${n}`);
+              if(!assessed.accepted){
+                result.unacceptableCells++;
+                if(!collectDifferences)throw Error(`Numeric mismatch: ${name} ${row.id} ${key} ${n}`);
+              }
             }
           }
           result.checked++;
@@ -82,7 +94,8 @@ try {
       report.browsers.push(result); console.log(JSON.stringify(result));
     } finally { await browser.close(); }
   }
-  report.passed = report.browsers.length > 0;
+  report.passed = report.browsers.length > 0 && report.browsers.every(result=>result.checked===corpus.states.length && result.unacceptableCells===0);
+  if(!report.passed)throw Error('Browser comparison did not meet the requested tolerance');
 } catch (error) { report.error = error.message; throw error; }
 finally {
   report.finishedAt = new Date().toISOString();

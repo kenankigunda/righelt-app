@@ -1,6 +1,6 @@
 import {createComputerSpeculation} from './computer-speculation.js';
 import {isCompletedGame,isOngoingGame} from './game-lifecycle.js';
-import { COMPUTER_CAPABILITIES, COMPUTER_TIMING, COMPUTER_PROFILES, CURRENT_COMPUTER_MODEL, computerProfileFor } from '../generated/packages/shared-types/src/computer-play.js';
+import { COMPUTER_CAPABILITIES, COMPUTER_TIMING, COMPUTER_PROFILES, CURRENT_COMPUTER_MODEL, STOCK_COMPUTER_SEARCH, computerProfileFor } from '../generated/packages/shared-types/src/computer-play.js';
 import { SYNC_TIMING, canonicalCommandJson } from '../generated/packages/shared-types/src/sync-protocol.js';
 import { computerRetryDisposition } from './computer-recovery.js';
 import { createForegroundRecoveryWait } from './foreground-recovery.js';
@@ -87,14 +87,16 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     statusScope = ownerScope(context);
     status = { ...status, ...next, phaseStartedAt }; schedulePhaseLabel(); onChange({ presentation: phaseChanged ? COMPUTER_PRESENTATION.immediate : presentation });
   };
-  const keyFor = ({ game, accountGeneration }) => game ? `${accountGeneration}:${game.id}:${game.gameplayRevision}:${game.computer?.generation}:${game.computer?.modelId}` : null;
+  const savedSearch = game => game.computer?.searchVersion ?? STOCK_COMPUTER_SEARCH;
+  const keyFor = ({ game, accountGeneration }) => game ? `${accountGeneration}:${game.id}:${game.gameplayRevision}:${game.computer?.generation}:${game.computer?.modelId}:${savedSearch(game)}` : null;
   const current = () => { const context = getContext(); return { ...context, key: keyFor(context) }; };
   const cancelWork = (reason, {preserveIdle = false} = {}) => { cancelPhaseDeadline(); epoch++; speculation.discard();runtime.cancel(reason,{preserveIdle}); };
   const sameRuntimeScope = (previous, context) => Boolean(previous?.game && context.game
     && sameOwnerScope(ownerScope(previous), context)
     && previous.game.computer?.ownerId === context.game.computer?.ownerId
     && previous.game.computer?.generation === context.game.computer?.generation
-    && previous.game.computer?.modelId === context.game.computer?.modelId);
+    && previous.game.computer?.modelId === context.game.computer?.modelId
+    && savedSearch(previous.game) === savedSearch(context.game));
   const ownLease = game => !destroyed && isOngoingGame(game) && sameOwnerScope(acknowledgedLease, current()) && acknowledgedLease.generation === game?.computer?.generation && game?.computer?.lease?.deviceId === deviceId && game.computer.lease.expiresAt > clock();
   const resumeSupported = game => game?.sharedReceipts === true && game.computerCapabilities?.resumeHere === COMPUTER_CAPABILITIES.resumeHere;
   const recoveryScopeIsCurrent = context => !destroyed && isOngoingGame(current().game) && sameOwnerScope(ownerScope(context), current()) && current().authenticated;
@@ -307,7 +309,8 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     const retry = decisionRetry, retained = retry?.decision;
     const candidate=!retained?speculation.take(game,`${context.accountGeneration}:${game.id}`):null;
     const run = ++epoch, attemptId = retained?.attemptId ?? candidate?.proof.attemptId ?? crypto.randomUUID(), seed = retained?.proof.seed ?? candidate?.proof.seed ?? crypto.getRandomValues(new Uint32Array(1))[0], startedAt = retained?.base.startedAt ?? candidate?.startedAt ?? clock();
-    const proof = retained?.proof ?? { deviceId, generation: game.computer.generation, modelId: game.computer.modelId, profile, profileVersion: COMPUTER_PROFILES[profile].version, seed, attemptId };
+    const searchVersion = savedSearch(game);
+    const proof = retained?.proof ?? { deviceId, generation: game.computer.generation, modelId: game.computer.modelId, searchVersion, profile, profileVersion: COMPUTER_PROFILES[profile].version, seed, attemptId };
     const base = retained?.base ?? { proof, gameId: game.id, gameplayRevision: game.gameplayRevision, fingerprint: deterministicStateHash(game.board.state), startedAt, state: structuredClone(game.board.state) };
     const decisionIsCurrent = () => {
       const latest = current();
@@ -323,7 +326,7 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
     publish({ phase: attempt ? 'saving' : 'preparing', startedAt, profile, attemptId, progress: null, message: null });
     try {
       if (!attempt) {
-        const response = candidate ? await candidate.promise : await runtime.compute({ gameId: game.id, gameplayRevision: game.gameplayRevision, state: game.board.state, modelId: game.computer.modelId, profile, seed, controlGeneration: game.computer.generation }, progress => { if (run === epoch && sameOwnerScope(ownerScope(context), current())) { noteProgress(context, progress); publish({ phase: progress.phase, progress }, context, COMPUTER_PRESENTATION.progress); } });
+        const response = candidate ? await candidate.promise : await runtime.compute({ gameId: game.id, gameplayRevision: game.gameplayRevision, state: game.board.state, modelId: game.computer.modelId, searchVersion, profile, seed, controlGeneration: game.computer.generation }, progress => { if (run === epoch && sameOwnerScope(ownerScope(context), current())) { noteProgress(context, progress); publish({ phase: progress.phase, progress }, context, COMPUTER_PRESENTATION.progress); } });
         if(!response)throw candidate?.error??Error('speculation_discarded');
         // Retain the exact JSON payload the API stores, including omission of
         // undefined optional diagnostics, for an unambiguous recovery compare.
@@ -379,9 +382,9 @@ export function createComputerSession({ getContext, onChange = () => {}, runtime
       const expected=handle.state,nextProfile=expected&&computerProfileFor(game.computer,expected.sideToMove,expected.turnIndex);
       if(expected?.outcome?.status==='ongoing'&&nextProfile&&!game.computer.paused&&!game.computer.manual&&current().visible&&sameOwnerScope(ownerScope(context),current())){
         const nextSeed=crypto.getRandomValues(new Uint32Array(1))[0],nextAttemptId=crypto.randomUUID();
-        const nextProof={deviceId,generation:game.computer.generation,modelId:game.computer.modelId,profile:nextProfile,profileVersion:COMPUTER_PROFILES[nextProfile].version,seed:nextSeed,attemptId:nextAttemptId};
+        const nextProof={deviceId,generation:game.computer.generation,modelId:game.computer.modelId,searchVersion,profile:nextProfile,profileVersion:COMPUTER_PROFILES[nextProfile].version,seed:nextSeed,attemptId:nextAttemptId};
         speculation.start({scope:`${context.accountGeneration}:${game.id}`,gameId:game.id,revision:game.gameplayRevision+1,generation:game.computer.generation,modelId:game.computer.modelId,state:expected,proof:nextProof,startedAt:clock(),
-          request:{gameId:game.id,gameplayRevision:game.gameplayRevision+1,state:expected,modelId:game.computer.modelId,profile:nextProfile,seed:nextSeed,controlGeneration:game.computer.generation}});
+          request:{gameId:game.id,gameplayRevision:game.gameplayRevision+1,state:expected,modelId:game.computer.modelId,searchVersion,profile:nextProfile,seed:nextSeed,controlGeneration:game.computer.generation}});
       }
       await pendingSubmission;
       decisionRetry = null;

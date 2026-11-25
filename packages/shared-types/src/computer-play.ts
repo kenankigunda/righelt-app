@@ -41,7 +41,11 @@ export const COMPUTER_MODEL_CHOICES = Object.freeze([
   Object.freeze({id: CANDIDATE_B_COMPUTER_MODEL.id, label: 'Candidate B'}),
   Object.freeze({id: CANDIDATE_C_COMPUTER_MODEL.id, label: 'Candidate C'}),
 ]);
-export type ComputerModel = Readonly<{ id: string; sha256: string; bytes: number; checkpoint: string; url: string; experimental: boolean }>;
+export const STOCK_COMPUTER_SEARCH = 'stock-v1';
+export type ComputerModel = Readonly<{
+  id: string; sha256: string; bytes: number; checkpoint: string; url: string; experimental: boolean;
+  search?: Readonly<{ version: string; forcingProfiles: readonly ComputerProfile[] }>;
+}>;
 // This historical HTTP default stays fixed when CURRENT changes in a later release.
 const LEGACY_COMPUTER_MODEL_ID = 'initial-1554';
 // Only published compatible models belong here.
@@ -54,17 +58,23 @@ export const COMPUTER_MODELS: Readonly<Record<string, ComputerModel>> = Object.f
 });
 export const computerModelUpgradeAvailable = (id: string) => id === LEGACY_COMPUTER_MODEL_ID;
 export const getComputerModel = (id: string) => Object.hasOwn(COMPUTER_MODELS, id) ? COMPUTER_MODELS[id] : null;
+export function computerSearchVersion(model: ComputerModel): string {
+  return model.search?.version ?? STOCK_COMPUTER_SEARCH;
+}
+function matchesSavedSearch(model: ComputerModel, version: unknown): boolean {
+  return version === computerSearchVersion(model) || (version === undefined && !model.search);
+}
 /** Requests from cached clients predate model pinning and know only the original model. */
 export const computerModelForCreation = (value: unknown): ComputerModel | null => value === undefined
   ? getComputerModel(LEGACY_COMPUTER_MODEL_ID) : typeof value === 'string' ? getComputerModel(value) : null;
 export type ComputerSeats = { p1: ComputerProfile | null; p2: ComputerProfile | null };
 export type ComputerControl = {
-  ownerId: string; seats: ComputerSeats; modelId: string; generation: number;
+  ownerId: string; seats: ComputerSeats; modelId: string; searchVersion?: string; generation: number;
   lease: { deviceId: string; authContextId: string; expiresAt: number } | null;
   paused: boolean; singleStep: boolean; manual: boolean; takeoverTurn: number | null;
   declinedModelId: string | null;
 };
-export type ComputerProof = { deviceId: string; generation: number; modelId: string; profile: ComputerProfile; profileVersion: string; seed: number; attemptId: string };
+export type ComputerProof = { deviceId: string; generation: number; modelId: string; searchVersion?: string; profile: ComputerProfile; profileVersion: string; seed: number; attemptId: string };
 export const isComputerProfile = (value: unknown): value is ComputerProfile => typeof value === 'string' && Object.hasOwn(COMPUTER_PROFILES, value);
 export function parseComputerSeats(value: unknown): ComputerSeats | null {
   if (!value || typeof value !== 'object') return null;
@@ -73,8 +83,10 @@ export function parseComputerSeats(value: unknown): ComputerSeats | null {
   return { p1: seats.p1, p2: seats.p2 };
 }
 export const createComputerControl = (ownerId: string, seats: ComputerSeats, modelId: string = CURRENT_COMPUTER_MODEL.id): ComputerControl => {
-  if (!getComputerModel(modelId)) throw new Error('invalid_computer_model');
-  return { ownerId, seats, modelId, generation: 0, lease: null, paused: false, singleStep: false, manual: false, takeoverTurn: null, declinedModelId: null };
+  const model = getComputerModel(modelId);
+  if (!model) throw new Error('invalid_computer_model');
+  return { ownerId, seats, modelId, searchVersion: computerSearchVersion(model), generation: 0,
+    lease: null, paused: false, singleStep: false, manual: false, takeoverTurn: null, declinedModelId: null };
 };
 /** Invalid persisted ownership must never turn into an ordinary human game. */
 export function parseComputerControl(value: unknown): ComputerControl {
@@ -85,6 +97,8 @@ export function parseComputerControl(value: unknown): ComputerControl {
     || !(control.takeoverTurn === null || (Number.isSafeInteger(control.takeoverTurn) && control.takeoverTurn >= 0))
     || !(control.declinedModelId === null || typeof control.declinedModelId === 'string')
     || !(control.lease === null || (typeof control.lease.deviceId === 'string' && control.lease.deviceId.length > 0 && control.lease.deviceId.length <= 128 && typeof control.lease.authContextId === 'string' && Number.isFinite(control.lease.expiresAt)))) throw new Error('invalid_computer_control');
+  const model = getComputerModel(control.modelId);
+  if (model && !matchesSavedSearch(model, control.searchVersion)) throw new Error('invalid_computer_control');
   return structuredClone(control);
 }
 export function computerProfileFor(control: ComputerControl | undefined, side: 'P1' | 'P2', turnIndex: number): ComputerProfile | null {
@@ -97,7 +111,9 @@ export function computerCommandError(control: ComputerControl, input: { ownerId:
   const proof = input.proof as ComputerProof | undefined;
   if (!proof || control.paused || !control.lease || control.lease.expiresAt <= input.now || control.lease.authContextId !== input.authContextId
     || proof.deviceId !== control.lease.deviceId || proof.generation !== control.generation) return 'computer_control_changed';
-  if (proof.modelId !== control.modelId || !getComputerModel(proof.modelId) || proof.profile !== profile || proof.profileVersion !== COMPUTER_PROFILES[profile].version
+  const model = getComputerModel(control.modelId);
+  if (proof.modelId !== control.modelId || !model || !matchesSavedSearch(model, control.searchVersion)
+    || !matchesSavedSearch(model, proof.searchVersion) || proof.profile !== profile || proof.profileVersion !== COMPUTER_PROFILES[profile].version
     || !Number.isSafeInteger(proof.seed) || proof.seed < 0 || typeof proof.attemptId !== 'string' || !/^[a-zA-Z0-9-]{1,128}$/.test(proof.attemptId)) return 'invalid_computer_proof';
   return null;
 }
@@ -128,7 +144,7 @@ export function changeComputerControl(control: ComputerControl, input: { ownerId
   else if (input.action === 'resume' || input.action === 'step') { next.paused = false; next.singleStep = input.action === 'step'; }
   else if (input.action === 'takeover') { next.takeoverTurn = input.turnIndex; next.paused = false; }
   else if (input.action === 'manual') { next.manual = true; next.paused = false; }
-  else if (input.action === 'upgrade') { next.modelId = CURRENT_COMPUTER_MODEL.id; next.declinedModelId = null; }
+  else if (input.action === 'upgrade') { next.modelId = CURRENT_COMPUTER_MODEL.id; next.searchVersion = computerSearchVersion(CURRENT_COMPUTER_MODEL); next.declinedModelId = null; }
   else if (input.action === 'decline-upgrade') next.declinedModelId = CURRENT_COMPUTER_MODEL.id;
   else throw new Error('invalid_computer_action');
   return next;
