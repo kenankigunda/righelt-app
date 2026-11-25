@@ -247,6 +247,12 @@ def record_batch(state, metrics):
     if 'sampleSha256' in metrics:
         row.update(sampleSha256=metrics['sampleSha256'], certifiedSamples=metrics['certifiedSamples'],
                    ordinarySamples=metrics['ordinarySamples'], ordinarySampleSha256=metrics['ordinarySampleSha256'])
+        if 'preparedStartSamples' in metrics:
+            names=('preparedStartSamples','freshOrdinarySamples','inheritedSamples')
+            counts={name:metrics[name] for name in names}
+            if any(type(n) is not int or n<0 for n in counts.values()) or sum(counts.values())!=metrics['ordinarySamples']:
+                raise ValueError('unbalanced training sample provenance')
+            row.update(counts)
 
 
 def checkpoint_reference(path, digest_value, state, model_state):

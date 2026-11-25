@@ -223,12 +223,14 @@ class Campaign:
         r=self.runner
         cursor=r.state.get('practiceCursor')
         if not cursor or cursor['stage']!=label:
-            cursor={'stage':label,'completed':0,'startUpdates':r.state['updates'],'certified':0,'ordinary':0,'prepared':0}
+            cursor={'stage':label,'completed':0,'startUpdates':r.state['updates'],'originCheckpoint':r.model_version,
+                    'certified':0,'ordinary':0,'prepared':0}
             r.state['practiceCursor']=cursor
         if r.state['updates'] != cursor['startUpdates']+cursor['completed']:
             raise ValueError('practice cursor differs from actual optimizer updates')
         ordinary=washout_population(r,self.packet,self.lineages) if ordinary_only else list(r.buffer.positions)
-        prepared={game for game,receipt in r.state['freshTraining']['games'].items() if 'tacticalStart' in receipt['job']}
+        fresh=r.state['freshTraining']['games']
+        prepared={game for game,receipt in fresh.items() if 'tacticalStart' in receipt['job']}
         batches=PracticeBatches(ordinary,self.packet['rows'],seed)
         eligible=eligible_game_ids(r.state)
         r.state['phase']='training'
@@ -237,10 +239,14 @@ class Campaign:
             offset=cursor['completed']
             count=min(CONFIG['training']['maxMinibatches'],target-offset)
             def record(metrics):
+                sampled=metrics['sampledGames']
+                metrics['preparedStartSamples']=sum(g['positions'] for g in sampled if g['gameId'] in prepared)
+                metrics['freshOrdinarySamples']=sum(g['positions'] for g in sampled if g['gameId'] in fresh and g['gameId'] not in prepared)
+                metrics['inheritedSamples']=metrics['ordinarySamples']-metrics['preparedStartSamples']-metrics['freshOrdinarySamples']
                 cursor['completed']+=1
                 cursor['certified']+=len(metrics['certifiedSamples'])
                 cursor['ordinary']+=metrics['ordinarySamples']
-                cursor['prepared']+=sum(g['positions'] for g in metrics.get('sampledGames',[]) if g['gameId'] in prepared)
+                cursor['prepared']+=metrics['preparedStartSamples']
                 r.record_training_batch(metrics)
             result=train_round(r.model,r.optimizer,[],device=r.device,seed=seed,deadline=deadline,
                 operation=r.operation,on_batch=record,evidence_game_ids=eligible,
