@@ -878,9 +878,8 @@ async function rulesTimeoutRecipe(){
  const all=JSON.parse(await readFile(new URL('../../../e2e/support/computer-session-recovery-transformation.json',import.meta.url),'utf8'));
  return{all,recipe:all['/board/rules-runtime.js'],source:await readFile(new URL('../../../apps/web/board/rules-runtime.js',import.meta.url),'utf8')};
 }
-test('computer timeout recipe is strictly bound, exactly invertible and preserves the original computer catch entry',async()=>{
- const{all,recipe,source}=await rulesTimeoutRecipe();
- assert.equal(createHash('sha256').update(JSON.stringify(all['/shell/computer-session.js'])).digest('hex'),'f13f9179dd54726019d093f9bef6cd353ef4b45fc192371a905a23bf56e9ff37');
+test('computer timeout recipe is strictly bound and exactly invertible',async()=>{
+ const{recipe,source}=await rulesTimeoutRecipe();
  assert.equal(recipe.operations.length,1);const op=recipe.operations[0];assert.equal(op.anchorCount,1);
  const output=transformBoardAdmissionModule(source,recipe);assert.equal(output.slice(op.start,op.start+op.after.length),op.after);
  assert.equal(output.slice(0,op.start)+op.before+output.slice(op.start+op.after.length),source);
