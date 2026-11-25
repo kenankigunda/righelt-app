@@ -216,7 +216,7 @@ class Campaign:
         runner.fresh_previous_checkpoint=None
         runner.model.eval()
 
-    def train(self, label, schedule, target, seed, deadline, *, ordinary_only=False, cycle_offset=0):
+    def train(self, label, schedule, target, seed, deadline, *, unrelated_replay=False, cycle_offset=0):
         from .tactical_practice import PracticeBatches
         from .trainer import train_round
         from .fresh_health import eligible_game_ids
@@ -228,7 +228,7 @@ class Campaign:
             r.state['practiceCursor']=cursor
         if r.state['updates'] != cursor['startUpdates']+cursor['completed']:
             raise ValueError('practice cursor differs from actual optimizer updates')
-        ordinary=washout_population(r,self.packet,self.lineages) if ordinary_only else list(r.buffer.positions)
+        ordinary=washout_population(r,self.packet,self.lineages) if unrelated_replay else list(r.buffer.positions)
         fresh=r.state['freshTraining']['games']
         prepared={game for game,receipt in fresh.items() if 'tacticalStart' in receipt['job']}
         batches=PracticeBatches(ordinary,self.packet['rows'],seed)
@@ -358,8 +358,11 @@ class Campaign:
                     break
                 if (r.state.get('practiceCursor') or {}).get('stage')!=name:
                     self.restore(self.marked('acquisition' if stage=='practice' else arm+'-practice'))
+                # The 260,096 matched ordinary examples exclude prepared games
+                # and related trajectories in both arms. Only the explicit
+                # certified slots can reintroduce practice during maintenance.
                 if self.train(name,'ordinary' if stage=='washout' else arm,count,seed,self.stop_at(10140),
-                              ordinary_only=stage=='washout'):
+                              unrelated_replay=True):
                     ptr=self.mark(name)
                     fixed(self.marks/(name+'-samples.json'),dict(r.state['practiceCursor']))
                     self.export(name,ptr)
@@ -436,7 +439,7 @@ class Campaign:
             pointer=self.mark(milestone)
             self.export(milestone,pointer)
         if not self.marked('post-final-washout'):
-            if not self.train('final-washout','ordinary',2048,self.seed+4,self.stop_at(86400),ordinary_only=True):
+            if not self.train('final-washout','ordinary',2048,self.seed+4,self.stop_at(86400),unrelated_replay=True):
                 raise TimeoutError('final ordinary-only washout did not fit')
             pointer=self.mark('post-final-washout')
             self.export('post-final-washout',pointer)
