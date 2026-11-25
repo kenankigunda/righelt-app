@@ -187,7 +187,12 @@ class Campaign:
     def mark(self, name):
         self.runner.checkpoint()
         pointer = read(self.directory/'latest.json')
-        return fixed(self.marks/(name+'.json'),pointer)
+        result=fixed(self.marks/(name+'.json'),pointer)
+        if (self.directory/'clock.json').exists():
+            from .allocation import append
+            append(self.directory/'milestone-times.jsonl',{'name':name,'checkpoint':pointer['sha256'],
+                'activeSeconds':self.active(),'observedAt':time.time()})
+        return result
 
     def marked(self, name):
         target=self.marks/(name+'.json')
@@ -308,7 +313,15 @@ class Campaign:
             except subprocess.TimeoutExpired:
                 self.runner.event('pilot-evaluation-time-bound',endpoint=name,allottedSeconds=seconds)
         path=target/'summary.json'
-        return read(path)['results'] if path.exists() else []
+        completed=[]
+        for row in read(path)['results'] if path.exists() else []:
+            trace=read(target/(row['id']+'.json'))
+            # A fixed node-limit fallback is a public decision. A harness clock
+            # truncating a move cannot establish how the complete player chose.
+            if any(d.get('stopped')=='deadline' for d in trace['decisions']):
+                continue
+            completed.append(row)
+        return completed
 
     def pilot(self):
         if self.marked('pilot-winner'):
@@ -362,6 +375,7 @@ class Campaign:
         winner='concentrated' if metrics(left)<metrics(right) else 'spaced'
         retained=self.marked('acquisition') if latest_stage=='acquisition' else self.marked(winner+'-practice')
         result={'schedule':winner,'matchedStage':latest_stage,'matchedObservations':len(shared),
+                'scoringEndedAtActiveSeconds':self.active(),
                 'scores':{arm:{'errors':m[0],'successes':-m[1]} for arm,m in zip(arms,(metrics(left),metrics(right)))},
                 'scoredStages':{a:[s for s,_,_ in stages if self.marked(a+'-'+s)] for a in arms},
                 'tie':metrics(left)==metrics(right),'preWashoutCheckpoint':retained}
@@ -390,9 +404,11 @@ class Campaign:
             r.state.update(phase='generation',generationLaunched=0,generationStartedMonotonic=None)
             r.checkpoint()
         # Measure final washout runway on this Mac using both completed pilot stages.
-        # Conservative floor is 35 minutes, with headroom for one generation round.
+        # If the matched pilot finished, its measured Mac throughput sets the
+        # runway. Otherwise retain a conservative 35-minute fallback.
         measured=[self.marked(arm+'-washout-samples') for arm in ('spaced','concentrated')]
-        reserve=max([2100]+[m['batchSeconds']*1.6+240 for m in measured if m])
+        durations=[m['batchSeconds'] for m in measured if m and m.get('batchSeconds',0)>0]
+        reserve=max(420,max(durations)*1.6+180) if durations else 2100
         for milestone,at in [('12h',43200),('20h',72000),('pre-final-washout',86400-reserve)]:
             if self.marked(milestone):
                 continue
