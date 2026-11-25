@@ -48,7 +48,7 @@ def tensor_batch(positions, device):
 
 def train_round(model, optimizer, positions, *, device, seed, deadline, should_pause=lambda: False,
                 on_batch=lambda metrics: None, clock=time.monotonic, start_batch=0, operation=lambda name,seconds:nullcontext(),
-                evidence_game_ids=None, certificate_policy_weight=1):
+                evidence_game_ids=None, certificate_policy_weight=1, planned_batch=None, planned_count=None):
     if certificate_policy_weight not in (1,2):raise ValueError('unsupported certificate policy weight')
     from .execution_recipe import verify_runtime
     execution=verify_runtime(model=model, optimizer=optimizer)
@@ -58,10 +58,16 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
     order = list(range(len(positions)))
     random.Random(seed).shuffle(order)
     batch_size = CONFIG['training']['batchSize']
+    if planned_batch is not None and (positions or not callable(planned_batch) or
+            type(planned_count) is not int or not 0 < planned_count <= CONFIG['training']['maxMinibatches']):
+        raise ValueError('explicit bounded batch schedule required')
+    if planned_batch is None and planned_count is not None:
+        raise ValueError('missing batch schedule')
     result = {'updates': 0, 'positions': 0, 'nonzeroUpdates': 0, 'skippedUnsupervisedBatches': 0, 'batches': [], 'stopped': 'complete'}
     batch_bound = 30.0
     model.train()
-    for start in range(0, min(len(order), batch_size * CONFIG['training']['maxMinibatches']), batch_size):
+    count = planned_count * batch_size if planned_batch is not None else min(len(order), batch_size * CONFIG['training']['maxMinibatches'])
+    for start in range(0, count, batch_size):
         if start // batch_size < start_batch:
             continue
         if should_pause():
@@ -71,11 +77,18 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
             result['stopped'] = 'budget'; break
         with operation('training-minibatch',batch_bound):
             before = clock()
-            batch = [positions[i] for i in order[start:start + batch_size]]
+            batch = (planned_batch(start // batch_size) if planned_batch is not None
+                     else [positions[i] for i in order[start:start + batch_size]])
+            if planned_batch is not None and len(batch) != batch_size:
+                raise ValueError('incomplete planned training batch')
             inputs, legal, target, value, mask, policy_mask = tensor_batch(batch, device)
             future_values,future_masks=future_batch(batch)
             has_future=hasattr(model,'forward_with_future') and any(any(row) for row in future_masks)
-            if not (mask.any() or policy_mask.any() or has_future):
+            preferences = [p for p in batch if 'preference' in p]
+            if preferences and planned_batch is None:
+                raise ValueError('tactical preferences require an explicit schedule')
+            if not (mask.any() or policy_mask.any() or has_future or preferences):
+                if planned_batch is not None:raise ValueError('unlabelled planned batch cannot advance a matched schedule')
                 result['skippedUnsupervisedBatches'] += 1
                 continue
             optimizer.zero_grad(set_to_none=True)
@@ -88,7 +101,8 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
                     future_mask=torch.tensor(future_masks,dtype=torch.bool,device=device)
                     future_loss=((future[future_mask]-future_target[future_mask])**2).mean()
             else:logits, values = model(inputs)
-            loss, policy_loss, value_loss = training_loss(logits, values, legal, target, value, mask, policy_mask)
+            loss, policy_loss, value_loss = training_loss(logits, values, legal, target, value, mask, policy_mask,
+                                                         preference_rows=batch if preferences else None)
             if certificate_policy_weight==2:
                 selected=torch.tensor([bool(p.get('certificateEvidence')) for p in batch],device=device)&policy_mask
                 if selected.any():
@@ -115,6 +129,11 @@ def train_round(model, optimizer, positions, *, device, seed, deadline, should_p
                        'seconds': clock() - before, 'batchIndex': start // batch_size,
                        'policyPositions': int(policy_mask.sum()), 'valuePositions': int(mask.sum())}
             if certificate_policy_weight!=1:metrics['certificatePolicyWeight']=certificate_policy_weight
+            if planned_batch is not None:
+                from .tactical_practice import sample_identity
+                ordinary = [position for position in batch if 'preference' not in position]
+                metrics.update(sampleSha256=sample_identity(batch), ordinarySampleSha256=sample_identity(ordinary),
+                               ordinarySamples=len(ordinary), certifiedSamples=[p['id'] for p in preferences])
             if execution and execution['settings'].get('policyRefresh'):
                 metrics['policyRefreshBindingSha256']=execution['settings']['policyRefresh']['sha256']
                 metrics['policyRefreshSampledIds']=[p['_policyRefreshId'] for p in batch if p.get('_policyRefreshId') and p.get('policyMask',True)]

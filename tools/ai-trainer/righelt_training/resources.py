@@ -51,6 +51,8 @@ class AdaptivePolicy:
             return Allocation(0, LIMITS['minMemoryGiB'], True, True, 'artifact-cap')
         if sample.disk_free_bytes < LIMITS['freeDiskFloorGiB'] * GIB:
             return Allocation(0, LIMITS['minMemoryGiB'], True, True, 'disk-reserve')
+        if POLICY_ID == 'dedicated-local-24g-v1' and sample.experiment_bytes >= LIMITS['maxMemoryGiB'] * GIB:
+            return Allocation(0, LIMITS['maxMemoryGiB'], True, True, 'job-memory-limit')
         if POLICY_ID == 'production-headroom-v3' and sample.memory_pressure not in ('normal','warning'):
             return Allocation(0, LIMITS['minMemoryGiB'], True, True, 'memory-pressure')
         # A gap or clock jump does not establish sustained healthy observations.
@@ -105,6 +107,10 @@ class AdaptivePolicy:
             # pauses compute, but is not evidence of actual memory pressure.
             self.workers=LIMITS['minWorkers'];self.quiet_since=None
             return Allocation(0,LIMITS['minMemoryGiB'],True,False,'device-memory-unknown')
+        if POLICY_ID == 'dedicated-local-24g-v1' and sample.experiment_bytes >= LIMITS['warningMemoryGiB'] * GIB:
+            self.workers = LIMITS['minWorkers']
+            self.quiet_since = None
+            return Allocation(self.workers, ceiling, False, False, 'job-memory-warning')
         if POLICY_ID == 'production-headroom-v3' and (sample.ramp_authorized is not True
                                                      or sample.memory_pressure == 'warning'):
             self.workers=LIMITS['minWorkers'];self.quiet_since=None

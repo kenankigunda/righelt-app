@@ -143,6 +143,14 @@ class Runner:
                 raise ValueError('attention held-out guards differ')
         elif self.attention_method:raise ValueError('attention held-out guards missing')
         self.buffer = ReplayBuffer(protected_encoding_hashes=protected,protected_family_ids=families)
+        practice = self.manifest['manifest'].get('tacticalPractice')
+        self.tactical_starts = None
+        if practice:
+            overlay = json.loads(read_bound(practice['isolation']))
+            self.buffer.protected_family_ids |= frozenset(overlay['excludeFamilyIds'])
+            self.buffer.protected_encoding_hashes |= frozenset(overlay['excludeEncodingHashes'])
+            self.tactical_starts = json.loads(read_bound(practice['packet']))['eligibleStarts']
+            self.tactical_first_job = practice['firstJobIndex']
         self.state = default_state()
         self.seed = seed
         self.stage = stage
@@ -354,6 +362,9 @@ class Runner:
         path = self.directory / 'checkpoints' / f"checkpoint-{self.state['checkpointSequence']:06d}.pt"
         if getattr(self, 'fresh_baseline', None) is not None:
             fresh = self.state[fresh_health.STATE_KEY]
+            from .witness_blocks import BLOCK_SIZE, seal_completed
+            if getattr(self, 'manifest', {}).get('manifest', {}).get('witnessBlockSize') == BLOCK_SIZE:
+                seal_completed(self.state, path.parent)
             previous = getattr(self, 'fresh_previous_checkpoint', None)
             if previous and (not fresh['checkpoints'] or fresh['checkpoints'][-1] != previous):
                 fresh['checkpoints'].append(previous)
@@ -459,6 +470,9 @@ class Runner:
             index=ledger.job(self.stage,getattr(self,'seed',self.curriculum.seed),self.state['nextJob'])
             job=self.curriculum.job(index,self.model_version)
             if getattr(self,'pilot_recipe',None):job['teaching']=teaching_job(self.pilot_recipe,index,self.model_version)
+            if getattr(self, 'tactical_starts', None):
+                from .tactical_practice import prepared_job
+                job = prepared_job(job, index, self.tactical_first_job, self.tactical_starts)
             families=getattr(getattr(self,'buffer',None),'protected_family_ids',())
             if families:job['protectedFamilyIds']=sorted(families)
             protected=getattr(getattr(self,'buffer',None),'protected_encoding_hashes',())

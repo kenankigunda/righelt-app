@@ -11,6 +11,7 @@ from .config import CONFIG_SHA256
 from .training_recipe import recipe_binding, validate_recipe, record_recipe
 from .architecture import BASELINE, model_architecture, record_architecture
 from .portable import resolve_reference,ChecksumMismatch
+from .witness_blocks import expanded_state
 
 
 def weights_sha256(state):
@@ -32,9 +33,10 @@ def atomic_json(path, data):
     finally:os.close(fd)
 
 
-def read_recovery_sidecar(path):
+def read_recovery_sidecar(path, *, expand_witnesses=True):
     """Read legacy or losslessly compressed recovery state, checking its bytes."""
-    record=json.loads(resolve_reference(path).read_text())
+    path=resolve_reference(path)
+    record=json.loads(path.read_text())
     if record.get('schema')==3:
         if 'state' in record:raise ValueError('ambiguous compressed recovery sidecar')
         raw=gzip.decompress(base64.b64decode(record.pop('stateGzipBase64'),validate=True))
@@ -43,6 +45,8 @@ def read_recovery_sidecar(path):
         record['state']=json.loads(raw)
     elif 'stateGzipBase64' in record or 'stateSha256' in record:
         raise ValueError('compressed sidecar has invalid schema')
+    if expand_witnesses and 'state' in record:
+        record['state'] = expanded_state(record['state'], path.parent)
     return record
 
 
@@ -129,7 +133,7 @@ def inspect_checkpoint(path, *, manifest_sha256, require_recovery=False, trainin
     recovery=data.get('recovery')
     if require_recovery and recovery is None:raise ValueError('checkpoint lacks bound recovery bundle')
     if recovery is not None:
-        companion=read_recovery_sidecar(path.with_suffix('.runner.json'))
+        companion=read_recovery_sidecar(path.with_suffix('.runner.json'), expand_witnesses=False)
         digest=hashlib.sha256(json.dumps(recovery,sort_keys=True,allow_nan=False).encode()).hexdigest()
         if (digest!=data['recoverySha256'] or digest!=companion.get('recoverySha256')
             or companion.get('checkpointSha256')!=meta['sha256'] or companion.get('state')!=recovery['state']):
@@ -140,6 +144,7 @@ def inspect_checkpoint(path, *, manifest_sha256, require_recovery=False, trainin
         for name,expected in recovery['archives'].items():
             try:resolve_reference(name, base=path.parent.parent, expected_sha256=expected)
             except ChecksumMismatch as error:raise ValueError('recovery archive checksum mismatch') from error
+        recovery['state'] = expanded_state(recovery['state'], path.parent)
     return data
 
 

@@ -26,6 +26,7 @@ export async function verifyTurnCertificate(c,{milliseconds,maxNodes}) {
     let value;
     if(n.kind==='terminal'){
       assert(s.outcome.status!=='ongoing'&&s.turnIndex<=c.endTurnIndex&&n.edges.length===0,'false terminal certificate leaf');
+      if (Object.hasOwn(n, 'reason')) assert(n.reason === (s.outcome.reason ?? null), 'terminal reason mismatch');
       value=s.outcome.status===(c.winner==='P1'?'p1_win':'p2_win');
     }else if(n.kind==='turn-boundary'){
       assert(s.outcome.status==='ongoing'&&!s.continuation&&s.turnIndex===c.endTurnIndex&&s.sideToMove!==c.winner&&n.edges.length===0,'false complete-turn boundary');value=false;

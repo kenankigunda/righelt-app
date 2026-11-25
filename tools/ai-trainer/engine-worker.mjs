@@ -239,6 +239,11 @@ async function main() {
     }
   }
   const initialState = structuredClone(state), decisions = [], repetitions = new Map();
+  if (job.tacticalStart && (job.command !== 'generate' || job.partition !== 'train' ||
+      job.familyId !== job.tacticalStart.sourceFamily || warmupActions.length ||
+      deterministicStateHash(initialState) !== job.tacticalStart.stateHash)) {
+    throw new Error('prepared tactical start differs from its certified lineage');
+  }
   if(protectedState(state)) {
     send({type:'unavailable-start',id:job.id,reason:'protected-evaluation-position'});return;
   }
@@ -297,6 +302,7 @@ async function main() {
   send({ type: 'game', game: { schema: 1,retreatSemantics:CURRENT_RETREAT_SEMANTICS, id: job.id, familyId: job.familyId, partition: job.partition, kind: job.kind,
     ...(publicTiming?{purpose:hostedPolicy.publicTiming.purpose}:{}),seed: job.seed, modelVersion: job.modelVersion, rootState, warmupActions, initialState, decisions, ...adoptionFields,
     ...(job.productionSource ? {productionSource:job.productionSource} : {}),
+    ...(job.tacticalStart ? {tacticalStart:job.tacticalStart} : {}),
     ...(teaching?{teaching}:{}),
     ...(evaluationProfile?{evaluationProfile}:{}),
     ...(arena ? { modelVersions: job.modelVersions, profileVersions: job.profileVersions } : {}),
