@@ -51,8 +51,10 @@ for(const profile of ['babs','tau','horus'])test(`${choice.label} ${profile} bra
     const played=await waitForComputerDecision(popup,game.id,profile,{guest:true,modelId:candidate.id});
     const decision=played.moves.find(move=>move.computerProof?.modelId===candidate.id);
     expect(decision).toBeTruthy();
+    if(candidate.search)expect(decision.computerProof.searchVersion).toBe(candidate.search.version);
     await popup.reload();await expect(popup.getByTestId('game-shell')).toHaveAttribute('data-game-id',game.id);
     const retained=await projected(popup,game.id);expect(retained.computer.modelId).toBe(candidate.id);
+    if(candidate.search)expect(retained.computer.searchVersion).toBe(candidate.search.version);
     expect(retained.moves.find(move=>move.moveId===decision.moveId)?.computerProof).toEqual(decision.computerProof);
     expect((await projected(page,source.id)).computer).toEqual(source.computer);
     await info.attach('accepted-candidate-decision',{contentType:'application/json',body:JSON.stringify({profile,gameId:game.id,modelId:retained.computer.modelId,decision})});
@@ -90,6 +92,7 @@ for(const profile of ['babs','tau','horus'])test.describe(`${choice.label} ${pro
     expect(reply.request().postDataJSON().computerModelId).toBe(candidate.id);
     game=(await reply.json()).game;
     expect(game.computer.modelId).toBe(candidate.id);expect(game.computer.seats).toEqual({p1:null,p2:profile});
+    if(candidate.search)expect(game.computer.searchVersion).toBe(candidate.search.version);
     await expect(page.getByTestId('game-shell')).toHaveAttribute('data-game-id',game.id);
     await waitForPlayableBoard(page);
     await submitPlayableAction(page,game.legalActions.find(action=>action.from&&action.to));
@@ -107,6 +110,7 @@ for(const profile of ['babs','tau','horus'])test.describe(`${choice.label} ${pro
     const retained=await projected(page,game.id);expect(retained.computer.modelId).toBe(candidate.id);
     expect(retained.computer.seats).toEqual({p1:null,p2:profile});
     const saved=played.moves.find(move=>move.computerProof?.modelId===candidate.id);
+    if(candidate.search)expect(saved.computerProof.searchVersion).toBe(candidate.search.version);
     expect(retained.moves.find(move=>move.moveId===saved.moveId)?.computerProof).toEqual(saved.computerProof);
     const previous=new Set(retained.moves.map(move=>move.moveId));
     const fresh=state=>state.moves.find(move=>!previous.has(move.moveId)&&move.computerProof?.modelId===candidate.id&&move.computerProof.profile===profile);
@@ -130,6 +134,10 @@ for(const profile of ['babs','tau','horus'])test.describe(`${choice.label} ${pro
     }
     const after=await projected(page,game.id);continued=fresh(after);
     expect(continued,'A new candidate decision must be durably accepted after reload').toBeTruthy();
+    if(candidate.search){
+      expect(after.computer.searchVersion).toBe(candidate.search.version);
+      expect(continued.computerProof.searchVersion).toBe(candidate.search.version);
+    }
     expect(after.computer.modelId).toBe(candidate.id);
     await info.attach('continued-candidate-after-reload',{contentType:'application/json',body:JSON.stringify({profile,gameId:game.id,modelId:candidate.id,modelSha256:candidate.sha256,savedDecision:saved,continuedDecision:continued})});
     await page.goto('/');await page.locator(`[data-action="opponent-story"][data-opponent="${profile}"]`).click();

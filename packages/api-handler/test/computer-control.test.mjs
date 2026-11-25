@@ -29,6 +29,20 @@ test('computer decisions fail closed without bound provenance, even for the owne
   assert.equal(error(control, { ownerId: 'other' }), 'computer_owner_required');
   assert.equal(error(change(control, 'pause')), 'computer_control_changed');
 });
+test('saved games bind a search version while historical stock saves and decisions still play', () => {
+  const acquired = change(initial(), 'acquire');
+  const saved = parseComputerControl(JSON.parse(JSON.stringify(acquired)));
+  assert.equal(saved.searchVersion, 'stock-v1');
+  const accepted = { ...proof(saved), searchVersion: 'stock-v1' };
+  assert.equal(error(saved, { proof: accepted }), null);
+  assert.equal(error(saved, { proof: { ...accepted, searchVersion: 'different-search' } }), 'invalid_computer_proof');
+  assert.throws(() => parseComputerControl({ ...saved, searchVersion: 'different-search' }), /invalid_computer_control/);
+  const historical = structuredClone(saved);
+  delete historical.searchVersion;
+  const reloaded = parseComputerControl(JSON.parse(JSON.stringify(historical)));
+  assert.equal(error(reloaded), null);
+  assert.equal(error(reloaded, { proof: accepted }), null);
+});
 test('temporary takeover follows the nominal turn through changing controllers', () => {
   const control = change(change(initial(), 'acquire'), 'takeover');
   const reloaded = parseComputerControl(JSON.parse(JSON.stringify(control)));

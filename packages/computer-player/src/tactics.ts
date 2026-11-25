@@ -7,10 +7,13 @@ export function proveTactical<Node>(node: Node, depth: number, rules: {
   terminal: (node: Node) => number | undefined;
   controller: (node: Node) => "P1" | "P2";
   children: (node: Node) => Iterable<Node>;
-}): TacticalBounds {
+  continuation?: (node: Node) => boolean;
+}, settlementDepth = 0): TacticalBounds {
   const terminal = rules.terminal(node);
   if (terminal !== undefined) return { lower: terminal, upper: terminal, incomplete: false };
-  if (depth === 0) return { lower: -1, upper: 1, incomplete: false };
+  if (depth === 0 && (settlementDepth === 0 || !rules.continuation?.(node))) {
+    return { lower: -1, upper: 1, incomplete: false };
+  }
   try {
     const maximize = rules.controller(node) === "P1";
     let lower = maximize ? -1 : 1;
@@ -19,7 +22,8 @@ export function proveTactical<Node>(node: Node, depth: number, rules: {
     let children = 0;
     for (const child of rules.children(node)) {
       children++;
-      const result = proveTactical(child, depth - 1, rules);
+      const result = proveTactical(child, Math.max(0, depth - 1), rules,
+        depth === 0 ? settlementDepth - 1 : settlementDepth);
       lower = maximize ? Math.max(lower, result.lower) : Math.min(lower, result.lower);
       upper = maximize ? Math.max(upper, result.upper) : Math.min(upper, result.upper);
       incomplete ||= result.incomplete;

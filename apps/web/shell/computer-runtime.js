@@ -1,4 +1,4 @@
-import { COMPUTER_LIMITS, COMPUTER_TIMING, COMPUTER_PROFILES, getComputerModel } from '../generated/packages/shared-types/src/computer-play.js';
+import { COMPUTER_LIMITS, COMPUTER_TIMING, COMPUTER_PROFILES, getComputerModel, computerSearchVersion } from '../generated/packages/shared-types/src/computer-play.js';
 import { deterministicStateHash } from '../generated/packages/game-engine/src/hash.js';
 import { fetchVerifiedAsset, sha256 } from './verified-assets.js';
 import { fetchComputerResource, computerNetworkError } from './computer-recovery.js';
@@ -109,7 +109,7 @@ export class ComputerRuntime {
     this.modelId = modelId; this.cacheAvailable = model.cached;
     } catch (error) { if (this.generation === preparingGeneration) this.cancel(error.message); throw error; }
   }
-  async compute({ gameId, gameplayRevision, state, modelId, profile, seed, controlGeneration, analysis = false }, onProgress) {
+  async compute({ gameId, gameplayRevision, state, modelId, searchVersion, profile, seed, controlGeneration, analysis = false }, onProgress) {
     const preparation = this.prepare(modelId, onProgress);
     // prepare() synchronously advances the generation when cold. Capture only
     // after invoking it, then reject an obsolete continuation without
@@ -118,7 +118,13 @@ export class ComputerRuntime {
     await preparation;
     if (generation !== this.generation || this.modelId !== modelId || !this.worker) throw new Error('cancelled');
     if (!COMPUTER_PROFILES[profile]) throw new Error('invalid-profile');
-    const settings = { ...COMPUTER_PROFILES[analysis ? 'horus' : profile], ...(analysis ? { temperature: 0, maxValueGap: 0 } : {}) };
-    return this.request({ type: 'compute', state, profile: settings, metadata: { gameId, gameplayRevision, fingerprint: deterministicStateHash(state), modelVersion: getComputerModel(modelId).sha256, profileVersion: settings.version, seed, controlGeneration } }, onProgress);
+    const model = getComputerModel(modelId), version = computerSearchVersion(model);
+    if (searchVersion !== undefined && searchVersion !== version) throw new Error('search-version-mismatch');
+    const personality = analysis ? 'horus' : profile;
+    const settings = { ...COMPUTER_PROFILES[personality], verifyForcingReplies: model.search?.forcingProfiles.includes(personality) === true,
+      ...(analysis ? { temperature: 0, maxValueGap: 0 } : {}) };
+    return this.request({ type: 'compute', state, profile: settings, metadata: { gameId, gameplayRevision,
+      fingerprint: deterministicStateHash(state), modelVersion: model.sha256, searchVersion: version,
+      profileVersion: settings.version, seed, controlGeneration } }, onProgress);
   }
 }

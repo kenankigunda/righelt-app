@@ -6,7 +6,7 @@ import { renderComputerProgress } from '../shell/computer-view.js';
 import { COMPUTER_CAPABILITIES, COMPUTER_TIMING, createComputerControl, changeComputerControl } from '../generated/packages/shared-types/src/computer-play.js';
 import { createInitialState } from '../generated/packages/game-engine/src/state.js';
 
-function fixture({analysisRuntime, canAnalyze = true, timers = {setInterval(){return 1;},clearInterval(){}}, onChange = () => {}} = {}) {
+function fixture({sessionFactory = createComputerSession, analysisRuntime, canAnalyze = true, timers = {setInterval(){return 1;},clearInterval(){}}, onChange = () => {}} = {}) {
   let contextReads = 0;
   let now = 100, visible = true, authenticated = true, unresolved = false, generation = 1, submitted = 0, computed = 0, blocked = false, pending;
   const cancelEvents=[];
@@ -19,7 +19,7 @@ function fixture({analysisRuntime, canAnalyze = true, timers = {setInterval(){re
     applyGameAction: async () => { submitted++; return { committed: Promise.resolve() }; },
   };
   const runtime = { compute: async (_, onProgress) => new Promise((resolve, reject) => { computed++; progress = onProgress; pending = { resolve, reject }; }), cancel: (reason,options) => { cancelEvents.push({reason,options}); pending?.reject(Error('cancelled')); pending = null; } };
-  const session = createComputerSession({ deviceId: 'device', runtime, analysisRuntime: analysisRuntime ?? runtime, clock: () => now, timers, onChange, getContext: () => { contextReads++; return { game: unresolved ? null : game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }; } });
+  const session = sessionFactory({ deviceId: 'device', runtime, analysisRuntime: analysisRuntime ?? runtime, clock: () => now, timers, onChange, getContext: () => { contextReads++; return { game: unresolved ? null : game, transport, accountGeneration: generation, authenticated, canAnalyze, visible }; } });
   return { session, controls, contextReads:()=>contextReads, cancelEvents, relogin: () => {generation++;authContextId=`session-${generation}`;transport={...transport};}, get transport() {return transport;}, changeAccount: () => {generation++;}, changeTransport: () => {transport = {...transport};}, logout: () => { authenticated = false; generation++; session.suspend(); }, switchGame: () => { unresolved=false; game = { ...game, id: 'other-game' }; }, advanceRevision:()=>{game={...game,gameplayRevision:game.gameplayRevision+1};}, unresolvedGame: () => { unresolved=true; }, game: () => game, saved, setBlocked: value => { blocked = value; }, computations: () => computed, setTime: value => { now = value; }, hide: () => { visible = false; }, show: () => {visible = true;}, pending: () => pending, progress: value => progress?.(value), submissions: () => submitted, cancellations: () => cancelEvents.length };
 }
 
@@ -132,6 +132,43 @@ test('a recovery race at durable admission defers only an unadmitted command', a
   await resumed;
   assert.equal(calls, 2); assert.equal(f.computations(), 1);
   assert.deepEqual(f.saved,[original],'an unadmitted recovery fence retains the exact proof');
+});
+
+test('the instrumented computer session reports the original recovery error and preserves it if the observer throws', async t => {
+  const {registerHooks} = await import('node:module');
+  const {transformBoardAdmissionModule} = await import('../../../e2e/support/board-admission-diagnostics.mjs');
+  const {default: recipes} = await import('../../../e2e/support/computer-session-recovery-transformation.json', {with: {type: 'json'}});
+  const observedModule = new URL('../shell/computer-session.js?recovery-observer', import.meta.url).href;
+  const hooks = registerHooks({load(url, context, nextLoad) {
+    const module = nextLoad(url, context);
+    if (url !== observedModule) return module;
+    return {...module, source: transformBoardAdmissionModule(Buffer.from(module.source).toString(), recipes['/shell/computer-session.js'])};
+  }});
+  let createObservedSession;
+  try { ({createComputerSession: createObservedSession} = await import(observedModule)); }
+  finally { hooks.deregister(); }
+  const received = [];
+  const observer = Object.getOwnPropertyDescriptor(globalThis, '__boardAdmissionRecovery');
+  Object.defineProperty(globalThis, '__boardAdmissionRecovery', {configurable: true, value(error) {
+    received.push(error);
+    throw new Error('diagnostic observer unavailable');
+  }});
+  t.after(() => {
+    if (observer) Object.defineProperty(globalThis, '__boardAdmissionRecovery', observer);
+    else delete globalThis.__boardAdmissionRecovery;
+  });
+  const f = fixture({sessionFactory: createObservedSession});
+  t.after(() => f.session.destroy());
+  await f.session.tick();
+  const error = Object.assign(new Error('Rejected game action'), {code:'invalid_action'});
+  const work = f.session.tick();
+  f.pending().reject(error);
+  await work;
+  assert.deepEqual(received, [error]);
+  assert.equal(received[0], error);
+  assert.equal(f.session.snapshot().phase, 'recovery');
+  assert.equal(f.session.snapshot().message, error.message);
+  assert.equal(f.submissions(), 0);
 });
 
 test('a rejected committed command remains terminal even with the recovery error code', async t => {

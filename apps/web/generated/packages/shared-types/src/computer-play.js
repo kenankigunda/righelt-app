@@ -39,6 +39,7 @@ export const COMPUTER_MODEL_CHOICES = Object.freeze([
     Object.freeze({ id: CANDIDATE_B_COMPUTER_MODEL.id, label: 'Candidate B' }),
     Object.freeze({ id: CANDIDATE_C_COMPUTER_MODEL.id, label: 'Candidate C' }),
 ]);
+export const STOCK_COMPUTER_SEARCH = 'stock-v1';
 // This historical HTTP default stays fixed when CURRENT changes in a later release.
 const LEGACY_COMPUTER_MODEL_ID = 'initial-1554';
 // Only published compatible models belong here.
@@ -51,6 +52,12 @@ export const COMPUTER_MODELS = Object.freeze({
 });
 export const computerModelUpgradeAvailable = (id) => id === LEGACY_COMPUTER_MODEL_ID;
 export const getComputerModel = (id) => Object.hasOwn(COMPUTER_MODELS, id) ? COMPUTER_MODELS[id] : null;
+export function computerSearchVersion(model) {
+    return model.search?.version ?? STOCK_COMPUTER_SEARCH;
+}
+function matchesSavedSearch(model, version) {
+    return version === computerSearchVersion(model) || (version === undefined && !model.search);
+}
 /** Requests from cached clients predate model pinning and know only the original model. */
 export const computerModelForCreation = (value) => value === undefined
     ? getComputerModel(LEGACY_COMPUTER_MODEL_ID) : typeof value === 'string' ? getComputerModel(value) : null;
@@ -64,9 +71,11 @@ export function parseComputerSeats(value) {
     return { p1: seats.p1, p2: seats.p2 };
 }
 export const createComputerControl = (ownerId, seats, modelId = CURRENT_COMPUTER_MODEL.id) => {
-    if (!getComputerModel(modelId))
+    const model = getComputerModel(modelId);
+    if (!model)
         throw new Error('invalid_computer_model');
-    return { ownerId, seats, modelId, generation: 0, lease: null, paused: false, singleStep: false, manual: false, takeoverTurn: null, declinedModelId: null };
+    return { ownerId, seats, modelId, searchVersion: computerSearchVersion(model), generation: 0,
+        lease: null, paused: false, singleStep: false, manual: false, takeoverTurn: null, declinedModelId: null };
 };
 /** Invalid persisted ownership must never turn into an ordinary human game. */
 export function parseComputerControl(value) {
@@ -77,6 +86,9 @@ export function parseComputerControl(value) {
         || !(control.takeoverTurn === null || (Number.isSafeInteger(control.takeoverTurn) && control.takeoverTurn >= 0))
         || !(control.declinedModelId === null || typeof control.declinedModelId === 'string')
         || !(control.lease === null || (typeof control.lease.deviceId === 'string' && control.lease.deviceId.length > 0 && control.lease.deviceId.length <= 128 && typeof control.lease.authContextId === 'string' && Number.isFinite(control.lease.expiresAt))))
+        throw new Error('invalid_computer_control');
+    const model = getComputerModel(control.modelId);
+    if (model && !matchesSavedSearch(model, control.searchVersion))
         throw new Error('invalid_computer_control');
     return structuredClone(control);
 }
@@ -93,7 +105,9 @@ export function computerCommandError(control, input) {
     if (!proof || control.paused || !control.lease || control.lease.expiresAt <= input.now || control.lease.authContextId !== input.authContextId
         || proof.deviceId !== control.lease.deviceId || proof.generation !== control.generation)
         return 'computer_control_changed';
-    if (proof.modelId !== control.modelId || !getComputerModel(proof.modelId) || proof.profile !== profile || proof.profileVersion !== COMPUTER_PROFILES[profile].version
+    const model = getComputerModel(control.modelId);
+    if (proof.modelId !== control.modelId || !model || !matchesSavedSearch(model, control.searchVersion)
+        || !matchesSavedSearch(model, proof.searchVersion) || proof.profile !== profile || proof.profileVersion !== COMPUTER_PROFILES[profile].version
         || !Number.isSafeInteger(proof.seed) || proof.seed < 0 || typeof proof.attemptId !== 'string' || !/^[a-zA-Z0-9-]{1,128}$/.test(proof.attemptId))
         return 'invalid_computer_proof';
     return null;
@@ -149,6 +163,7 @@ export function changeComputerControl(control, input) {
     }
     else if (input.action === 'upgrade') {
         next.modelId = CURRENT_COMPUTER_MODEL.id;
+        next.searchVersion = computerSearchVersion(CURRENT_COMPUTER_MODEL);
         next.declinedModelId = null;
     }
     else if (input.action === 'decline-upgrade')

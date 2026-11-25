@@ -27,9 +27,10 @@ def digest(value):
 
 
 def settings(mode, training_recipe=None, attention_method=None, policy_refresh=None):
-    if mode not in ('ordinary-continuation', 'closed-loop-fixture', 'attention-incumbent-continuation'):
+    tactical = mode == 'attention-tactical-practice'
+    if not tactical and mode not in ('ordinary-continuation', 'closed-loop-fixture', 'attention-incumbent-continuation'):
         raise ValueError('execution mode requires reviewed runtime audit')
-    attention = mode == 'attention-incumbent-continuation'
+    attention = tactical or mode == 'attention-incumbent-continuation'
     if attention:
         from .attention_method import validate_method
         attention_method=validate_method(attention_method)
@@ -43,12 +44,15 @@ def settings(mode, training_recipe=None, attention_method=None, policy_refresh=N
             'config': CONFIG, 'optimizer': {'kind': 'AdamW', 'lr': DEFINITION['learningRates']['continuation'] if attention else CONFIG['training']['learningRate'],
                 'weightDecay': CONFIG['training']['weightDecay']},
             'losses': {'policy': 1, 'observedTerminalValue': 1, 'futureFacts': FUTURE_LOSS_WEIGHT if attention else 0, 'teacherValue': 0},
-            'sampling': 'seeded-shuffle-bounded-replay-pass',
+            'sampling': 'matched-scoped-preferences-v1' if tactical else 'seeded-shuffle-bounded-replay-pass',
+            **({'preferenceWeightPerBatchSlot':1, 'preparedStartFraction':[1,8]} if tactical else {}),
             'dataContract':json.loads((ROOT/'tools/ai-trainer/learning-evidence-contract.json').read_text()),
             'fixtureContract': json.loads((ROOT/'tools/hosted-compute/fixture-contract.json').read_text()) if mode == 'closed-loop-fixture' else None,
             'teaching': attention_method['pilotRecipe'] if attention else 'none',
             'automaticSwitches': 'fixed-local-teaching-v2' if attention else 'curriculum.observe-source-bound',
-            'sourceFiles': {name: hashlib.sha256((Path(__file__).resolve().parent/name).read_bytes()).hexdigest() for name in SOURCES}}
+            'sourceFiles': {name: hashlib.sha256((Path(__file__).resolve().parent/name).read_bytes()).hexdigest()
+                for name in SOURCES + (('tactical_practice.py','candidate_campaign.py','campaign_supervisor.py',
+                    'witness_blocks.py','resources.py','resource_policy.py') if tactical else ())}}
 
 
 def record(checkpoint, data_sha256, *, mode, training_recipe=None, attention_method=None, policy_refresh=None):

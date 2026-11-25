@@ -20,6 +20,9 @@ STATE_KEY = 'freshTraining'
 
 
 def continuation_for(directory, manifest):
+    if manifest.get('tacticalPractice') is not None:
+        from .candidate_campaign import continuation
+        return continuation(directory, manifest)
     if manifest.get('exploratoryWindow') is not None:
         from .exploratory_contract import continuation
         return continuation(directory,manifest)
@@ -194,6 +197,10 @@ def accept_game(directory, state, baseline, game, archive, job):
         raise ValueError('fresh game lacks matching training generation job')
     if any(decision.get('id') != f"{game['id']}:{index}" for index, decision in enumerate(game['decisions'])):
         raise ValueError('fresh game decision identity mismatch')
+    if 'tacticalStart' in job or 'tacticalStart' in game:
+        if (not job.get('tacticalStart') or game.get('tacticalStart') != job['tacticalStart']
+                or game['familyId'] != job['tacticalStart']['sourceFamily']):
+            raise ValueError('fresh prepared-start lineage differs')
     launches = rows(Path(directory).parent / 'generation-launches.jsonl')
     matches = [(index, row) for index, row in enumerate(launches)
                if row['jobId'] == game['id'] and row['directory'] == str(Path(directory).resolve())]
@@ -217,6 +224,8 @@ def accept_game(directory, state, baseline, game, archive, job):
         'trajectorySha256': trajectory, 'launchIndex': index, 'launchSha256': digest(launch),
         'job': {key: job[key] for key in ('command', 'id', 'seed', 'familyId', 'partition', 'kind', 'modelVersion')},
     }
+    if 'tacticalStart' in job:
+        fresh['games'][game['id']]['job']['tacticalStart'] = job['tacticalStart']
     if binding:fresh['games'][game['id']]['job'].update(explorationAdoption=binding,trainingRecipe=value['trainingRecipe'])
 
 
@@ -235,6 +244,15 @@ def record_batch(state, metrics):
                freshValueSampleCount=len(metrics.get('valueExamples',[])),
                futureFactLabels=metrics.get('futureFactLabels',0))
     fresh['batches'].append(row)
+    if 'sampleSha256' in metrics:
+        row.update(sampleSha256=metrics['sampleSha256'], certifiedSamples=metrics['certifiedSamples'],
+                   ordinarySamples=metrics['ordinarySamples'], ordinarySampleSha256=metrics['ordinarySampleSha256'])
+        if 'preparedStartSamples' in metrics:
+            names=('preparedStartSamples','freshOrdinarySamples','inheritedSamples')
+            counts={name:metrics[name] for name in names}
+            if any(type(n) is not int or n<0 for n in counts.values()) or sum(counts.values())!=metrics['ordinarySamples']:
+                raise ValueError('unbalanced training sample provenance')
+            row.update(counts)
 
 
 def checkpoint_reference(path, digest_value, state, model_state):
@@ -274,6 +292,7 @@ def audit_evidence(directory, state, baseline, games):
             if job.get(adoption.FIELD)!=value[adoption.FIELD] or job.get('trainingRecipe')!=value['trainingRecipe']:
                 raise ValueError('fresh receipt changed selected recipe')
         if (job.get('command') != 'generate' or job.get('partition') != 'train'
+                or job.get('tacticalStart') != game.get('tacticalStart')
                 or any(game.get(key) != job.get(key) for key in
                        ('id', 'seed', 'familyId', 'partition', 'kind', 'modelVersion'))
                 or 'modelVersions' in game or 'profileVersions' in game

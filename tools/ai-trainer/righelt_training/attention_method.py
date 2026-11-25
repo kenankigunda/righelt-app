@@ -119,7 +119,8 @@ def transfer_state(data, method, checkpoint_sha256, target_seed=None):
             or receipt.get('checkpointSha256')!=checkpoint_sha256
             or receipt.get('checkpointRecoverySha256')!=data['recoverySha256']
             or receipt.get('sourceAllocationClosed') is not True or receipt.get('cursorSha256')!=digest(cursor)
-            or receipt.get('initialization') not in ('new-generation-boundary','resume-training-cursor')):
+            or receipt.get('initialization') not in ('new-generation-boundary','resume-training-cursor',
+                                                      'new-local-campaign-after-zero-batch')):
         raise ValueError('qualified closed-allocation transfer required')
     if pending:
         disposition=receipt.get('pendingDisposition')
@@ -138,7 +139,18 @@ def transfer_state(data, method, checkpoint_sha256, target_seed=None):
         raise ValueError('transfer invents pending work')
     # A shared calibration descendant can preserve an exact training cursor.
     # Its original shuffle seed and typed source receipt remain mandatory.
-    if old.get('phase')=='training':
+    local_boundary = receipt['initialization'] == 'new-local-campaign-after-zero-batch'
+    if local_boundary:
+        authority = json.loads(read_bound(receipt['newProgram']))
+        closed = json.loads(read_bound(receipt['closureEvidence']))
+        if (old.get('phase') != 'training' or type(old.get('trainingBatch')) is not int
+                or old['trainingBatch'] != 0 or not pending or receipt['pendingDisposition'] != 'consumed-unissued'
+                or checkpoint_sha256 not in authority.get('parent', {}).values()
+                or data['updates'] != authority.get('parentUpdates') or authority.get('cloud') is not False
+                or closed.get('noFurtherTrainingOrResume') is not True
+                or closed.get('allCheckpointsArchivesFailuresRetained') is not True):
+            raise ValueError('closed local training boundary and unissued job required')
+    elif old.get('phase')=='training':
         source=json.loads(read_bound(receipt.get('sourceResult')))
         if (receipt['initialization']!='resume-training-cursor' or source.get('kind')!='compute-result'
                 or source.get('execution',{}).get('seed')!=target_seed
@@ -155,7 +167,7 @@ def transfer_state(data, method, checkpoint_sha256, target_seed=None):
                  nextJob=old['nextJob'],archives=copy.deepcopy(old['archives']),
                  pilotLearningRate=old.get('pilotLearningRate'),curriculumSwitched=old['curriculumSwitched'])
     state[STATE_KEY]=copy.deepcopy(old[STATE_KEY])
-    if old['phase']=='training':state.update(phase='training',trainingBatch=old['trainingBatch'])
+    if old['phase']=='training' and not local_boundary:state.update(phase='training',trainingBatch=old['trainingBatch'])
     state['inheritedBoundary']={'cursor':cursor,'checkpointRecoverySha256':data['recoverySha256'],
         'inheritedReplayCount':len(old['archives']),
         'pendingDisposition':receipt.get('pendingDisposition'),'counters':{key:old.get(key) for key in

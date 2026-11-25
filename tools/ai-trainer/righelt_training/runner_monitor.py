@@ -9,13 +9,15 @@ from .device import memory_bytes
 from .checkpoint import atomic_json
 
 class RunnerMonitor:
-    def __init__(self,directory,*,interval=3,clock=time.monotonic,query=None,expire=None):
+    def __init__(self,directory,*,interval=3,clock=time.monotonic,query=None,expire=None,check_owner=None):
         self.directory=Path(directory);self.interval=interval;self.clock=clock
         self.query=query or memory_bytes
         self.expire=expire or (lambda:os._exit(70))
+        self.check_owner=check_owner
         self.lock=threading.RLock();self.stop=threading.Event();self.error=None;self.active=None
     def publish(self):
         with self.lock:
+            if self.check_owner is not None:self.check_owner()
             atomic_json(self.directory/'device-memory.json',{'schema':1,'pid':os.getpid(),'observedAt':time.time(),'driverBytes':self.query()})
             if self.active and self.clock()>=self.active['deadlineMonotonic']:
                 atomic_json(self.directory/'operation-status.json',{**self.active,'status':'timed-out','observedAt':time.time()})

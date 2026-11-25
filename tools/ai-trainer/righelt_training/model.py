@@ -47,7 +47,7 @@ class PolicyValueNet(nn.Module):
         return policy, torch.tanh(value).clamp(-1., 1.).squeeze(-1)
 
 
-def training_loss(logits, values, legal, targets, terminal_values, terminal_mask, policy_mask=None):
+def training_loss(logits, values, legal, targets, terminal_values, terminal_mask, policy_mask=None, *, preference_rows=None):
     if policy_mask is None:
         policy_mask = torch.ones_like(terminal_mask, dtype=torch.bool)
     if not torch.isfinite(logits).all() or not torch.isfinite(values).all():
@@ -62,6 +62,9 @@ def training_loss(logits, values, legal, targets, terminal_values, terminal_mask
         raise ValueError('invalid terminal value')
     log_prob = torch.log_softmax(logits.masked_fill(~legal, torch.finfo(logits.dtype).min), dim=1)
     policy = -(targets[policy_mask] * log_prob[policy_mask]).sum(dim=1).mean() if policy_mask.any() else logits.sum() * 0
+    if preference_rows is not None:
+        from .tactical_practice import preference_loss
+        policy = preference_loss(logits, preference_rows, policy)
     # An all-truncated batch has zero value loss, not a draw target.
     value = ((values[terminal_mask] - terminal_values[terminal_mask]) ** 2).mean() if terminal_mask.any() else values.sum() * 0
     return policy + value, policy.detach(), value.detach()

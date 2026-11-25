@@ -16,6 +16,8 @@ export type SearchRequest = {
   state: GameState; seed: number; simulations?: number; temperature?: number;
   /** Hosts may lower the shared ceiling; they cannot increase it. */
   maxEngineExpansions?: number;
+  /** Candidate-only verification of a provisional choice, using existing tree capacity. */
+  verifyForcingReplies?: boolean;
   maxValueGap?: number; maxNodes?: number; deadlineMs?: number; signal?: AbortSignal; decisionCache?: boolean; observeEngine?: EngineComputationObserver;
   onProgress?: (progress: { phase: "checking" | "looking-ahead"; simulations: number; total: number; nodes: number }) => void;
   /** Training self-play/development screen only. Browser and evaluation omit it. */
@@ -385,7 +387,9 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
 
   // Interval minimax proves only terminal-forced outcomes. Horizon and unfinished
   // work remain distinct. Reserve at least half the remaining nodes for PUCT.
-  const tacticalCeiling = nodes + Math.floor((maxNodes - nodes) / 2);
+  const tacticalAllowance = Math.floor((maxNodes - nodes) / 2);
+  const verificationAllowance = request.verifyForcingReplies ? Math.min(512, tacticalAllowance) : 0;
+  let tacticalCeiling = nodes + tacticalAllowance - verificationAllowance;
   const tacticalRules = {
     terminal: (node: Node) => terminalValue(node.state),
     controller: (node: Node) => node.state.sideToMove,
@@ -452,5 +456,57 @@ export async function selectMove(request: SearchRequest, evaluator: Evaluator): 
   const bestValue = Math.max(...visited.map(edge => rootSign * edge.sum / edge.visits));
   const choices = visited.filter(edge => bestValue - rootSign * edge.sum / edge.visits <= valueGap);
   const chosen = sample(choices, edge => Math.log(edge.visits));
-  return ready(chosen, visited, "search");
+  if (verificationAllowance === 0) return ready(chosen, visited, "search");
+
+  // First try to refute the provisional move, then inspect forcing alternatives.
+  // Ordering affects the cost of finding a witness. Universal replies always
+  // come from the same complete engine enumeration as ordinary search.
+  const priority = (edge: Edge) => {
+    if (edge.action.type === "end_turn") return 0;
+    if (edge.action.type === "push" || edge.action.type === "rush") return 1;
+    return 2;
+  };
+  const ordered = (a: Edge, b: Edge) => priority(a) - priority(b) || b.prior - a.prior || a.index - b.index;
+  const candidates = [chosen, ...eligible.filter(edge => edge !== chosen).sort(ordered)];
+  const ceiling = Math.min(maxNodes, nodes + verificationAllowance);
+  let work = 0;
+  const forcingRules = {
+    ...tacticalRules,
+    continuation: (node: Node) => node.state.continuation != null,
+    children: function* (node: Node): Generator<Node> {
+      try {
+        check();
+        for (const edge of [...edges(node)].sort(ordered)) {
+          if (++work > verificationAllowance * 8 || (!edge.child && nodes >= tacticalCeiling)) throw new TacticalInterrupted();
+          yield child(node, edge);
+        }
+      } catch (error) {
+        if (error instanceof SoftStop || error instanceof EngineLimit) throw new TacticalInterrupted();
+        throw error;
+      }
+    },
+  };
+  for (const edge of candidates) {
+    if (nodes >= ceiling || work >= verificationAllowance * 8) break;
+    if (!edge.child || proofs.get(edge.index)?.startsWith("proven-")) continue;
+    tacticalCeiling = Math.min(ceiling, nodes + (edge === chosen ? 160 : 80));
+    const result = proveTactical(edge.child, config.search.tacticalDepth - 1, forcingRules, 12);
+    if (result.lower !== result.upper) continue;
+    if (result.lower === rootSign) {
+      proofs.set(edge.index, "proven-win");
+      edge.visits = Math.max(1, edge.visits);
+      edge.sum = rootSign * edge.visits;
+      return ready(edge, [edge], "forced-win");
+    }
+    proofs.set(edge.index, result.lower === -rootSign ? "proven-loss" : "proven-draw");
+  }
+  if (proofs.get(chosen.index) !== "proven-loss") return ready(chosen, visited, "search");
+  const remaining = visited.filter(edge => proofs.get(edge.index) !== "proven-loss");
+  if (!remaining.length) {
+    const unresolved = eligible.filter(edge => proofs.get(edge.index) !== "proven-loss");
+    return unresolved.length ? modelFallback(unresolved, "search-incomplete") : ready(chosen, visited, "search");
+  }
+  const bestRemaining = Math.max(...remaining.map(edge => rootSign * edge.sum / edge.visits));
+  const alternatives = remaining.filter(edge => bestRemaining - rootSign * edge.sum / edge.visits <= valueGap);
+  return ready(sample(alternatives, edge => Math.log(edge.visits)), remaining, "search");
 }
